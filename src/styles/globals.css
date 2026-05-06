@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS-Variablen-Layer wird in M3/M4 ausgebaut, sobald wir das v2-Theme
+   gezielt nach v3 portieren. Bis dahin reichen Tailwind-Defaults plus
+   die wichtigsten Brand-Tokens. */
+:root {
+  --bg: #1c1a17;
+  --surface: #25221e;
+  --text: #f5f1e8;
+  --text-muted: #877f71;
+  --border: rgba(201, 169, 98, 0.18);
+  --primary: #C9A962;
+  --success: #6EC49E;
+  --danger: #D4706E;
+  --warning: #ECB761;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
