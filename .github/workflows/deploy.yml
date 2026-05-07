@@ -40,7 +40,7 @@ jobs:
           # Wenn das Repo unter <user>.github.io/<repo>/ deployed wird,
           # muss VITE_BASE_PATH den Subpath enthalten — wird in Vite-Config
           # später ausgelesen. Vorerst Default '/'.
-          VITE_BASE_PATH: /zeiterfassung-v3/
+          VITE_BASE_PATH: /Zeiterfassung-v3/
         run: npm run build
 
       - name: Setup Pages
