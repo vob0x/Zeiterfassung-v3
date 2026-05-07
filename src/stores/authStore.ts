@@ -31,6 +31,12 @@ import {
   deriveEncryptionKey,
   hasEncryptionKey,
   clearEncryptionKey,
+  setTeamKey,
+  hasTeamKey,
+  clearTeamKey,
+  decryptTeamKeyWithPersonalKey,
+  decryptTeamKeyFromTransport,
+  encryptTeamKeyWithPersonalKey,
 } from '@/lib/crypto';
 import type { Profile, Session } from '@/types';
 
@@ -55,6 +61,127 @@ interface AuthState {
 /** Pseudo-E-Mail: codename → "<codename>@zeiterfassung.local". */
 function codeToEmail(codename: string): string {
   return `${codename.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}@zeiterfassung.local`;
+}
+
+/**
+ * Holt den Team Key aus der DB und legt ihn in sessionStorage.
+ *
+ * v3 muss das machen weil v2 alle Daten Team-Key-encrypted (nicht
+ * Personal-Key-encrypted), sobald der User in einem Team ist. Ohne
+ * Team Key in v3 bleiben alle Decryption-Versuche leer → die App
+ * sieht überall "—".
+ *
+ * Drei-Stufen-Fallback (1:1 von v2):
+ *   Pfad 1: team_members.encrypted_team_key (mit Personal Key
+ *           verschlüsselt) → entschlüsseln mit Personal Key
+ *   Pfad 2: teams.encrypted_team_key (mit Transport Key vom Invite-
+ *           Code abgeleitet) → entschlüsseln und gleichzeitig auf
+ *           team_members nachziehen für nächstes Mal
+ *   Pfad 3: keine Team Daten verfügbar → still ablehnen (Solo-User
+ *           oder Team-Daten existieren wirklich nicht)
+ *
+ * Vollständiges Team-Setup (Create/Join/Generate-Team-Key/Invite-
+ * Code-Pfad) kommt in M5; M3a hat nur den Read-Restore-Pfad damit
+ * v3 bestehende v2-Daten überhaupt entschlüsseln kann.
+ *
+ * Ausführliches Logging ist Absicht — der Pfad ist kritisch für die
+ * Datenlesbarkeit, lieber zu viel als zu wenig Diagnostik. Wird in
+ * M5 reduziert sobald stabil.
+ */
+async function restoreTeamKeyIfAny(userId: string): Promise<void> {
+  if (!hasEncryptionKey()) {
+    console.info('[Auth/Team-Key] skipped: kein Personal Key');
+    return;
+  }
+
+  // 1. Membership + ggf. personal-encrypted Kopie holen
+  type MemberRow = { team_id: string; encrypted_team_key: string | null };
+  let memberRow: MemberRow;
+  try {
+    const { data, error } = await supabase
+      .from('team_members')
+      .select('team_id, encrypted_team_key')
+      .eq('user_id', userId)
+      .limit(1);
+    if (error) {
+      console.warn('[Auth/Team-Key] team_members query error:', error.message);
+      return;
+    }
+    if (!data || data.length === 0) {
+      console.info('[Auth/Team-Key] kein team_members-Row → User ist Solo');
+      return;
+    }
+    memberRow = data[0] as unknown as MemberRow;
+  } catch (e) {
+    console.warn('[Auth/Team-Key] team_members query exception:', e);
+    return;
+  }
+
+  // Pfad 1: Personal-Key-encrypted Kopie
+  if (memberRow.encrypted_team_key) {
+    try {
+      const teamKeyB64 = await decryptTeamKeyWithPersonalKey(
+        memberRow.encrypted_team_key
+      );
+      setTeamKey(teamKeyB64);
+      console.info('[Auth/Team-Key] restored via Pfad 1 (personal-key copy)');
+      return;
+    } catch (e) {
+      console.warn(
+        '[Auth/Team-Key] Pfad 1 (personal-key copy) failed:',
+        e
+      );
+      // weiter zu Pfad 2
+    }
+  } else {
+    console.info('[Auth/Team-Key] Pfad 1 leer (encrypted_team_key=null)');
+  }
+
+  // Pfad 2: Transport-Key-encrypted Kopie auf teams-Row
+  try {
+    const { data, error } = await supabase
+      .from('teams')
+      .select('id, invite_code, encrypted_team_key')
+      .eq('id', memberRow.team_id)
+      .single();
+    if (error) {
+      console.warn('[Auth/Team-Key] teams query error:', error.message);
+      return;
+    }
+    if (!data?.encrypted_team_key || !data?.invite_code) {
+      console.info(
+        '[Auth/Team-Key] Pfad 2 leer (teams.encrypted_team_key oder invite_code fehlt)'
+      );
+      return;
+    }
+    const teamKeyB64 = await decryptTeamKeyFromTransport(
+      data.encrypted_team_key as string,
+      data.invite_code as string,
+      data.id as string
+    );
+    setTeamKey(teamKeyB64);
+    console.info('[Auth/Team-Key] restored via Pfad 2 (transport-key copy)');
+
+    // Bonus: Personal-Key-encrypted Kopie auf team_members nachziehen,
+    // damit nächstes Login direkt Pfad 1 nutzen kann (schneller, ohne
+    // teams-Roundtrip).
+    try {
+      const wrapped = await encryptTeamKeyWithPersonalKey(teamKeyB64);
+      await supabase
+        .from('team_members')
+        .update({ encrypted_team_key: wrapped })
+        .eq('user_id', userId)
+        .eq('team_id', memberRow.team_id);
+      console.info(
+        '[Auth/Team-Key] Pfad 1 nachgezogen (team_members.encrypted_team_key gesetzt)'
+      );
+    } catch (e) {
+      console.warn('[Auth/Team-Key] Backfill auf Pfad 1 failed:', e);
+      // Nicht fatal — Pfad 2 funktioniert weiterhin nächstes Mal.
+    }
+  } catch (e) {
+    console.warn('[Auth/Team-Key] Pfad 2 exception:', e);
+  }
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -117,6 +244,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Personal Key in sessionStorage? Falls nein → needsPassword.
       const keyAvailable = hasEncryptionKey();
 
+      // Falls der Personal Key noch da ist (Page-Reload, kein Tab-Close),
+      // gleich auch den Team Key zurückholen falls vorhanden — sonst
+      // bleiben Master-Daten + Einträge leer beim ersten Pull.
+      if (keyAvailable && !hasTeamKey()) {
+        await restoreTeamKeyIfAny(supaSession.user.id);
+      }
+
       set({
         profile,
         session,
@@ -153,6 +287,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         },
         { onConflict: 'id' }
       );
+
+      // Team Key restore (no-op wenn Solo-User).
+      await restoreTeamKeyIfAny(data.user.id);
 
       const profile: Profile = {
         id: data.user.id,
@@ -260,6 +397,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         throw new Error('Falsches Passwort');
       }
       await deriveEncryptionKey(password, profile.id);
+      // Auch beim Unlock den Team Key zurückholen — sonst sieht der
+      // User nach dem Entsperren leere Team-Daten.
+      await restoreTeamKeyIfAny(profile.id);
       set({ loading: false, needsPassword: false });
     } catch (e: any) {
       set({ error: e?.message || 'Entsperren fehlgeschlagen', loading: false });
@@ -276,6 +416,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // trotzdem lokal ausloggen.
     } finally {
       clearEncryptionKey();
+      clearTeamKey();
       set({
         profile: null,
         session: null,
