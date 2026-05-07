@@ -13,20 +13,83 @@
 
 import { create } from 'zustand';
 import { supabase, ensureValidSession } from '@/lib/supabase';
-import { decryptField, hasEncryptionKey } from '@/lib/crypto';
+import { decryptField, encryptField, hasEncryptionKey } from '@/lib/crypto';
 import { useAuthStore } from './authStore';
-import { formatDateISO } from '@/lib/utils';
+import { formatDateISO, generateUUID } from '@/lib/utils';
 import type { TimeEntry } from '@/types';
 
 // Verschlüsselte Felder pro Eintrag — muss exakt mit v2-Schema matchen,
 // damit v2 + v3 dieselben Daten lesen können.
 const ENCRYPTED_FIELDS = ['stakeholder', 'projekt', 'taetigkeit', 'format', 'notiz'] as const;
 
+/** Eingabe-Shape für add() — id wird generiert, Timestamps gesetzt. */
+export interface NewEntryInput {
+  date: string;            // YYYY-MM-DD
+  stakeholder: string[];   // mind. eines, kann auch leer sein
+  projekt: string;
+  taetigkeit: string;
+  format: string;
+  start_time: string;      // HH:MM
+  end_time: string;        // HH:MM
+  duration_ms: number;
+  notiz?: string;
+}
+
+/** Patchable Felder für update() — alle optional. */
+export interface EntryPatch {
+  date?: string;
+  stakeholder?: string[];
+  projekt?: string;
+  taetigkeit?: string;
+  format?: string;
+  start_time?: string;
+  end_time?: string;
+  duration_ms?: number;
+  notiz?: string;
+}
+
 interface EntriesState {
   entries: TimeEntry[];
   loading: boolean;
   error: string | null;
   fetchEntries: () => Promise<void>;
+  addEntry: (input: NewEntryInput) => Promise<TimeEntry>;
+  updateEntry: (id: string, patch: EntryPatch) => Promise<TimeEntry>;
+  deleteEntry: (id: string) => Promise<void>;
+}
+
+/**
+ * Verschlüsselt die `ENCRYPTED_FIELDS` eines Entry-Inputs in das
+ * Supabase-Row-Format. Stakeholder wird als JSON-stringified-Array
+ * verschlüsselt (v2-kompatibel). Leere Felder bleiben Leerstring statt
+ * `enc:<...>`-Blob — das ist explizit, damit die DB beim Update einen
+ * geleerten Wert auch wirklich überschreibt.
+ */
+async function encryptEntryForServer(input: {
+  date: string;
+  stakeholder: string[];
+  projekt: string;
+  taetigkeit: string;
+  format: string;
+  start_time: string;
+  end_time: string;
+  duration_ms: number;
+  notiz?: string;
+}): Promise<Record<string, any>> {
+  return {
+    date: input.date,
+    start_time: input.start_time,
+    end_time: input.end_time,
+    duration_ms: input.duration_ms,
+    stakeholder:
+      input.stakeholder && input.stakeholder.length > 0
+        ? await encryptField(JSON.stringify(input.stakeholder))
+        : '',
+    projekt: input.projekt ? await encryptField(input.projekt) : '',
+    taetigkeit: input.taetigkeit ? await encryptField(input.taetigkeit) : '',
+    format: input.format ? await encryptField(input.format) : '',
+    notiz: input.notiz ? await encryptField(input.notiz) : '',
+  };
 }
 
 /**
@@ -85,7 +148,7 @@ async function decryptEntryRow(row: any): Promise<TimeEntry> {
   };
 }
 
-export const useEntriesStore = create<EntriesState>((set) => ({
+export const useEntriesStore = create<EntriesState>((set, get) => ({
   entries: [],
   loading: false,
   error: null,
@@ -127,5 +190,135 @@ export const useEntriesStore = create<EntriesState>((set) => ({
     } catch (e: any) {
       set({ error: e?.message || 'Fehler beim Laden', loading: false });
     }
+  },
+
+  // ───────────────────────────────────────────────────────────────────
+  // Write-Pfad (M2b) — alle synchron mit Server-Confirm.
+  //
+  // Im Gegensatz zu v2: KEIN optimistisches lokales Update vor dem
+  // Server-Roundtrip. Wenn der Server failed, bleibt der lokale State
+  // unangetastet und der User sieht den Fehler. Der Aufrufer (UI)
+  // dispatched seinen eigenen Spinner / Disable-Logik.
+  // ───────────────────────────────────────────────────────────────────
+
+  addEntry: async (input) => {
+    const profile = useAuthStore.getState().profile;
+    if (!profile?.id) throw new Error('Nicht authentifiziert');
+    if (!hasEncryptionKey()) throw new Error('Personal Key fehlt');
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    const id = generateUUID();
+    const now = new Date().toISOString();
+    const encrypted = await encryptEntryForServer(input);
+    const row = {
+      id,
+      user_id: profile.id,
+      ...encrypted,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+
+    const { error } = await supabase.from('time_entries').insert(row);
+    if (error) {
+      set({ error: error.message });
+      throw new Error(error.message);
+    }
+
+    // Lokalen Cache aktualisieren — INSERT-Pfad (an den Anfang weil
+    // die Liste date desc / start_time desc sortiert ist und neue
+    // Einträge meistens "heute" sind).
+    const newEntry: TimeEntry = {
+      id,
+      user_id: profile.id,
+      date: input.date,
+      stakeholder: input.stakeholder,
+      projekt: input.projekt,
+      taetigkeit: input.taetigkeit,
+      format: input.format,
+      start_time: input.start_time,
+      end_time: input.end_time,
+      duration_ms: input.duration_ms,
+      notiz: input.notiz || '',
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    set({ entries: [newEntry, ...get().entries], error: null });
+    return newEntry;
+  },
+
+  updateEntry: async (id, patch) => {
+    const profile = useAuthStore.getState().profile;
+    if (!profile?.id) throw new Error('Nicht authentifiziert');
+    if (!hasEncryptionKey()) throw new Error('Personal Key fehlt');
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    // Den existierenden Eintrag finden, mit Patch mergen — wir brauchen
+    // den vollen Stand, weil encryptEntryForServer alle Felder
+    // erwartet.
+    const existing = get().entries.find((e) => e.id === id);
+    if (!existing) throw new Error('Eintrag nicht gefunden');
+
+    const merged = {
+      date: patch.date ?? existing.date,
+      stakeholder: patch.stakeholder ?? existing.stakeholder,
+      projekt: patch.projekt ?? existing.projekt,
+      taetigkeit: patch.taetigkeit ?? existing.taetigkeit,
+      format: patch.format ?? existing.format,
+      start_time: patch.start_time ?? existing.start_time,
+      end_time: patch.end_time ?? existing.end_time,
+      duration_ms: patch.duration_ms ?? existing.duration_ms,
+      notiz: patch.notiz ?? existing.notiz,
+    };
+    const encrypted = await encryptEntryForServer(merged);
+    const now = new Date().toISOString();
+
+    const { error } = await supabase
+      .from('time_entries')
+      .update({ ...encrypted, updated_at: now })
+      .eq('id', id);
+    if (error) {
+      set({ error: error.message });
+      throw new Error(error.message);
+    }
+
+    const updated: TimeEntry = {
+      ...existing,
+      ...merged,
+      updated_at: now,
+    };
+    set({
+      entries: get().entries.map((e) => (e.id === id ? updated : e)),
+      error: null,
+    });
+    return updated;
+  },
+
+  deleteEntry: async (id) => {
+    const profile = useAuthStore.getState().profile;
+    if (!profile?.id) throw new Error('Nicht authentifiziert');
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    // Soft-Delete: setzen `deleted_at` per UPDATE, nicht echtes DELETE.
+    // Damit bleibt der Eintrag in DB für die Soft-Delete-Recovery
+    // ("versehentlich gelöscht?") in der Verwaltung (M5/M6).
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('time_entries')
+      .update({ deleted_at: now, updated_at: now })
+      .eq('id', id);
+    if (error) {
+      set({ error: error.message });
+      throw new Error(error.message);
+    }
+
+    set({
+      entries: get().entries.filter((e) => e.id !== id),
+      error: null,
+    });
   },
 }));

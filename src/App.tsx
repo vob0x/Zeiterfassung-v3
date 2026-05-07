@@ -1,16 +1,19 @@
 /**
  * v3 App-Shell. Routing/Layout kommen sukzessive (M3+).
  *
- * Aktueller Stand (M2a): nach Login werden Einträge + Master-Daten vom
- * Server geladen, der Splash zeigt Counts und ein paar Beispiele als
- * Smoke-Test, dass der Read-Pfad funktioniert.
+ * Aktueller Stand (M2b): nach Login werden Einträge + Master-Daten vom
+ * Server geladen. Splash hat einen Smoke-Test-Bereich: Mini-Form zum
+ * Anlegen eines Test-Eintrags, Delete-Button pro Zeile. Wenn das gegen
+ * die echte v2-Datenbank funktioniert (Insert + Soft-Delete propagiert
+ * sich auf v2 sichtbar), ist der Write-Pfad bewiesen.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
 import AuthWall from '@/components/AuthWall';
+import { formatDateISO } from '@/lib/utils';
 
 export default function App() {
   return (
@@ -28,6 +31,7 @@ function Splash() {
   const entriesLoading = useEntriesStore((s) => s.loading);
   const entriesError = useEntriesStore((s) => s.error);
   const fetchEntries = useEntriesStore((s) => s.fetchEntries);
+  const deleteEntry = useEntriesStore((s) => s.deleteEntry);
 
   const stakeholders = useMasterStore((s) => s.stakeholders);
   const projects = useMasterStore((s) => s.projects);
@@ -37,8 +41,6 @@ function Splash() {
   const masterError = useMasterStore((s) => s.error);
   const fetchMaster = useMasterStore((s) => s.fetchMaster);
 
-  // Beim Mount einmalig laden (Splash existiert nur authenticated, also
-  // sind Profile + Personal Key garantiert da).
   useEffect(() => {
     fetchEntries();
     fetchMaster();
@@ -59,7 +61,7 @@ function Splash() {
             >
               Zeiterfassung
             </div>
-            <div className="text-xs text-neutral-500">v3 — alpha · M2a</div>
+            <div className="text-xs text-neutral-500">v3 — alpha · M2b</div>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-neutral-400">
@@ -88,28 +90,43 @@ function Splash() {
           </div>
         )}
 
+        <AddEntryForm />
+
         {loading ? (
           <div className="text-sm text-neutral-400">Lade Daten vom Server…</div>
         ) : (
           <>
             <Card title="Einträge" count={entries.length}>
-              {entries.slice(0, 5).map((e) => (
-                <li key={e.id}>
-                  <span className="font-mono text-xs">{e.date}</span>{' '}
-                  {e.start_time}–{e.end_time}{' '}
-                  <span className="text-neutral-400">·</span>{' '}
-                  <span>
+              {entries.slice(0, 8).map((e) => (
+                <li
+                  key={e.id}
+                  className="flex items-center justify-between gap-2 py-0.5"
+                >
+                  <span className="truncate">
+                    <span className="font-mono text-xs">{e.date}</span>{' '}
+                    {e.start_time}–{e.end_time}{' '}
+                    <span className="text-neutral-500">·</span>{' '}
                     {Array.isArray(e.stakeholder)
                       ? e.stakeholder.join(', ')
-                      : e.stakeholder || '—'}
-                  </span>{' '}
-                  <span className="text-neutral-400">/</span>{' '}
-                  <span>{e.projekt || '—'}</span>
+                      : e.stakeholder || '—'}{' '}
+                    <span className="text-neutral-500">/</span>{' '}
+                    {e.projekt || '—'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Eintrag löschen?')) deleteEntry(e.id);
+                    }}
+                    className="text-xs text-neutral-500 hover:text-red-400 px-2 leading-none"
+                    aria-label="Löschen"
+                  >
+                    ×
+                  </button>
                 </li>
               ))}
-              {entries.length > 5 && (
+              {entries.length > 8 && (
                 <li className="text-neutral-500">
-                  … und {entries.length - 5} weitere
+                  … und {entries.length - 8} weitere
                 </li>
               )}
             </Card>
@@ -160,11 +177,177 @@ function Splash() {
         )}
 
         <div className="text-xs text-neutral-500 pt-4 border-t border-neutral-800">
-          M2a (Read-Pfad) durch. Als nächstes M2b — Write-Pfad mit
-          synchronem Server-Confirm.
+          M2b (Write-Pfad) durch — add/update/delete synchron mit
+          Server-Confirm. Als nächstes M3 — Timer + Manual-Entry mit
+          richtiger UI.
         </div>
       </div>
     </main>
+  );
+}
+
+/**
+ * Mini-Form für Smoke-Test des Write-Pfads. Predefinierte Defaults
+ * (heute, 09:00–10:00, Test-Stakeholder/Projekt/Tätigkeit/Format) damit
+ * man mit einem Klick einen Eintrag anlegen kann. Wird in M3 durch die
+ * echte ManualEntry-/Timer-UI ersetzt.
+ */
+function AddEntryForm() {
+  const addEntry = useEntriesStore((s) => s.addEntry);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState(() => ({
+    date: formatDateISO(new Date()),
+    start_time: '09:00',
+    end_time: '10:00',
+    stakeholder: 'Test-Stakeholder',
+    projekt: 'Test-Projekt',
+    taetigkeit: 'Test-Tätigkeit',
+    format: 'Einzelarbeit',
+    notiz: 'v3 smoke-test',
+  }));
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      // Dauer aus Zeitspanne ableiten
+      const [sh, sm] = form.start_time.split(':').map(Number);
+      const [eh, em] = form.end_time.split(':').map(Number);
+      let mins = eh * 60 + em - (sh * 60 + sm);
+      if (mins < 0) mins += 24 * 60;
+      const duration_ms = mins * 60_000;
+
+      await addEntry({
+        date: form.date,
+        stakeholder: form.stakeholder ? [form.stakeholder] : [],
+        projekt: form.projekt,
+        taetigkeit: form.taetigkeit,
+        format: form.format,
+        start_time: form.start_time,
+        end_time: form.end_time,
+        duration_ms,
+        notiz: form.notiz,
+      });
+    } catch (err: any) {
+      setError(err?.message || 'Fehler beim Anlegen');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <details
+      className="rounded-lg p-3"
+      style={{
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(201,169,98,0.18)',
+      }}
+    >
+      <summary className="cursor-pointer text-xs uppercase tracking-widest text-neutral-500">
+        Smoke-Test: Eintrag anlegen
+      </summary>
+      <form onSubmit={onSubmit} className="grid grid-cols-2 gap-2 text-xs mt-3">
+        <Field label="Datum">
+          <input
+            type="date"
+            value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+            className={inputClass}
+          />
+        </Field>
+        <div />
+        <Field label="Von">
+          <input
+            type="time"
+            value={form.start_time}
+            onChange={(e) => setForm({ ...form, start_time: e.target.value })}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Bis">
+          <input
+            type="time"
+            value={form.end_time}
+            onChange={(e) => setForm({ ...form, end_time: e.target.value })}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Stakeholder">
+          <input
+            type="text"
+            value={form.stakeholder}
+            onChange={(e) => setForm({ ...form, stakeholder: e.target.value })}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Projekt">
+          <input
+            type="text"
+            value={form.projekt}
+            onChange={(e) => setForm({ ...form, projekt: e.target.value })}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Tätigkeit">
+          <input
+            type="text"
+            value={form.taetigkeit}
+            onChange={(e) => setForm({ ...form, taetigkeit: e.target.value })}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Format">
+          <input
+            type="text"
+            value={form.format}
+            onChange={(e) => setForm({ ...form, format: e.target.value })}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Notiz">
+          <input
+            type="text"
+            value={form.notiz}
+            onChange={(e) => setForm({ ...form, notiz: e.target.value })}
+            className={inputClass}
+          />
+        </Field>
+        <div />
+        <div className="col-span-2 flex items-center justify-between mt-2">
+          {error && <span className="text-red-400">{error}</span>}
+          <button
+            type="submit"
+            disabled={busy}
+            className="ml-auto py-1.5 px-3 rounded font-medium transition-opacity disabled:opacity-50"
+            style={{ background: '#C9A962', color: '#1c1a17' }}
+          >
+            {busy ? 'sende…' : 'Hinzufügen'}
+          </button>
+        </div>
+      </form>
+    </details>
+  );
+}
+
+const inputClass =
+  'w-full px-2 py-1 rounded bg-neutral-800 border border-neutral-700 focus:border-amber-600 focus:outline-none';
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-[10px] uppercase tracking-widest text-neutral-500 mb-0.5">
+        {label}
+      </span>
+      {children}
+    </label>
   );
 }
 

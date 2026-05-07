@@ -11,3 +11,19 @@ export function formatDateISO(date: Date): string {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+/**
+ * UUID v4 — vom Browser wenn verfügbar (immer in modernen Setups), sonst
+ * mit Math.random-Fallback. Wird für neue Entry-IDs gebraucht; Supabase
+ * verlangt UUIDs als Primary Key.
+ */
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
