@@ -98,3 +98,55 @@ Wenn die Seite weiß bleibt und in der DevTools-Console 404s für `/assets/...` 
 ## Nächste Session
 
 Wir starten mit M1 (Auth + Encryption). Vorbedingung: Punkte 1-6 oben durch, Pages-URL erreichbar.
+
+---
+
+## Nachtrag M1 — Supabase-Credentials einrichten
+
+Ab M1 braucht v3 Zugang zur Supabase-Datenbank. Zwei Stellen, beide nötig:
+
+### Lokal — `.env.local`
+
+Die **gleichen** Credentials wie in v2 verwenden (v3 redet auf dieselbe Datenbank).
+
+```bash
+cd ~/Documents/zeiterfassung/zeiterfassung-v3
+
+# Aus v2 die Werte rüberziehen
+cp .env.example .env.local
+
+# Dann .env.local öffnen und VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY ausfüllen.
+# Die Werte stehen in v2 unter:
+#   ~/Documents/zeiterfassung/zeiterfassung-app/.env  (oder .env.local, je nach Setup)
+# Falls die Datei dort fehlt: Werte aus dem Supabase-Dashboard holen
+# (Project Settings → API → Project URL + anon-Public-Key)
+
+# Verifizieren — npm run dev sollte ohne Console-Error starten und das
+# Login-Screen zeigen
+npm run dev
+```
+
+`.env.local` ist in `.gitignore`, landet nicht im Repo.
+
+### CI — GitHub-Actions-Secrets
+
+Damit der Production-Build mit den Credentials läuft:
+
+1. Auf [github.com/vob0x/Zeiterfassung-v3](https://github.com/vob0x/Zeiterfassung-v3)
+2. **Settings** (oben) → **Secrets and variables** (links) → **Actions**
+3. **New repository secret** klicken, zwei Secrets anlegen:
+   - `VITE_SUPABASE_URL` — derselbe Wert wie in `.env.local`
+   - `VITE_SUPABASE_ANON_KEY` — derselbe Wert wie in `.env.local`
+4. Speichern
+
+Beim nächsten Push zieht der Workflow die Secrets automatisch (siehe `.github/workflows/deploy.yml`).
+
+### Verifikation
+
+Nach dem Push und grünem Action-Run:
+
+1. Auf `https://vob0x.github.io/Zeiterfassung-v3/` gehen
+2. Login-Screen erscheint
+3. Mit deinem v2-Account einloggen (gleicher Codename + Passwort)
+4. Du siehst „Eingeloggt als <codename>" → M1 funktioniert
+5. Tab schließen, neu öffnen → „Willkommen zurück, <codename>" mit Passwort-Prompt → Unlock-Flow funktioniert
