@@ -1,10 +1,11 @@
 /**
  * v3 App-Shell mit Tab-Navigation.
  *
- * Drei Tabs:
+ * Vier Tabs:
  *   - Timer:     TimerView mit DayRing + Coverage + Slots + ManualEntry-shortcut
  *   - Dashboard: KPI-Cards (M4a) + Breakdowns (M4b)
  *   - Einträge:  ManualEntry oben + Liste aller Einträge
+ *   - Team:      Setup (Create/Join) oder Connected-View (Mitglieder + Leave)
  *
  * Aktiver Tab kommt aus uiStore, persistiert in localStorage.
  */
@@ -13,6 +14,7 @@ import { useEffect, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
+import { useTeamStore } from '@/stores/teamStore';
 import { useTimerStore } from '@/stores/timerStore';
 import { useUiStore } from '@/stores/uiStore';
 import { useI18n } from '@/i18n';
@@ -21,6 +23,7 @@ import TabBar from '@/components/TabBar';
 import TimerView from '@/components/TimerView';
 import DashboardView from '@/components/DashboardView';
 import EntriesView from '@/components/EntriesView';
+import TeamView from '@/components/TeamView';
 import DayRing from '@/components/DayRing';
 import TrackingCoverage from '@/components/TrackingCoverage';
 import { computeLivePresenceMs, computeLiveWallClockMs } from '@/lib/wallclock';
@@ -44,6 +47,7 @@ function Shell() {
   const fetchEntries = useEntriesStore((s) => s.fetchEntries);
   const fetchMaster = useMasterStore((s) => s.fetchMaster);
   const initTimerFromStorage = useTimerStore((s) => s.initFromStorage);
+  const syncTeamData = useTeamStore((s) => s.syncTeamData);
   const activeTab = useUiStore((s) => s.activeTab);
 
   // Ein-Mal-Initialisierung nach Login
@@ -51,6 +55,7 @@ function Shell() {
     fetchEntries();
     fetchMaster();
     initTimerFromStorage();
+    syncTeamData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -66,7 +71,7 @@ function Shell() {
               {t('app.title')}
             </div>
             <div className="text-xs text-neutral-500">
-              {t('app.versionLabel')} · M4a
+              {t('app.versionLabel')} · M5a
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -88,6 +93,7 @@ function Shell() {
         {activeTab === 'timer' && <TimerTabContent />}
         {activeTab === 'dashboard' && <DashboardView />}
         {activeTab === 'entries' && <EntriesView />}
+        {activeTab === 'team' && <TeamView />}
       </div>
     </main>
   );

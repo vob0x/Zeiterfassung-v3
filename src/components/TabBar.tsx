@@ -1,5 +1,5 @@
 /**
- * TabBar — Top-Navigation zwischen Timer / Dashboard / Einträge.
+ * TabBar — Top-Navigation zwischen Timer / Dashboard / Einträge / Team.
  *
  * Aktiver Tab kommt aus uiStore (localStorage-persistiert), damit ein
  * Reload den User auf seinem letzten Tab landen lässt statt immer auf
@@ -9,7 +9,7 @@
 import { useUiStore, type TabId } from '@/stores/uiStore';
 import { useI18n } from '@/i18n';
 
-const TABS: TabId[] = ['timer', 'dashboard', 'entries'];
+const TABS: TabId[] = ['timer', 'dashboard', 'entries', 'team'];
 
 export default function TabBar() {
   const { t } = useI18n();

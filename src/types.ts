@@ -66,3 +66,31 @@ export type Stakeholder = MasterDataItem;
 export type Project = MasterDataItem;
 export type Activity = MasterDataItem;
 export type Format = MasterDataItem;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Team
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface Team {
+  id: string;
+  name: string;
+  invite_code: string;
+  creator_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamMember {
+  team_id: string;
+  user_id: string;
+  display_name: string | null;
+  joined_at: string;
+}
+
+export type ZeRole = 'admin' | 'mitarbeiter';
+
+export interface TeamMemberWithRole extends TeamMember {
+  /** Eigener Codename als Display, falls display_name leer. */
+  codename: string;
+  role: ZeRole;
+}

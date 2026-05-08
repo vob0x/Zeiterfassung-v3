@@ -123,6 +123,33 @@ export const de = {
     timer: 'Timer',
     dashboard: 'Dashboard',
     entries: 'Einträge',
+    team: 'Team',
+  },
+
+  team: {
+    title: 'Team',
+    setupHint:
+      'Erstelle ein neues Team oder tritt einem bestehenden bei. Mitglieder eines Teams teilen einen verschlüsselten Team-Schlüssel.',
+    create: 'Erstellen',
+    join: 'Beitreten',
+    nameLabel: 'Team-Name',
+    namePlaceholder: 'z.B. Kanzlei Müller',
+    creating: 'wird erstellt…',
+    createButton: 'Team erstellen',
+    inviteCodeLabel: 'Invite-Code',
+    joining: 'Beitritt…',
+    joinButton: 'Beitreten',
+    leave: 'Team verlassen',
+    leaveConfirm:
+      'Wirklich Team verlassen? Du verlierst Zugriff auf den Team-Schlüssel und damit auf gemeinsame Daten.',
+    copyInvite: 'Invite-Code kopieren',
+    copied: 'kopiert',
+    members: 'Mitglieder',
+    you: 'Du',
+    role: {
+      admin: 'Admin',
+      mitarbeiter: 'Mitarbeiter',
+    },
   },
 
   dashboard: {

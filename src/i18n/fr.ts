@@ -123,6 +123,33 @@ export const fr = {
     timer: 'Chrono',
     dashboard: 'Tableau de bord',
     entries: 'Entrées',
+    team: 'Équipe',
+  },
+
+  team: {
+    title: 'Équipe',
+    setupHint:
+      "Créez une nouvelle équipe ou rejoignez-en une existante. Les membres d'une équipe partagent une clé d'équipe chiffrée.",
+    create: 'Créer',
+    join: 'Rejoindre',
+    nameLabel: "Nom de l'équipe",
+    namePlaceholder: 'p.ex. Cabinet Müller',
+    creating: 'Création…',
+    createButton: "Créer l'équipe",
+    inviteCodeLabel: "Code d'invitation",
+    joining: 'Adhésion…',
+    joinButton: 'Rejoindre',
+    leave: "Quitter l'équipe",
+    leaveConfirm:
+      "Vraiment quitter l'équipe ? Vous perdez l'accès à la clé d'équipe et donc aux données partagées.",
+    copyInvite: "Copier le code d'invitation",
+    copied: 'copié',
+    members: 'Membres',
+    you: 'Vous',
+    role: {
+      admin: 'Admin',
+      mitarbeiter: 'Collaborateur',
+    },
   },
 
   dashboard: {

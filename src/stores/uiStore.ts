@@ -13,7 +13,7 @@ import { create } from 'zustand';
 import { generateUUID, getTodayISO } from '@/lib/utils';
 import type { Period } from '@/lib/dateRange';
 
-export type TabId = 'timer' | 'dashboard' | 'entries';
+export type TabId = 'timer' | 'dashboard' | 'entries' | 'team';
 
 export interface ToastMsg {
   id: string;
@@ -51,7 +51,13 @@ function loadActiveTab(): TabId {
   if (typeof window === 'undefined') return 'timer';
   try {
     const v = localStorage.getItem(ACTIVE_TAB_KEY);
-    if (v === 'timer' || v === 'dashboard' || v === 'entries') return v;
+    if (
+      v === 'timer' ||
+      v === 'dashboard' ||
+      v === 'entries' ||
+      v === 'team'
+    )
+      return v;
   } catch {
     // ignore
   }

@@ -248,6 +248,47 @@ export async function encryptTeamKeyWithPersonalKey(
 }
 
 /**
+ * Erzeugt einen frischen 256-Bit-AES-GCM-Team-Key und gibt ihn als
+ * base64-String zurück. Wird beim Erstellen eines neuen Teams
+ * aufgerufen — der Creator generiert den Schlüssel, wraped ihn dann
+ * doppelt (Personal + Transport) und legt beides in der DB.
+ */
+export async function generateTeamKey(): Promise<string> {
+  const key = await crypto.subtle.generateKey(
+    { name: 'AES-GCM', length: 256 },
+    /* extractable */ true,
+    ['encrypt', 'decrypt']
+  );
+  const exported = await crypto.subtle.exportKey('raw', key);
+  return btoa(String.fromCharCode(...new Uint8Array(exported)));
+}
+
+/**
+ * Wrap des Team Keys mit dem Transport-Key (= Invite-Code-derived).
+ * Landet in `teams.encrypted_team_key`. Pendant zu
+ * decryptTeamKeyFromTransport — symmetrisch (gleiches PBKDF2-Setup).
+ */
+export async function encryptTeamKeyForTransport(
+  teamKeyB64: string,
+  inviteCode: string,
+  teamId: string
+): Promise<string> {
+  const transportKey = await deriveTransportKey(inviteCode, teamId);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    transportKey,
+    Uint8Array.from(atob(teamKeyB64), (c) => c.charCodeAt(0))
+  );
+  const combined = new Uint8Array(
+    iv.length + new Uint8Array(encrypted).length
+  );
+  combined.set(iv);
+  combined.set(new Uint8Array(encrypted), iv.length);
+  return btoa(String.fromCharCode(...combined));
+}
+
+/**
  * Verschlüsselt einen Klartext-String mit dem Personal Key.
  * Format: `enc:<base64(iv|ciphertext)>`. iv ist 12 Byte (AES-GCM-Standard).
  *
