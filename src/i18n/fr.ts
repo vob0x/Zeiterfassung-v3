@@ -91,4 +91,20 @@ export const fr = {
     formatEinzelarbeit: 'Travail individuel',
     taetigkeitProduktiv: 'Productif',
   },
+
+  timer: {
+    title: 'Chrono',
+    add: 'Nouveau chrono',
+    empty: 'Aucun chrono actif. Appuyez sur « Nouveau chrono » pour démarrer.',
+    slot: 'piste',
+    slots: 'pistes',
+    pause: 'Pause',
+    resume: 'Reprendre',
+    stop: 'Arrêter & enregistrer',
+    remove: 'Annuler',
+    removeConfirm: 'Annuler ce chrono sans enregistrer ?',
+    endDay: 'Fin de journée',
+    endingDay: 'Fin de journée…',
+    tooShort: 'Chrono trop court — minimum 1 seconde.',
+  },
 };

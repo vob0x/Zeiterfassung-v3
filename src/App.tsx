@@ -12,9 +12,11 @@ import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
+import { useTimerStore } from '@/stores/timerStore';
 import { useI18n } from '@/i18n';
 import AuthWall from '@/components/AuthWall';
 import ManualEntry from '@/components/ManualEntry';
+import TimerView from '@/components/TimerView';
 
 export default function App() {
   return (
@@ -43,9 +45,15 @@ function Splash() {
   const masterError = useMasterStore((s) => s.error);
   const fetchMaster = useMasterStore((s) => s.fetchMaster);
 
+  // Ein-Mal-Initialisierung nach Login: Daten vom Server holen UND
+  // lokale Timer-Slots aus localStorage laden. Letzteres muss explizit
+  // hier passieren weil der timerStore beim Module-Load profile.id
+  // noch nicht kennt — siehe Kommentar in timerStore.initFromStorage.
+  const initTimerFromStorage = useTimerStore((s) => s.initFromStorage);
   useEffect(() => {
     fetchEntries();
     fetchMaster();
+    initTimerFromStorage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -64,7 +72,7 @@ function Splash() {
               {t('app.title')}
             </div>
             <div className="text-xs text-neutral-500">
-              {t('app.versionLabel')} · M3a
+              {t('app.versionLabel')} · M3b
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -93,6 +101,8 @@ function Splash() {
             {firstError}
           </div>
         )}
+
+        <TimerView />
 
         <ManualEntry />
 
@@ -190,8 +200,8 @@ function Splash() {
         )}
 
         <div className="text-xs text-neutral-500 pt-4 border-t border-neutral-800">
-          M3a (Manual-Entry mit Master-Daten-Pickern) durch. Als nächstes
-          M3b — TimerLane mit Click-Debounce für laufende Tracker.
+          M3b (Timer mit Click-Debounce, Server-First Stop) durch. Als
+          nächstes M4 — Dashboard mit KPIs, Coverage und Doppelring.
         </div>
       </div>
     </main>

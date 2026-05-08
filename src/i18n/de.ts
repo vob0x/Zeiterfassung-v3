@@ -91,6 +91,22 @@ export const de = {
     formatEinzelarbeit: 'Einzelarbeit',
     taetigkeitProduktiv: 'Produktiv',
   },
+
+  timer: {
+    title: 'Timer',
+    add: 'Neuer Timer',
+    empty: 'Keine laufenden Timer. Drücke „Neuer Timer" um zu starten.',
+    slot: 'Slot',
+    slots: 'Slots',
+    pause: 'Pause',
+    resume: 'Fortsetzen',
+    stop: 'Stop & Speichern',
+    remove: 'Verwerfen',
+    removeConfirm: 'Diesen Timer ohne Speichern verwerfen?',
+    endDay: 'Tag beenden',
+    endingDay: 'Beende Tag…',
+    tooShort: 'Timer zu kurz — mind. 1 Sekunde nötig.',
+  },
 } as const;
 
 export type Translations = typeof de;
