@@ -27,3 +27,34 @@ export function generateUUID(): string {
     return v.toString(16);
   });
 }
+
+/** Heute als YYYY-MM-DD (Local-Time). */
+export function getTodayISO(): string {
+  return formatDateISO(new Date());
+}
+
+/** ms → "H:MM" (z.B. "8:23"). Null-Sekunden weggelassen. */
+export function formatDurationHM(ms: number): string {
+  const totalMin = Math.floor(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
+/** ms → "H:MM:SS" (full precision für Live-Timer). */
+export function formatDurationHMS(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+/** ms → adaptive: <1h zeigt "MM min", ≥1h zeigt "H.Mh". KPI-Cards. */
+export function formatHoursAdaptive(ms: number): string {
+  if (ms <= 0) return '0';
+  if (ms < 60 * 60_000) {
+    return `${Math.round(ms / 60_000)}min`;
+  }
+  return `${(ms / 3_600_000).toFixed(1)}h`;
+}

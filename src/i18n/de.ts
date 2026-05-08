@@ -106,6 +106,60 @@ export const de = {
     endDay: 'Tag beenden',
     endingDay: 'Beende Tag…',
     tooShort: 'Timer zu kurz — mind. 1 Sekunde nötig.',
+    goalReached: 'Ziel erreicht',
+  },
+
+  tabs: {
+    timer: 'Timer',
+    dashboard: 'Dashboard',
+    entries: 'Einträge',
+  },
+
+  dashboard: {
+    title: 'Dashboard',
+    period: {
+      today: 'Heute',
+      week: 'Woche',
+      month: 'Monat',
+      year: 'Jahr',
+      all: 'Gesamt',
+      custom: 'Zeitraum',
+    },
+  },
+
+  kpi: {
+    today: 'Erfasst Heute',
+    period: 'Erfasst im Zeitraum',
+    entriesCount: 'Einträge',
+    todaySubtitle: 'Heute erfasst',
+    periodSubtitle: 'Im Zeitraum',
+    entriesSubtitle: 'Einträge',
+    tooltipToday:
+      'Summe aller heute getrackten Eintragsdauern. Bei parallelem Arbeiten zählt jede Aufgabe voll — z.B. zwei gleichzeitige Telefonate von je 30min ergeben 1h, obwohl nur 30min Wanduhr-Zeit vergangen ist.',
+    tooltipPeriod:
+      'Summe aller Eintragsdauern im gewählten Zeitraum. Gleiche Semantik wie „Erfasst Heute" — Multitasking-Anrechnung pro Aufgabe.',
+    tooltipEntries:
+      'Anzahl Einträge im Zeitraum (ohne Abwesenheits-Einträge wie Ferien/Krankheit).',
+  },
+
+  ring: {
+    presenceLabel: 'Präsenz (erster Eintrag → letzter Eintrag)',
+    trackedLabel: 'Getrackt (Wallclock-Union)',
+    tooltipPresence:
+      'Vom ersten bis zum letzten Eintrag heute, also dein Brutto-Arbeitsfenster. Lücken (Mittagspause, vergessen zu tracken) sind enthalten.',
+    tooltipTracked:
+      'Wallclock-Union der aktiven Tracker-Intervalle. So viele Stunden lief tatsächlich ein Timer (paralleles Arbeiten gilt als 1, nicht doppelt).',
+  },
+
+  coverage: {
+    label: 'Getrackt:',
+    of: 'von',
+    presence: 'Präsenz',
+    oneGap: '1 Lücke · {dur}',
+    nGaps: '{n} Lücken · {dur} insgesamt',
+    hint: 'Lücken ≥30min sind hervorgehoben — vermutlich vergessen zu tracken.',
+    tooltip:
+      'Während wie vieler Stunden des Arbeitstages lief tatsächlich ein Tracker. Differenz zur Präsenz = Lücken.',
   },
 } as const;
 

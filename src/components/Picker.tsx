@@ -152,17 +152,43 @@ export default function Picker(props: Props) {
   };
 
   return (
-    <div ref={wrapperRef} className="relative">
+    <div
+      ref={wrapperRef}
+      className="relative"
+      // min-width: 0 ist essentiell, damit der Picker im CSS-Grid-Cell
+      // schrumpfen kann. Ohne das erzwingt der intrinsische Content-
+      // Width des Buttons (= breite Chips + Chevron) eine Min-Width,
+      // die den Container-Overflow erzeugt.
+      style={{ minWidth: 0, width: '100%' }}
+    >
       <button
         type="button"
         onClick={() => !disabled && setOpen((v) => !v)}
         onBlur={onTriggerBlur}
         disabled={disabled}
         className="w-full px-2 py-1 rounded bg-neutral-800 border border-neutral-700 hover:border-neutral-600 focus:border-amber-600 focus:outline-none text-left text-xs flex items-center gap-1 min-h-[28px] disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{ minWidth: 0, overflow: 'hidden' }}
       >
-        <span className="flex-1 flex flex-wrap gap-1 items-center">
+        <span
+          className="flex-1 flex gap-1 items-center"
+          style={{
+            minWidth: 0,
+            overflowX: 'auto',
+            // Scrollbar verstecken (Chrome + Firefox + Safari)
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            whiteSpace: 'nowrap',
+          }}
+        >
           {selectedNames.length === 0 ? (
-            <span className="text-neutral-500">
+            <span
+              className="text-neutral-500"
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {placeholder || (isMulti ? t('picker.chooseMulti') : t('picker.chooseOne'))}
             </span>
           ) : (
@@ -173,14 +199,26 @@ export default function Picker(props: Props) {
                 style={{
                   background: 'rgba(201,169,98,0.18)',
                   color: '#C9A962',
+                  flexShrink: 0,
+                  maxWidth: '100%',
                 }}
               >
-                {name}
+                <span
+                  style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: '120px',
+                  }}
+                >
+                  {name}
+                </span>
                 <span
                   role="button"
                   onClick={(e) => removeChip(name, e)}
                   className="hover:opacity-70 cursor-pointer leading-none"
                   aria-label="Entfernen"
+                  style={{ flexShrink: 0 }}
                 >
                   <X size={10} />
                 </span>

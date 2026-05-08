@@ -98,7 +98,7 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
 
   return (
     <div
-      className="flex items-center gap-2 p-2 rounded"
+      className="rounded p-2.5"
       style={{
         background: slot.isPaused
           ? 'rgba(255,255,255,0.02)'
@@ -106,32 +106,91 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
         border: `1px solid ${slot.color}40`,
       }}
     >
-      {/* Color-Indicator + Elapsed-Zeit */}
-      <div className="flex items-center gap-2 min-w-[100px]">
-        <span
-          className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-          style={{
-            background: slot.color,
-            opacity: slot.isPaused ? 0.4 : 1,
-            // Kleine Pulse-Animation wenn aktiv
-            animation: slot.isPaused
-              ? 'none'
-              : 'timer-pulse 2s ease-in-out infinite',
-          }}
-        />
-        <span
-          className="font-mono text-xs tabular-nums"
-          style={{
-            color: slot.isPaused ? 'var(--text-muted)' : slot.color,
-            fontWeight: 600,
-          }}
-        >
-          {elapsed}
-        </span>
+      {/* Reihe 1: Color-Dot + Elapsed-Zeit links, Buttons rechts */}
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+            style={{
+              background: slot.color,
+              opacity: slot.isPaused ? 0.4 : 1,
+              animation: slot.isPaused
+                ? 'none'
+                : 'timer-pulse 2s ease-in-out infinite',
+            }}
+          />
+          <span
+            className="font-mono text-base tabular-nums"
+            style={{
+              color: slot.isPaused ? 'var(--text-muted)' : slot.color,
+              fontWeight: 700,
+              letterSpacing: '-0.01em',
+            }}
+          >
+            {elapsed}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {slot.isPaused ? (
+            <button
+              type="button"
+              onClick={() => resumeSlot(slot.id)}
+              disabled={slot.isStopping}
+              className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-40"
+              title={t('timer.resume')}
+              style={{ color: '#6EC49E' }}
+            >
+              <Play size={14} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => pauseSlot(slot.id)}
+              disabled={slot.isStopping}
+              className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-40"
+              title={t('timer.pause')}
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <Pause size={14} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleStop}
+            disabled={slot.isStopping || elapsedMs < 1000}
+            className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-40"
+            style={{
+              color: '#D4706E',
+              cursor: slot.isStopping ? 'wait' : undefined,
+            }}
+            title={t('timer.stop')}
+          >
+            <Square size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (
+                elapsedMs < 5000 ||
+                window.confirm(t('timer.removeConfirm'))
+              ) {
+                removeSlot(slot.id);
+              }
+            }}
+            disabled={slot.isStopping}
+            className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-40"
+            title={t('timer.remove')}
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <X size={14} />
+          </button>
+        </div>
       </div>
 
-      {/* Inline-Picker für Dimensionen */}
-      <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-1.5">
+      {/* Reihe 2: Picker-Grid — auf schmalen Screens 1 Spalte, ab sm 2,
+          ab lg alle 5 nebeneinander. Notiz spannt auf 1 Spalte mit. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-1.5">
         <Picker
           mode="multi"
           options={stakeholders.map((s) => ({ id: s.id, name: s.name }))}
@@ -185,63 +244,6 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
           placeholder={t('entry.notiz')}
           className="px-2 py-1 rounded bg-neutral-800 border border-neutral-700 focus:border-amber-600 focus:outline-none text-xs"
         />
-      </div>
-
-      {/* Aktions-Buttons rechts */}
-      <div className="flex items-center gap-1">
-        {slot.isPaused ? (
-          <button
-            type="button"
-            onClick={() => resumeSlot(slot.id)}
-            disabled={slot.isStopping}
-            className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-40"
-            title={t('timer.resume')}
-            style={{ color: '#6EC49E' }}
-          >
-            <Play size={14} />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => pauseSlot(slot.id)}
-            disabled={slot.isStopping}
-            className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-40"
-            title={t('timer.pause')}
-            style={{ color: 'var(--text-muted)' }}
-          >
-            <Pause size={14} />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={handleStop}
-          disabled={slot.isStopping || elapsedMs < 1000}
-          className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-40"
-          style={{
-            color: '#D4706E',
-            cursor: slot.isStopping ? 'wait' : undefined,
-          }}
-          title={t('timer.stop')}
-        >
-          <Square size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (
-              elapsedMs < 5000 ||
-              window.confirm(t('timer.removeConfirm'))
-            ) {
-              removeSlot(slot.id);
-            }
-          }}
-          disabled={slot.isStopping}
-          className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-40"
-          title={t('timer.remove')}
-          style={{ color: 'var(--text-muted)' }}
-        >
-          <X size={14} />
-        </button>
       </div>
     </div>
   );

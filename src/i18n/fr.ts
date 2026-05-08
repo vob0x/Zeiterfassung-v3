@@ -106,5 +106,59 @@ export const fr = {
     endDay: 'Fin de journée',
     endingDay: 'Fin de journée…',
     tooShort: 'Chrono trop court — minimum 1 seconde.',
+    goalReached: 'Objectif atteint',
+  },
+
+  tabs: {
+    timer: 'Chrono',
+    dashboard: 'Tableau de bord',
+    entries: 'Entrées',
+  },
+
+  dashboard: {
+    title: 'Tableau de bord',
+    period: {
+      today: "Aujourd'hui",
+      week: 'Semaine',
+      month: 'Mois',
+      year: 'Année',
+      all: 'Total',
+      custom: 'Période',
+    },
+  },
+
+  kpi: {
+    today: "Saisi aujourd'hui",
+    period: 'Saisi sur la période',
+    entriesCount: 'Entrées',
+    todaySubtitle: "Saisi aujourd'hui",
+    periodSubtitle: 'Sur la période',
+    entriesSubtitle: 'Entrées',
+    tooltipToday:
+      "Somme de toutes les durées d'entrées saisies aujourd'hui. Le multitâche est compté pleinement.",
+    tooltipPeriod:
+      "Somme de toutes les durées d'entrées dans la période. Même sémantique qu'« Saisi aujourd'hui ».",
+    tooltipEntries:
+      "Nombre d'entrées dans la période (sans les entrées d'absence).",
+  },
+
+  ring: {
+    presenceLabel: 'Présence (première entrée → dernière entrée)',
+    trackedLabel: 'Suivi (Wallclock-Union)',
+    tooltipPresence:
+      "De la première à la dernière entrée aujourd'hui — votre fenêtre brute de travail.",
+    tooltipTracked:
+      "Wallclock-Union des intervalles de chrono actif. Le multitâche compte 1, pas double.",
+  },
+
+  coverage: {
+    label: 'Suivi :',
+    of: 'sur',
+    presence: 'Présence',
+    oneGap: '1 trou · {dur}',
+    nGaps: '{n} trous · {dur} au total',
+    hint: 'Les trous ≥30min sont mis en évidence.',
+    tooltip:
+      "Combien d'heures de la journée un chrono tournait réellement.",
   },
 };
