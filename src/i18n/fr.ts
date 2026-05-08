@@ -92,6 +92,16 @@ export const fr = {
     taetigkeitProduktiv: 'Productif',
   },
 
+  fuzzy: {
+    placeholder: 'Tapez pour une suggestion…',
+    noMatch: "Aucun résultat dans l'historique",
+    clear: 'Effacer la recherche',
+  },
+
+  shortcuts: {
+    label: 'Plus fréquents',
+  },
+
   timer: {
     title: 'Chrono',
     add: 'Nouveau chrono',

@@ -92,6 +92,16 @@ export const de = {
     taetigkeitProduktiv: 'Produktiv',
   },
 
+  fuzzy: {
+    placeholder: 'Lostippen für Vorschlag…',
+    noMatch: 'Kein Treffer in der Eintrags-Historie',
+    clear: 'Suche leeren',
+  },
+
+  shortcuts: {
+    label: 'Häufigste',
+  },
+
   timer: {
     title: 'Timer',
     add: 'Neuer Timer',

@@ -17,6 +17,8 @@ import { useEntriesStore } from '@/stores/entriesStore';
 import { useI18n } from '@/i18n';
 import { formatDateISO } from '@/lib/utils';
 import TimerLane from './TimerLane';
+import FuzzySearch from './FuzzySearch';
+import QuickShortcuts from './QuickShortcuts';
 
 export default function TimerView() {
   const { t } = useI18n();
@@ -161,6 +163,14 @@ export default function TimerView() {
           </button>
         </div>
       </header>
+
+      {/* FuzzySearch + QuickShortcuts: hauptsächlicher Einstieg fürs
+          Erstellen wiederkehrender Timer. Beide derived state aus
+          entriesStore — kein separater Sync-State, kein User-Pinning. */}
+      <div className="space-y-2 mb-3">
+        <FuzzySearch />
+        <QuickShortcuts />
+      </div>
 
       {error && (
         <div
