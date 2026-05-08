@@ -9,8 +9,11 @@
  * Stakeholdern zählt unter beiden voll (Naive-Attribution). Andere
  * Dimensionen sind single-valued, kein Multistakeholder-Edge.
  *
- * Bar-Visualisierung normalisiert auf das Maximum der Liste — der
- * längste Balken ist 100% breit, andere proportional.
+ * Bar-Visualisierung: Anteil am Gesamttotal der Liste. Damit summieren
+ * sich die Prozent für Single-Value-Dimensionen auf 100%. Bei
+ * Stakeholdern mit Multi-Attribution kann das Total der Buckets über
+ * der Netto-Erfassungszeit liegen — die Prozente bleiben korrekt
+ * relativ zueinander, summieren aber weiterhin zu 100%.
  */
 
 import { useMemo } from 'react';
@@ -77,7 +80,7 @@ export default function BreakdownList({
     return list;
   }, [entries, dimension]);
 
-  const max = rows.length > 0 ? rows[0].hours : 1;
+  const total = rows.reduce((acc, r) => acc + r.hours, 0);
   const visible = maxRows == null ? rows : rows.slice(0, maxRows);
   const truncated = maxRows != null && rows.length > maxRows;
 
@@ -101,54 +104,94 @@ export default function BreakdownList({
           —
         </div>
       ) : (
-        <ul className="space-y-1">
-          {visible.map((r) => (
-            <li
-              key={r.key}
-              className="text-xs"
-              style={{ color: 'var(--text)' }}
-            >
-              <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                <span
-                  className="truncate"
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {r.key}
-                </span>
-                <span
-                  className="font-mono"
-                  style={{ color: 'var(--text-muted)', flexShrink: 0 }}
-                >
-                  {formatHoursAdaptive(r.hours * 3_600_000)}
-                </span>
-              </div>
-              {/* Bar */}
-              <div
-                style={{
-                  height: 4,
-                  borderRadius: 2,
-                  background: `${accent}15`,
-                  overflow: 'hidden',
-                }}
+        <ul className="space-y-1.5">
+          {visible.map((r) => {
+            const pct = total > 0 ? (r.hours / total) * 100 : 0;
+            const pctRounded = Math.round(pct);
+            const barWidth = Math.max(2, pct);
+            // Prozent-Label nur in der Bar, wenn die Bar breit genug ist —
+            // sonst rechts daneben hinter der Stunden-Angabe.
+            const labelInside = pct >= 12;
+            return (
+              <li
+                key={r.key}
+                className="text-xs"
+                style={{ color: 'var(--text)' }}
               >
+                <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                  <span
+                    className="truncate"
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {r.key}
+                  </span>
+                  <span
+                    className="font-mono"
+                    style={{
+                      color: 'var(--text-muted)',
+                      flexShrink: 0,
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      gap: 6,
+                    }}
+                  >
+                    {!labelInside && pctRounded > 0 && (
+                      <span style={{ fontSize: 10, opacity: 0.7 }}>
+                        {pctRounded}%
+                      </span>
+                    )}
+                    <span>{formatHoursAdaptive(r.hours * 3_600_000)}</span>
+                  </span>
+                </div>
+                {/* Bar */}
                 <div
                   style={{
-                    width: `${Math.max(2, (r.hours / max) * 100)}%`,
-                    height: '100%',
-                    background: accent,
-                    opacity: 0.7,
-                    transition: 'width 0.4s ease',
+                    height: 14,
+                    borderRadius: 3,
+                    background: `${accent}15`,
+                    overflow: 'hidden',
+                    position: 'relative',
                   }}
-                />
-              </div>
-            </li>
-          ))}
+                >
+                  <div
+                    style={{
+                      width: `${barWidth}%`,
+                      height: '100%',
+                      background: accent,
+                      opacity: 0.75,
+                      transition: 'width 0.4s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-end',
+                      paddingRight: labelInside ? 5 : 0,
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    {labelInside && (
+                      <span
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 600,
+                          color: '#1c1a17',
+                          letterSpacing: '0.02em',
+                          fontFamily:
+                            'ui-monospace, SFMono-Regular, Menlo, monospace',
+                        }}
+                      >
+                        {pctRounded}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
           {truncated && (
             <li className="text-xs italic" style={{ color: 'var(--text-muted)' }}>
               … +{rows.length - (maxRows ?? 0)}
