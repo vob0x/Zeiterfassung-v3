@@ -35,6 +35,7 @@ export default function DashboardView() {
   const period = useUiStore((s) => s.period);
   const dateFrom = useUiStore((s) => s.dateFrom);
   const dateTo = useUiStore((s) => s.dateTo);
+  const drillDown = useUiStore((s) => s.drillDownToEntries);
 
   const range = useMemo(
     () => getPeriodRange(period, { customFrom: dateFrom, customTo: dateTo }),
@@ -89,24 +90,32 @@ export default function DashboardView() {
           entries={periodEntriesNonAbsence}
           dimension="stakeholder"
           accent="#5BA4D9"
+          onItemClick={(value) =>
+            drillDown({ dimension: 'stakeholder', value })
+          }
         />
         <BreakdownList
           title={t('list.projectsCount')}
           entries={periodEntriesNonAbsence}
           dimension="projekt"
           accent="#6EC49E"
+          onItemClick={(value) => drillDown({ dimension: 'projekt', value })}
         />
         <BreakdownList
           title={t('list.activitiesCount')}
           entries={periodEntriesNonAbsence}
           dimension="taetigkeit"
           accent="#9B8EC4"
+          onItemClick={(value) =>
+            drillDown({ dimension: 'taetigkeit', value })
+          }
         />
         <BreakdownList
           title={t('list.formatsCount')}
           entries={periodEntriesNonAbsence}
           dimension="format"
           accent="#D4956A"
+          onItemClick={(value) => drillDown({ dimension: 'format', value })}
         />
       </div>
 

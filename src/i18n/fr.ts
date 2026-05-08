@@ -79,6 +79,12 @@ export const fr = {
     nMore: 'autres',
   },
 
+  entries: {
+    filterLabel: 'Filtre',
+    clearFilter: 'Effacer le filtre',
+    filterEmpty: 'Aucune entrée pour ce filtre.',
+  },
+
   toast: {
     saved: 'Enregistré',
     deleted: 'Supprimé',

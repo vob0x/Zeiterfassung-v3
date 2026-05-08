@@ -79,6 +79,12 @@ export const de = {
     nMore: 'weitere',
   },
 
+  entries: {
+    filterLabel: 'Filter',
+    clearFilter: 'Filter entfernen',
+    filterEmpty: 'Keine Einträge im aktiven Filter.',
+  },
+
   toast: {
     saved: 'Gespeichert',
     deleted: 'Gelöscht',

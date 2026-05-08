@@ -1,23 +1,104 @@
 /**
  * EntriesView — der Einträge-Tab.
  *
- * M4a-Scope: ManualEntry oben (für nachträgliches Erfassen), Liste
- * aller Einträge unten mit Delete-Button. Filter + Inline-Edit + Sort
- * kommen in M4b/M5.
+ * ManualEntry oben (für nachträgliches Erfassen), Liste aller Einträge
+ * unten mit Delete-Button. Wenn ein Drill-Down-Filter im uiStore aktiv
+ * ist (z.B. nach Klick auf einen Stakeholder im Dashboard), wird oben
+ * ein Filter-Chip angezeigt und die Liste entsprechend gefiltert.
  */
 
+import { useMemo } from 'react';
+import { X } from 'lucide-react';
 import { useEntriesStore } from '@/stores/entriesStore';
+import { useUiStore } from '@/stores/uiStore';
 import { useI18n } from '@/i18n';
 import ManualEntry from './ManualEntry';
+import type { TimeEntry } from '@/types';
+import type { EntriesFilter } from '@/stores/uiStore';
+
+/**
+ * Prüft, ob ein Eintrag dem Drill-Down-Filter entspricht. Stakeholder
+ * ist multi-valued (Naive-Attribution) — Eintrag matched, wenn der Wert
+ * in der Liste auftaucht.
+ */
+function entryMatchesFilter(e: TimeEntry, f: EntriesFilter): boolean {
+  if (f.dimension === 'stakeholder') {
+    const list = Array.isArray(e.stakeholder)
+      ? e.stakeholder
+      : e.stakeholder
+        ? [e.stakeholder]
+        : [];
+    return list.includes(f.value);
+  }
+  return (e[f.dimension] || '') === f.value;
+}
 
 export default function EntriesView() {
   const { t } = useI18n();
   const entries = useEntriesStore((s) => s.entries);
   const deleteEntry = useEntriesStore((s) => s.deleteEntry);
+  const filter = useUiStore((s) => s.entriesFilter);
+  const clearFilter = useUiStore((s) => s.clearEntriesFilter);
+
+  const filtered = useMemo(() => {
+    if (!filter) return entries;
+    return entries.filter((e) => entryMatchesFilter(e, filter));
+  }, [entries, filter]);
+
+  const filterLabel = filter
+    ? t(`entry.${filter.dimension}`) // 'Stakeholder' / 'Projekt' / ...
+    : '';
 
   return (
     <section className="space-y-4">
       <ManualEntry />
+
+      {filter && (
+        <div
+          className="flex items-center justify-between gap-2 px-3 py-2 rounded"
+          style={{
+            background: 'rgba(201,169,98,0.08)',
+            border: '1px solid rgba(201,169,98,0.30)',
+          }}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="text-[10px] uppercase tracking-widest"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              {t('entries.filterLabel')}
+            </span>
+            <span
+              className="text-xs"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              {filterLabel}:
+            </span>
+            <span
+              className="text-xs font-medium truncate"
+              style={{ color: '#C9A962' }}
+            >
+              {filter.value}
+            </span>
+            <span
+              className="text-[10px] font-mono"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              · {filtered.length}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={clearFilter}
+            className="flex items-center gap-1 text-xs px-2 py-0.5 rounded hover:opacity-80"
+            style={{ color: 'var(--text-muted)' }}
+            aria-label={t('entries.clearFilter')}
+          >
+            <X size={12} />
+            {t('entries.clearFilter')}
+          </button>
+        </div>
+      )}
 
       <div
         className="rounded-lg p-4"
@@ -31,11 +112,11 @@ export default function EntriesView() {
             {t('list.entriesCount')}
           </span>
           <span className="text-2xl font-bold" style={{ color: '#C9A962' }}>
-            {entries.length}
+            {filtered.length}
           </span>
         </div>
         <ul className="text-xs text-neutral-300 space-y-1">
-          {entries.slice(0, 50).map((e) => (
+          {filtered.slice(0, 50).map((e) => (
             <li
               key={e.id}
               className="flex items-center justify-between gap-2 py-0.5"
@@ -63,9 +144,14 @@ export default function EntriesView() {
               </button>
             </li>
           ))}
-          {entries.length > 50 && (
+          {filtered.length > 50 && (
             <li className="text-neutral-500">
-              … {entries.length - 50} {t('list.nMore')}
+              … {filtered.length - 50} {t('list.nMore')}
+            </li>
+          )}
+          {filtered.length === 0 && filter && (
+            <li className="italic text-neutral-500">
+              {t('entries.filterEmpty')}
             </li>
           )}
         </ul>

@@ -15,6 +15,23 @@ import type { Period } from '@/lib/dateRange';
 
 export type TabId = 'timer' | 'dashboard' | 'entries' | 'team';
 
+/**
+ * Drill-Down-Filter für den Einträge-Tab. Wird vom Dashboard gesetzt,
+ * wenn der User auf einen Stakeholder/Projekt/etc. klickt — und schaltet
+ * dabei in den Einträge-Tab. Bewusst nicht persistiert, damit ein Reload
+ * wieder die volle Liste zeigt.
+ */
+export type EntriesFilterDim =
+  | 'stakeholder'
+  | 'projekt'
+  | 'taetigkeit'
+  | 'format';
+
+export interface EntriesFilter {
+  dimension: EntriesFilterDim;
+  value: string;
+}
+
 export interface ToastMsg {
   id: string;
   type: 'success' | 'error' | 'info' | 'warning';
@@ -33,6 +50,12 @@ interface UiState {
   dateTo: string;
   setPeriod: (p: Period) => void;
   setCustomRange: (from: string, to: string) => void;
+
+  /** Einträge-Tab Drill-Down-Filter. null = ungefiltert. */
+  entriesFilter: EntriesFilter | null;
+  /** Filter setzen UND in den Einträge-Tab springen. */
+  drillDownToEntries: (filter: EntriesFilter) => void;
+  clearEntriesFilter: () => void;
 
   toasts: ToastMsg[];
   showToast: (
@@ -136,6 +159,13 @@ export const useUiStore = create<UiState>((set, get) => {
         localStorage.setItem(PERIOD_KEY, 'custom');
       } catch {}
     },
+
+    entriesFilter: null,
+    drillDownToEntries: (filter) => {
+      saveActiveTab('entries');
+      set({ entriesFilter: filter, activeTab: 'entries' });
+    },
+    clearEntriesFilter: () => set({ entriesFilter: null }),
 
     toasts: [],
     showToast: (message, type = 'info', durationMs = 4000) => {

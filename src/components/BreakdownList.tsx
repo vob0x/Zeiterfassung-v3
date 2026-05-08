@@ -32,6 +32,12 @@ interface Props {
   maxRows?: number | null;
   /** Akzent-Farbe (Tailwind/CSS-Color). */
   accent?: string;
+  /**
+   * Optional: Click-Handler pro Item. Wenn gesetzt, werden Zeilen
+   * als Buttons gerendert (Cursor + Hover-State). value = der
+   * angezeigte Schlüssel (Stakeholder-Name, Projekt etc.).
+   */
+  onItemClick?: (value: string) => void;
 }
 
 interface Row {
@@ -45,6 +51,7 @@ export default function BreakdownList({
   dimension,
   maxRows = 10,
   accent = '#C9A962',
+  onItemClick,
 }: Props) {
   const rows = useMemo<Row[]>(() => {
     const buckets = new Map<string, number>();
@@ -112,12 +119,11 @@ export default function BreakdownList({
             // Prozent-Label nur in der Bar, wenn die Bar breit genug ist —
             // sonst rechts daneben hinter der Stunden-Angabe.
             const labelInside = pct >= 12;
-            return (
-              <li
-                key={r.key}
-                className="text-xs"
-                style={{ color: 'var(--text)' }}
-              >
+            // Der Platzhalter-Bucket "—" wird nicht klickbar gerendert.
+            const clickable = !!onItemClick && r.key !== '—';
+
+            const content = (
+              <>
                 <div className="flex items-baseline justify-between gap-2 mb-0.5">
                   <span
                     className="truncate"
@@ -127,6 +133,7 @@ export default function BreakdownList({
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
+                      textAlign: 'left',
                     }}
                   >
                     {r.key}
@@ -189,6 +196,42 @@ export default function BreakdownList({
                     )}
                   </div>
                 </div>
+              </>
+            );
+
+            return (
+              <li
+                key={r.key}
+                className="text-xs"
+                style={{ color: 'var(--text)' }}
+              >
+                {clickable ? (
+                  <button
+                    type="button"
+                    onClick={() => onItemClick!(r.key)}
+                    className="w-full text-left rounded transition-colors"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      padding: '2px 4px',
+                      margin: '-2px -4px',
+                      color: 'inherit',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background =
+                        'rgba(255,255,255,0.04)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                    title={r.key}
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  content
+                )}
               </li>
             );
           })}
