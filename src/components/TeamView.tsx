@@ -11,10 +11,11 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Copy, LogOut, Users } from 'lucide-react';
+import { Copy, LogOut, Users, Trash2 } from 'lucide-react';
 import { useTeamStore } from '@/stores/teamStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useI18n } from '@/i18n';
+import type { ZeRole } from '@/types';
 
 export default function TeamView() {
   const { t } = useI18n();
@@ -239,10 +240,16 @@ function ConnectedView() {
   const team = useTeamStore((s) => s.team);
   const members = useTeamStore((s) => s.members);
   const leaveTeam = useTeamStore((s) => s.leaveTeam);
+  const setMemberRole = useTeamStore((s) => s.setMemberRole);
+  const removeMember = useTeamStore((s) => s.removeMember);
   const profile = useAuthStore((s) => s.profile);
   const [copied, setCopied] = useState(false);
 
   if (!team) return null;
+
+  // Bin ich Admin? Steuert ob Rollen-Dropdown + Remove-Button erscheinen.
+  const myRole = members.find((m) => m.user_id === profile?.id)?.role;
+  const isAdmin = myRole === 'admin';
 
   const onCopyInvite = async () => {
     try {
@@ -258,6 +265,24 @@ function ConnectedView() {
     if (!confirm(t('team.leaveConfirm'))) return;
     try {
       await leaveTeam();
+    } catch {
+      // Error im Store
+    }
+  };
+
+  const onChangeRole = async (userId: string, role: ZeRole) => {
+    try {
+      await setMemberRole(userId, role);
+    } catch {
+      // Error im Store
+    }
+  };
+
+  const onRemoveMember = async (userId: string, codename: string) => {
+    if (!confirm(t('team.removeMemberConfirm').replace('{name}', codename)))
+      return;
+    try {
+      await removeMember(userId);
     } catch {
       // Error im Store
     }
@@ -351,14 +376,18 @@ function ConnectedView() {
         <ul className="space-y-1.5">
           {members.map((m) => {
             const isYou = m.user_id === profile?.id;
+            const isCreator = m.user_id === team.creator_id;
             return (
               <li
                 key={m.user_id}
                 className="flex items-center justify-between gap-2 py-1"
               >
-                <span className="flex items-center gap-2">
+                <span
+                  className="flex items-center gap-2 min-w-0"
+                  style={{ flex: 1 }}
+                >
                   <span
-                    className="text-sm font-medium"
+                    className="text-sm font-medium truncate"
                     style={{ color: 'var(--text)' }}
                   >
                     {m.codename}
@@ -366,21 +395,74 @@ function ConnectedView() {
                   {isYou && (
                     <span
                       className="text-[10px] uppercase tracking-widest"
-                      style={{ color: '#C9A962' }}
+                      style={{ color: '#C9A962', flexShrink: 0 }}
                     >
                       ({t('team.you')})
                     </span>
                   )}
                 </span>
+
                 <span
-                  className="text-[10px] uppercase tracking-widest"
-                  style={{
-                    color:
-                      m.role === 'admin' ? '#C9A962' : 'var(--text-muted)',
-                    fontWeight: m.role === 'admin' ? 600 : 400,
-                  }}
+                  className="flex items-center gap-2"
+                  style={{ flexShrink: 0 }}
                 >
-                  {t(`team.role.${m.role}`)}
+                  {isAdmin && !isYou ? (
+                    // Admin-Edit-Mode: Dropdown statt statischem Label
+                    <select
+                      value={m.role}
+                      onChange={(e) =>
+                        onChangeRole(m.user_id, e.target.value as ZeRole)
+                      }
+                      className="text-[10px] uppercase tracking-widest px-1.5 py-0.5 rounded font-mono"
+                      style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid var(--border)',
+                        color:
+                          m.role === 'admin'
+                            ? '#C9A962'
+                            : 'var(--text-muted)',
+                        fontWeight: m.role === 'admin' ? 600 : 400,
+                      }}
+                      aria-label={t('team.changeRole')}
+                    >
+                      <option value="admin">
+                        {t('team.role.admin')}
+                      </option>
+                      <option value="mitarbeiter">
+                        {t('team.role.mitarbeiter')}
+                      </option>
+                    </select>
+                  ) : (
+                    <span
+                      className="text-[10px] uppercase tracking-widest"
+                      style={{
+                        color:
+                          m.role === 'admin'
+                            ? '#C9A962'
+                            : 'var(--text-muted)',
+                        fontWeight: m.role === 'admin' ? 600 : 400,
+                      }}
+                    >
+                      {t(`team.role.${m.role}`)}
+                    </span>
+                  )}
+
+                  {isAdmin && !isYou && !isCreator && (
+                    // Remove-Button: Admin kann andere Mitglieder entfernen.
+                    // Creator-Schutz: der Original-Creator des Teams kann
+                    // nicht über die UI rausgeworfen werden — er bleibt
+                    // immer Admin-Fallback via teams.creator_id.
+                    <button
+                      type="button"
+                      onClick={() => onRemoveMember(m.user_id, m.codename)}
+                      className="p-1 rounded hover:bg-neutral-800"
+                      style={{ color: '#D4706E' }}
+                      title={t('team.removeMember')}
+                      aria-label={t('team.removeMember')}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
                 </span>
               </li>
             );

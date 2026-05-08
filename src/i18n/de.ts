@@ -156,6 +156,10 @@ export const de = {
       admin: 'Admin',
       mitarbeiter: 'Mitarbeiter',
     },
+    changeRole: 'Rolle ändern',
+    removeMember: 'Mitglied entfernen',
+    removeMemberConfirm:
+      '{name} wirklich aus dem Team entfernen? Die Person verliert den Zugriff auf den Team-Schlüssel.',
   },
 
   dashboard: {

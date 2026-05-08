@@ -156,6 +156,10 @@ export const fr = {
       admin: 'Admin',
       mitarbeiter: 'Collaborateur',
     },
+    changeRole: 'Changer le rôle',
+    removeMember: 'Retirer le membre',
+    removeMemberConfirm:
+      "Vraiment retirer {name} de l'équipe ? La personne perdra l'accès à la clé d'équipe.",
   },
 
   dashboard: {

@@ -45,6 +45,16 @@ interface TeamState {
   createTeam: (name: string) => Promise<void>;
   joinTeam: (inviteCode: string) => Promise<void>;
   leaveTeam: () => Promise<void>;
+  /**
+   * Admin: Rolle eines Mitglieds ändern. RLS verhindert nicht-Admin-
+   * Aufrufe — wir validieren trotzdem clientseitig für klare Fehler.
+   */
+  setMemberRole: (userId: string, role: ZeRole) => Promise<void>;
+  /**
+   * Admin: Mitglied aus dem Team entfernen. Löscht ze_roles + team_members
+   * für den Ziel-User. Self-Removal nicht erlaubt — dafür gibt's leaveTeam.
+   */
+  removeMember: (userId: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -363,6 +373,94 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     } catch (e: any) {
       set({
         error: e?.message || 'Verlassen fehlgeschlagen',
+        loading: false,
+      });
+      throw e;
+    }
+  },
+
+  setMemberRole: async (userId: string, role: ZeRole) => {
+    const profile = useAuthStore.getState().profile;
+    const team = get().team;
+    if (!profile?.id || !team) throw new Error('Nicht in einem Team');
+
+    // Clientseitige Vorab-Prüfung — RLS würde sonst zwar greifen, aber
+    // ein klarer Fehler ist besser als ein stilles Forbidden.
+    const me = get().members.find((m) => m.user_id === profile.id);
+    if (me?.role !== 'admin') throw new Error('Nur Admins dürfen Rollen ändern');
+
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    set({ loading: true, error: null });
+    try {
+      // Upsert — falls keine ze_roles-Row existiert, anlegen.
+      const { error } = await supabase
+        .from('ze_roles')
+        .upsert(
+          {
+            team_id: team.id,
+            user_id: userId,
+            role,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'team_id,user_id' }
+        );
+      if (error) throw new Error(error.message);
+
+      // Lokal-State updaten — kein voller resync nötig
+      set({
+        members: get().members.map((m) =>
+          m.user_id === userId ? { ...m, role } : m
+        ),
+        loading: false,
+      });
+    } catch (e: any) {
+      set({
+        error: e?.message || 'Rollen-Update fehlgeschlagen',
+        loading: false,
+      });
+      throw e;
+    }
+  },
+
+  removeMember: async (userId: string) => {
+    const profile = useAuthStore.getState().profile;
+    const team = get().team;
+    if (!profile?.id || !team) throw new Error('Nicht in einem Team');
+    if (userId === profile.id) {
+      throw new Error('Dich selbst kannst du nicht entfernen — nutze "Team verlassen"');
+    }
+
+    const me = get().members.find((m) => m.user_id === profile.id);
+    if (me?.role !== 'admin') throw new Error('Nur Admins dürfen Mitglieder entfernen');
+
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    set({ loading: true, error: null });
+    try {
+      // ze_roles erst (FK-safe), dann team_members
+      await supabase
+        .from('ze_roles')
+        .delete()
+        .eq('team_id', team.id)
+        .eq('user_id', userId);
+
+      const { error } = await supabase
+        .from('team_members')
+        .delete()
+        .eq('team_id', team.id)
+        .eq('user_id', userId);
+      if (error) throw new Error(error.message);
+
+      set({
+        members: get().members.filter((m) => m.user_id !== userId),
+        loading: false,
+      });
+    } catch (e: any) {
+      set({
+        error: e?.message || 'Entfernen fehlgeschlagen',
         loading: false,
       });
       throw e;
