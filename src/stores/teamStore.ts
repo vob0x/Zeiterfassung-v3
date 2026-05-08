@@ -2,13 +2,18 @@
  * teamStore — Team-Membership-State.
  *
  * M5a-Scope:
- *   - createTeam: Generate Team Key, doppelt wrappen (Personal + Transport),
- *     Team + team_members-Row anlegen, sich als Admin in ze_roles eintragen
- *   - joinTeam: per Invite-Code Team finden, Team Key via Transport-Key
- *     entschlüsseln, mit Personal Key gewrapt in team_members ablegen,
- *     als Mitarbeiter in ze_roles eintragen
+ *   - createTeam: Team Key generieren, doppelt wrappen (Personal +
+ *     Transport), teams + team_members-Row anlegen. Admin-Rolle setzt
+ *     ein DB-Trigger automatisch.
+ *   - joinTeam: Team via Invite-Code finden, Team Key via Transport-Key
+ *     entschlüsseln, mit Personal Key gewrapped in team_members ablegen.
+ *     Mitarbeiter-Rolle (oder Admin, falls Re-Join des Creators) setzt
+ *     ein DB-Trigger automatisch.
  *   - leaveTeam: team_members + ze_roles-Row löschen, Team Key clearen
- *   - syncTeamData: aktuelles Team + Mitglieder + Codenames laden
+ *   - syncTeamData: aktuelles Team + Mitglieder + Codenames + Rollen laden
+ *
+ * Rollen werden serverseitig per Trigger autoritativ verwaltet — der
+ * Client schreibt nicht direkt in ze_roles. Siehe supabase-migrations.
  *
  * M5b kommt: Rollen-Management (set/get role), Cross-Member-Daten im
  * Dashboard, Member-Removal als Admin.
@@ -218,17 +223,11 @@ export const useTeamStore = create<TeamState>((set, get) => ({
       });
       if (memberError) throw new Error(memberError.message);
 
-      // 5. ze_roles: Creator bekommt Admin-Rolle
-      const { error: roleError } = await supabase.from('ze_roles').insert({
-        team_id: teamId,
-        user_id: profile.id,
-        role: 'admin',
-      });
-      if (roleError) {
-        // Nicht fatal — Team existiert, User ist Mitglied. Rolle kann
-        // später nachgetragen werden. Loggen aber nicht throwen.
-        console.warn('[Team] ze_roles insert failed:', roleError.message);
-      }
+      // 5. ze_roles wird automatisch via DB-Trigger gesetzt:
+      //    - ze_seed_creator_admin_role_trg (AFTER INSERT ON teams)
+      //      → Creator bekommt 'admin'
+      //    - ze_seed_member_role_trg (AFTER INSERT ON team_members)
+      //      → kein Konflikt, ON CONFLICT DO NOTHING
 
       // 6. Team Key in Session
       setTeamKey(teamKeyB64);
@@ -306,15 +305,9 @@ export const useTeamStore = create<TeamState>((set, get) => ({
           });
         if (memberErr) throw new Error(memberErr.message);
 
-        // ze_roles als Mitarbeiter (Default-Rolle für Beitritt)
-        const { error: roleErr } = await supabase.from('ze_roles').insert({
-          team_id: teamRow.id,
-          user_id: profile.id,
-          role: 'mitarbeiter',
-        });
-        if (roleErr) {
-          console.warn('[Team] ze_roles insert failed:', roleErr.message);
-        }
+        // ze_roles wird automatisch via DB-Trigger gesetzt:
+        // ze_seed_member_role_trg → 'mitarbeiter' für Standard-Beitritt,
+        // 'admin' falls der User Creator des Teams ist (Re-Join-Fall).
       }
 
       // 5. Team Key in Session
