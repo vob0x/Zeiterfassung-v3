@@ -117,6 +117,7 @@ export const fr = {
 
   dashboard: {
     title: 'Tableau de bord',
+    heatmap: 'Mandant × Projet',
     period: {
       today: "Aujourd'hui",
       week: 'Semaine',
@@ -124,6 +125,8 @@ export const fr = {
       year: 'Année',
       all: 'Total',
       custom: 'Période',
+      from: 'De',
+      to: 'À',
     },
   },
 

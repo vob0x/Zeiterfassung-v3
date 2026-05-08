@@ -117,6 +117,7 @@ export const de = {
 
   dashboard: {
     title: 'Dashboard',
+    heatmap: 'Stakeholder × Projekt',
     period: {
       today: 'Heute',
       week: 'Woche',
@@ -124,6 +125,8 @@ export const de = {
       year: 'Jahr',
       all: 'Gesamt',
       custom: 'Zeitraum',
+      from: 'Von',
+      to: 'Bis',
     },
   },
 

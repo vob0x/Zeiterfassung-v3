@@ -1,67 +1,119 @@
 /**
  * DashboardView — der Dashboard-Tab.
  *
- * M4a-Scope: KPI-Cards (Heute / Zeitraum / Einträge). Period ist hart
- * auf „Heute" gesetzt — Period-Picker (Woche/Monat/Jahr/Custom) kommt
- * in M4b.
+ * Layout:
+ *   - PeriodPicker (Tag/Woche/Monat/Jahr/Gesamt/Custom)
+ *   - KPI-Cards (Erfasst Heute / Erfasst im Zeitraum / Anzahl Einträge)
+ *   - Breakdowns (Stakeholder, Projekt, Tätigkeit, Format)
+ *   - Heatmap Stakeholder × Projekt
  *
- * Filter-Logik (kommt M4b):
- *   - Period bestimmt das Set der Einträge
- *   - Stakeholder/Projekt/Tätigkeit/Format/Notiz kann zusätzlich
- *     filtern, wirkt auf das gefilterte Set
- *
- * In M4a: nur Heute-Werte. KPIs basieren auf dem heutigen Eintrags-
- * Set. Naive für Zeitraum = Naive für Heute (weil Period = Heute).
+ * Alle Werte basieren auf Naive-Summen der gefilterten Period-Range.
+ * "Erfasst Heute" ist immer Today (unabhängig von der Period), "Erfasst
+ * im Zeitraum" folgt der Period.
  */
 
 import { useMemo } from 'react';
 import { useEntriesStore } from '@/stores/entriesStore';
+import { useUiStore } from '@/stores/uiStore';
 import { useI18n } from '@/i18n';
+import {
+  filterEntriesByRange,
+  getPeriodRange,
+  formatRangeLabel,
+} from '@/lib/dateRange';
 import { computeNaiveSumMs } from '@/lib/wallclock';
 import { isAbsenceEntry } from '@/lib/absences';
 import { getTodayISO } from '@/lib/utils';
 import KpiCards from './KpiCards';
+import PeriodPicker from './PeriodPicker';
+import BreakdownList from './BreakdownList';
+import Heatmap from './Heatmap';
 
 export default function DashboardView() {
   const { t } = useI18n();
   const entries = useEntriesStore((s) => s.entries);
+  const period = useUiStore((s) => s.period);
+  const dateFrom = useUiStore((s) => s.dateFrom);
+  const dateTo = useUiStore((s) => s.dateTo);
+
+  const range = useMemo(
+    () => getPeriodRange(period, { customFrom: dateFrom, customTo: dateTo }),
+    [period, dateFrom, dateTo]
+  );
 
   const todayMs = useMemo(() => {
     const todayISO = getTodayISO();
-    const todayEntries = entries.filter((e) => e.date === todayISO);
-    return computeNaiveSumMs(todayEntries);
+    return computeNaiveSumMs(entries.filter((e) => e.date === todayISO));
   }, [entries]);
 
-  // M4a: Period = Heute. M4b kommt mit Period-Picker.
-  const periodMs = todayMs;
-  const periodEntries = useMemo(() => {
-    const todayISO = getTodayISO();
-    return entries.filter(
-      (e) => e.date === todayISO && !isAbsenceEntry(e)
-    );
-  }, [entries]);
+  const periodEntries = useMemo(
+    () => filterEntriesByRange(entries, range),
+    [entries, range]
+  );
+
+  const periodMs = useMemo(
+    () => computeNaiveSumMs(periodEntries),
+    [periodEntries]
+  );
+
+  const periodEntriesNonAbsence = useMemo(
+    () => periodEntries.filter((e) => !isAbsenceEntry(e)),
+    [periodEntries]
+  );
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
         <h2
           className="text-xs uppercase tracking-widest"
           style={{ color: 'var(--text-muted)' }}
         >
-          {t('dashboard.title')} · {t('dashboard.period.today')}
+          {t('dashboard.title')} · {formatRangeLabel(period, range, t)}
         </h2>
+        <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+          {range.from} — {range.to}
+        </span>
       </div>
+
+      <PeriodPicker />
 
       <KpiCards
         todayMs={todayMs}
         periodMs={periodMs}
-        entriesCount={periodEntries.length}
+        entriesCount={periodEntriesNonAbsence.length}
       />
 
-      <div className="text-xs text-neutral-500 pt-2">
-        Period-Picker (Woche/Monat/Jahr/Custom) + Breakdowns nach
-        Stakeholder/Projekt/Tätigkeit/Format kommen in M4b.
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <BreakdownList
+          title={t('list.stakeholdersCount')}
+          entries={periodEntriesNonAbsence}
+          dimension="stakeholder"
+          accent="#5BA4D9"
+        />
+        <BreakdownList
+          title={t('list.projectsCount')}
+          entries={periodEntriesNonAbsence}
+          dimension="projekt"
+          accent="#6EC49E"
+        />
+        <BreakdownList
+          title={t('list.activitiesCount')}
+          entries={periodEntriesNonAbsence}
+          dimension="taetigkeit"
+          accent="#9B8EC4"
+        />
+        <BreakdownList
+          title={t('list.formatsCount')}
+          entries={periodEntriesNonAbsence}
+          dimension="format"
+          accent="#D4956A"
+        />
       </div>
+
+      <Heatmap
+        title={t('dashboard.heatmap')}
+        entries={periodEntriesNonAbsence}
+      />
     </section>
   );
 }
