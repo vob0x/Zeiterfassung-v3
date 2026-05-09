@@ -23,13 +23,15 @@ export default function BottomNav() {
     <nav
       role="tablist"
       aria-label="Mobile Navigation"
-      className="md:hidden"
+      // `flex md:hidden` — auf Mobile sichtbar als Flex-Container, auf
+      // Desktop komplett ausgeblendet (display: none). Wichtig: display
+      // NICHT inline setzen, sonst überschreibt es md:hidden.
+      className="flex md:hidden"
       style={{
         position: 'fixed',
         left: 0,
         right: 0,
         bottom: 0,
-        display: 'flex',
         justifyContent: 'space-around',
         background: '#1c1a17',
         borderTop: '1px solid var(--border)',
