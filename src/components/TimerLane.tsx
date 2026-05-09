@@ -16,6 +16,7 @@ import { Pause, Play, Square, X } from 'lucide-react';
 import { useTimerStore, type TimerSlot } from '@/stores/timerStore';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
+import { useIsAdmin } from '@/hooks/useRole';
 import { useI18n } from '@/i18n';
 import { formatDateISO } from '@/lib/utils';
 import Picker from './Picker';
@@ -48,6 +49,10 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
   const addProject = useMasterStore((s) => s.addProject);
   const addActivity = useMasterStore((s) => s.addActivity);
   const addFormat = useMasterStore((s) => s.addFormat);
+
+  // Mitarbeiter dürfen Format/Tätigkeit nicht selbst erweitern — nur
+  // Admins (oder Single-User ohne Team).
+  const isAdmin = useIsAdmin();
 
   // Lokale Notiz-State, damit der User tippen kann ohne dass jeder
   // Tastenanschlag den Store updatet (würde bei multipler-slots
@@ -217,20 +222,28 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
           value={slot.taetigkeit}
           onChange={(v) => updateSlot(slot.id, { taetigkeit: v })}
           placeholder={t('entry.taetigkeit')}
-          onAdd={async (name) => {
-            const item = await addActivity(name);
-            return { id: item.id, name: item.name };
-          }}
+          onAdd={
+            isAdmin
+              ? async (name) => {
+                  const item = await addActivity(name);
+                  return { id: item.id, name: item.name };
+                }
+              : undefined
+          }
         />
         <Picker
           options={formats.map((f) => ({ id: f.id, name: f.name }))}
           value={slot.format}
           onChange={(v) => updateSlot(slot.id, { format: v })}
           placeholder={t('entry.format')}
-          onAdd={async (name) => {
-            const item = await addFormat(name);
-            return { id: item.id, name: item.name };
-          }}
+          onAdd={
+            isAdmin
+              ? async (name) => {
+                  const item = await addFormat(name);
+                  return { id: item.id, name: item.name };
+                }
+              : undefined
+          }
         />
         <input
           type="text"

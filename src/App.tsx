@@ -17,6 +17,7 @@ import { useMasterStore } from '@/stores/masterStore';
 import { useTeamStore } from '@/stores/teamStore';
 import { useTimerStore } from '@/stores/timerStore';
 import { useUiStore } from '@/stores/uiStore';
+import { useIsAdmin } from '@/hooks/useRole';
 import { useI18n } from '@/i18n';
 import AuthWall from '@/components/AuthWall';
 import TabBar from '@/components/TabBar';
@@ -107,6 +108,11 @@ function TimerTabContent() {
   const entries = useEntriesStore((s) => s.entries);
   const slots = useTimerStore((s) => s.slots);
   const getElapsedMs = useTimerStore((s) => s.getElapsedMs);
+  // Mitarbeiter sehen weder DayRing noch TrackingCoverage — die Aggregat-
+  // Sicht auf den eigenen Tag ist v2-Vorbild bewusst Admin-only. Die
+  // Slot-Liste und Coverage-Funktion bleiben für alle nutzbar; nur die
+  // Aggregat-Visualisierungen verschwinden.
+  const isAdmin = useIsAdmin();
   // tick binden für Live-Update
   useTimerStore((s) => s.tick);
 
@@ -134,6 +140,15 @@ function TimerTabContent() {
     () => computeLiveWallClockMs(todayEntries, runningSlots),
     [todayEntries, runningSlots]
   );
+
+  // Mitarbeiter: nur Timer-Spalte, ohne Sidebar (DayRing + Coverage weg)
+  if (!isAdmin) {
+    return (
+      <div className="grid grid-cols-1 gap-4 items-start">
+        <TimerView />
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-4 items-start">

@@ -24,6 +24,7 @@
 import { useEffect, useState } from 'react';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
+import { useIsAdmin } from '@/hooks/useRole';
 import { useI18n } from '@/i18n';
 import { formatDateISO } from '@/lib/utils';
 import Picker from './Picker';
@@ -72,6 +73,9 @@ export default function ManualEntry() {
   const addProject = useMasterStore((s) => s.addProject);
   const addActivity = useMasterStore((s) => s.addActivity);
   const addFormat = useMasterStore((s) => s.addFormat);
+
+  // Mitarbeiter dürfen Format/Tätigkeit nicht selbst erweitern.
+  const isAdmin = useIsAdmin();
 
   const [form, setForm] = useState<FormState>(() => makeDefaults(t));
   const [busy, setBusy] = useState(false);
@@ -217,10 +221,14 @@ export default function ManualEntry() {
             options={activities.map((a) => ({ id: a.id, name: a.name }))}
             value={form.taetigkeit}
             onChange={(v) => setForm({ ...form, taetigkeit: v })}
-            onAdd={async (name) => {
-              const item = await addActivity(name);
-              return { id: item.id, name: item.name };
-            }}
+            onAdd={
+              isAdmin
+                ? async (name) => {
+                    const item = await addActivity(name);
+                    return { id: item.id, name: item.name };
+                  }
+                : undefined
+            }
           />
         </Field>
 
@@ -230,10 +238,14 @@ export default function ManualEntry() {
             options={formats.map((f) => ({ id: f.id, name: f.name }))}
             value={form.format}
             onChange={(v) => setForm({ ...form, format: v })}
-            onAdd={async (name) => {
-              const item = await addFormat(name);
-              return { id: item.id, name: item.name };
-            }}
+            onAdd={
+              isAdmin
+                ? async (name) => {
+                    const item = await addFormat(name);
+                    return { id: item.id, name: item.name };
+                  }
+                : undefined
+            }
           />
         </Field>
         <Field label={t('entry.notiz')}>
