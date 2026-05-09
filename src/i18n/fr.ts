@@ -83,6 +83,8 @@ export const fr = {
   entries: {
     filterLabel: 'Filtre',
     clearFilter: 'Effacer le filtre',
+    clearAllFilters: 'Tout effacer',
+    removeFilter: 'Retirer le filtre',
     filterEmpty: 'Aucune entrée pour ce filtre.',
   },
 

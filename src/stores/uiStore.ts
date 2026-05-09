@@ -16,10 +16,12 @@ import type { Period } from '@/lib/dateRange';
 export type TabId = 'timer' | 'dashboard' | 'entries' | 'team';
 
 /**
- * Drill-Down-Filter für den Einträge-Tab. Wird vom Dashboard gesetzt,
- * wenn der User auf einen Stakeholder/Projekt/etc. klickt — und schaltet
- * dabei in den Einträge-Tab. Bewusst nicht persistiert, damit ein Reload
- * wieder die volle Liste zeigt.
+ * Drill-Down-Filter für den Einträge-Tab. Multi-Dim: jede Dimension
+ * kann unabhängig gesetzt werden, aktive Filter werden mit AND
+ * verknüpft. Wird sowohl vom Dashboard (BreakdownList-Klick) als auch
+ * direkt im Einträge-Tab (Click-to-Filter auf Eintragswerte) gesetzt.
+ *
+ * Bewusst nicht persistiert — ein Reload zeigt wieder die volle Liste.
  */
 export type EntriesFilterDim =
   | 'stakeholder'
@@ -28,8 +30,15 @@ export type EntriesFilterDim =
   | 'format';
 
 export interface EntriesFilter {
-  dimension: EntriesFilterDim;
-  value: string;
+  stakeholder?: string;
+  projekt?: string;
+  taetigkeit?: string;
+  format?: string;
+}
+
+/** True wenn mindestens eine Dimension gesetzt ist. */
+export function hasActiveFilter(f: EntriesFilter): boolean {
+  return !!(f.stakeholder || f.projekt || f.taetigkeit || f.format);
 }
 
 /**
@@ -60,10 +69,18 @@ interface UiState {
   setPeriod: (p: Period) => void;
   setCustomRange: (from: string, to: string) => void;
 
-  /** Einträge-Tab Drill-Down-Filter. null = ungefiltert. */
-  entriesFilter: EntriesFilter | null;
-  /** Filter setzen UND in den Einträge-Tab springen. */
-  drillDownToEntries: (filter: EntriesFilter) => void;
+  /** Einträge-Tab Drill-Down-Filter (multi-dim). */
+  entriesFilter: EntriesFilter;
+  /**
+   * Eine einzelne Dimension setzen (oder mit `null` clearen). Kombiniert
+   * mit anderen aktiven Dimensionen via AND.
+   */
+  setEntriesFilterDim: (dim: EntriesFilterDim, value: string | null) => void;
+  /**
+   * Filter (eine Dimension) setzen UND in den Einträge-Tab springen.
+   * Andere aktive Dimensionen bleiben unverändert — Drill-Down kombiniert.
+   */
+  drillDownToEntries: (dim: EntriesFilterDim, value: string) => void;
   clearEntriesFilter: () => void;
 
   /** Dashboard-Scope (persistiert). */
@@ -201,12 +218,26 @@ export const useUiStore = create<UiState>((set, get) => {
       } catch {}
     },
 
-    entriesFilter: null,
-    drillDownToEntries: (filter) => {
-      saveActiveTab('entries');
-      set({ entriesFilter: filter, activeTab: 'entries' });
+    entriesFilter: {},
+    setEntriesFilterDim: (dim, value) => {
+      const cur = get().entriesFilter;
+      const next: EntriesFilter = { ...cur };
+      if (value === null || value === '') {
+        delete next[dim];
+      } else {
+        next[dim] = value;
+      }
+      set({ entriesFilter: next });
     },
-    clearEntriesFilter: () => set({ entriesFilter: null }),
+    drillDownToEntries: (dim, value) => {
+      saveActiveTab('entries');
+      const cur = get().entriesFilter;
+      set({
+        entriesFilter: { ...cur, [dim]: value },
+        activeTab: 'entries',
+      });
+    },
+    clearEntriesFilter: () => set({ entriesFilter: {} }),
 
     dashboardScope: loadScope(),
     setDashboardScope: (s) => {

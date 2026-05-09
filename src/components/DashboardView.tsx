@@ -239,32 +239,28 @@ export default function DashboardView() {
           entries={periodEntriesNonAbsence}
           dimension="stakeholder"
           accent="#5BA4D9"
-          onItemClick={(value) =>
-            drillDown({ dimension: 'stakeholder', value })
-          }
+          onItemClick={(value) => drillDown('stakeholder', value)}
         />
         <BreakdownList
           title={t('list.projectsCount')}
           entries={periodEntriesNonAbsence}
           dimension="projekt"
           accent="#6EC49E"
-          onItemClick={(value) => drillDown({ dimension: 'projekt', value })}
+          onItemClick={(value) => drillDown('projekt', value)}
         />
         <BreakdownList
           title={t('list.activitiesCount')}
           entries={periodEntriesNonAbsence}
           dimension="taetigkeit"
           accent="#9B8EC4"
-          onItemClick={(value) =>
-            drillDown({ dimension: 'taetigkeit', value })
-          }
+          onItemClick={(value) => drillDown('taetigkeit', value)}
         />
         <BreakdownList
           title={t('list.formatsCount')}
           entries={periodEntriesNonAbsence}
           dimension="format"
           accent="#D4956A"
-          onItemClick={(value) => drillDown({ dimension: 'format', value })}
+          onItemClick={(value) => drillDown('format', value)}
         />
       </div>
 

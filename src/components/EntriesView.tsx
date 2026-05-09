@@ -1,38 +1,52 @@
 /**
  * EntriesView — der Einträge-Tab.
  *
- * ManualEntry oben (für nachträgliches Erfassen), Liste aller Einträge
- * unten mit Delete-Button. Wenn ein Drill-Down-Filter im uiStore aktiv
- * ist (z.B. nach Klick auf einen Stakeholder im Dashboard), wird oben
- * ein Filter-Chip angezeigt und die Liste entsprechend gefiltert.
+ * Komponenten:
+ *   - ManualEntry oben (für nachträgliches Erfassen)
+ *   - Filter-Chip-Strip (1 Chip pro aktiver Filter-Dimension, einzeln entfernbar)
+ *   - Liste aller eigenen Einträge mit klickbaren Werten (Drill-Down)
+ *   - Backup-Export-Block am Ende
+ *
+ * Filter-Modell (uiStore.entriesFilter): multi-dim, jede Dimension
+ * unabhängig setzbar. Aktive Dimensionen werden mit AND verknüpft.
+ * Klick auf einen Eintragswert (z.B. Stakeholder-Name) setzt die
+ * jeweilige Dimension; Klick auf einen aktiven Chip entfernt sie.
  */
 
 import { useMemo } from 'react';
 import { Download, FileJson, FileSpreadsheet, X } from 'lucide-react';
 import { useEntriesStore } from '@/stores/entriesStore';
-import { useUiStore } from '@/stores/uiStore';
+import {
+  useUiStore,
+  hasActiveFilter,
+  type EntriesFilter,
+  type EntriesFilterDim,
+} from '@/stores/uiStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useI18n } from '@/i18n';
 import { downloadBackupJson, downloadBackupCsv } from '@/lib/backup';
 import ManualEntry from './ManualEntry';
 import type { TimeEntry } from '@/types';
-import type { EntriesFilter } from '@/stores/uiStore';
 
 /**
- * Prüft, ob ein Eintrag dem Drill-Down-Filter entspricht. Stakeholder
- * ist multi-valued (Naive-Attribution) — Eintrag matched, wenn der Wert
- * in der Liste auftaucht.
+ * Prüft ob ein Eintrag dem Multi-Dim-Filter entspricht. Stakeholder ist
+ * multi-valued (Naive-Attribution) — Eintrag matched, wenn der Filter-
+ * Wert in der Liste auftaucht. Andere Dimensionen sind single-valued
+ * Strict-Equality.
  */
 function entryMatchesFilter(e: TimeEntry, f: EntriesFilter): boolean {
-  if (f.dimension === 'stakeholder') {
+  if (f.stakeholder) {
     const list = Array.isArray(e.stakeholder)
       ? e.stakeholder
       : e.stakeholder
         ? [e.stakeholder]
         : [];
-    return list.includes(f.value);
+    if (!list.includes(f.stakeholder)) return false;
   }
-  return (e[f.dimension] || '') === f.value;
+  if (f.projekt && (e.projekt || '') !== f.projekt) return false;
+  if (f.taetigkeit && (e.taetigkeit || '') !== f.taetigkeit) return false;
+  if (f.format && (e.format || '') !== f.format) return false;
+  return true;
 }
 
 export default function EntriesView() {
@@ -40,49 +54,71 @@ export default function EntriesView() {
   const entries = useEntriesStore((s) => s.entries);
   const deleteEntry = useEntriesStore((s) => s.deleteEntry);
   const filter = useUiStore((s) => s.entriesFilter);
-  const codename = useAuthStore((s) => s.profile?.codename) || 'export';
+  const setFilterDim = useUiStore((s) => s.setEntriesFilterDim);
   const clearFilter = useUiStore((s) => s.clearEntriesFilter);
+  const codename = useAuthStore((s) => s.profile?.codename) || 'export';
+
+  const active = hasActiveFilter(filter);
 
   const filtered = useMemo(() => {
-    if (!filter) return entries;
+    if (!active) return entries;
     return entries.filter((e) => entryMatchesFilter(e, filter));
-  }, [entries, filter]);
+  }, [entries, filter, active]);
 
-  const filterLabel = filter
-    ? t(`entry.${filter.dimension}`) // 'Stakeholder' / 'Projekt' / ...
-    : '';
+  /** Setzt eine Dimension oder togglet sie ab, wenn schon aktiv mit
+   *  demselben Wert. Genutzt von den klickbaren Eintragswerten. */
+  const onValueClick = (dim: EntriesFilterDim, value: string) => {
+    if (!value || value === '—') return;
+    if (filter[dim] === value) {
+      setFilterDim(dim, null); // Zweitklick = Toggle ab
+    } else {
+      setFilterDim(dim, value);
+    }
+  };
 
   return (
     <section className="space-y-4">
       <ManualEntry />
 
-      {filter && (
+      {active && (
         <div
-          className="flex items-center justify-between gap-2 px-3 py-2 rounded"
+          className="flex items-center justify-between gap-2 px-3 py-2 rounded flex-wrap"
           style={{
             background: 'rgba(201,169,98,0.08)',
             border: '1px solid rgba(201,169,98,0.30)',
           }}
         >
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <span
               className="text-[10px] uppercase tracking-widest"
               style={{ color: 'var(--text-muted)' }}
             >
               {t('entries.filterLabel')}
             </span>
-            <span
-              className="text-xs"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              {filterLabel}:
-            </span>
-            <span
-              className="text-xs font-medium truncate"
-              style={{ color: '#C9A962' }}
-            >
-              {filter.value}
-            </span>
+            <FilterChip
+              dim="stakeholder"
+              value={filter.stakeholder}
+              onRemove={() => setFilterDim('stakeholder', null)}
+              t={t}
+            />
+            <FilterChip
+              dim="projekt"
+              value={filter.projekt}
+              onRemove={() => setFilterDim('projekt', null)}
+              t={t}
+            />
+            <FilterChip
+              dim="taetigkeit"
+              value={filter.taetigkeit}
+              onRemove={() => setFilterDim('taetigkeit', null)}
+              t={t}
+            />
+            <FilterChip
+              dim="format"
+              value={filter.format}
+              onRemove={() => setFilterDim('format', null)}
+              t={t}
+            />
             <span
               className="text-[10px] font-mono"
               style={{ color: 'var(--text-muted)' }}
@@ -98,7 +134,7 @@ export default function EntriesView() {
             aria-label={t('entries.clearFilter')}
           >
             <X size={12} />
-            {t('entries.clearFilter')}
+            {t('entries.clearAllFilters')}
           </button>
         </div>
       )}
@@ -120,39 +156,23 @@ export default function EntriesView() {
         </div>
         <ul className="text-xs text-neutral-300 space-y-1">
           {filtered.slice(0, 50).map((e) => (
-            <li
+            <EntryRow
               key={e.id}
-              className="flex items-center justify-between gap-2 py-0.5"
-            >
-              <span className="truncate">
-                <span className="font-mono text-xs">{e.date}</span>{' '}
-                {e.start_time}–{e.end_time}{' '}
-                <span className="text-neutral-500">·</span>{' '}
-                {Array.isArray(e.stakeholder)
-                  ? e.stakeholder.join(', ')
-                  : e.stakeholder || '—'}{' '}
-                <span className="text-neutral-500">/</span>{' '}
-                {e.projekt || '—'}
-                {e.notiz && <span className="text-neutral-500"> · {e.notiz}</span>}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm(t('entry.deleteConfirm'))) deleteEntry(e.id);
-                }}
-                className="text-xs text-neutral-500 hover:text-red-400 px-2 leading-none"
-                aria-label={t('entry.delete')}
-              >
-                ×
-              </button>
-            </li>
+              entry={e}
+              filter={filter}
+              onValueClick={onValueClick}
+              onDelete={() => {
+                if (confirm(t('entry.deleteConfirm'))) deleteEntry(e.id);
+              }}
+              t={t}
+            />
           ))}
           {filtered.length > 50 && (
             <li className="text-neutral-500">
               … {filtered.length - 50} {t('list.nMore')}
             </li>
           )}
-          {filtered.length === 0 && filter && (
+          {filtered.length === 0 && active && (
             <li className="italic text-neutral-500">
               {t('entries.filterEmpty')}
             </li>
@@ -160,10 +180,8 @@ export default function EntriesView() {
         </ul>
       </div>
 
-      {/* Backup: Export immer aller eigenen Einträge — IGNORIERT den
-          Drill-Down-Filter, weil ein Backup vollständig sein soll.
-          Bewusst kein Restore in M7 (gefährliche Operation, kommt
-          später falls gebraucht). */}
+      {/* Backup: Export immer aller eigenen Einträge — IGNORIERT die
+          aktiven Filter, weil ein Backup vollständig sein soll. */}
       {entries.length > 0 && (
         <div
           className="rounded-lg p-4"
@@ -218,5 +236,173 @@ export default function EntriesView() {
         </div>
       )}
     </section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Sub-Komponenten
+   ───────────────────────────────────────────────────────────────────── */
+
+function FilterChip({
+  dim,
+  value,
+  onRemove,
+  t,
+}: {
+  dim: EntriesFilterDim;
+  value: string | undefined;
+  onRemove: () => void;
+  t: (k: string) => string;
+}) {
+  if (!value) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs"
+      style={{
+        background: 'rgba(201,169,98,0.18)',
+        border: '1px solid rgba(201,169,98,0.40)',
+      }}
+    >
+      <span
+        className="text-[10px] uppercase tracking-widest"
+        style={{ color: 'var(--text-muted)' }}
+      >
+        {t(`entry.${dim}`)}:
+      </span>
+      <span style={{ color: '#C9A962', fontWeight: 500 }}>{value}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="hover:opacity-70"
+        style={{ color: 'var(--text-muted)' }}
+        aria-label={t('entries.removeFilter')}
+      >
+        <X size={10} />
+      </button>
+    </span>
+  );
+}
+
+/** Eine einzelne Zeile — alle 4 Dimensionen + Notiz sind klickbar. */
+function EntryRow({
+  entry,
+  filter,
+  onValueClick,
+  onDelete,
+  t,
+}: {
+  entry: TimeEntry;
+  filter: EntriesFilter;
+  onValueClick: (dim: EntriesFilterDim, value: string) => void;
+  onDelete: () => void;
+  t: (k: string) => string;
+}) {
+  const stakeholders = Array.isArray(entry.stakeholder)
+    ? entry.stakeholder
+    : entry.stakeholder
+      ? [entry.stakeholder]
+      : [];
+
+  return (
+    <li className="flex items-center justify-between gap-2 py-0.5">
+      <span className="truncate flex-1 min-w-0">
+        <span className="font-mono text-xs">{entry.date}</span>{' '}
+        <span style={{ color: 'var(--text-muted)' }}>
+          {entry.start_time}–{entry.end_time}
+        </span>{' '}
+        <span className="text-neutral-500">·</span>{' '}
+        {stakeholders.length > 0 ? (
+          stakeholders.map((s, i) => (
+            <span key={s + i}>
+              <ClickableValue
+                dim="stakeholder"
+                value={s}
+                active={filter.stakeholder === s}
+                onClick={onValueClick}
+              />
+              {i < stakeholders.length - 1 && (
+                <span style={{ color: 'var(--text-muted)' }}>, </span>
+              )}
+            </span>
+          ))
+        ) : (
+          <span style={{ color: 'var(--text-muted)' }}>—</span>
+        )}{' '}
+        <span className="text-neutral-500">/</span>{' '}
+        {entry.projekt ? (
+          <ClickableValue
+            dim="projekt"
+            value={entry.projekt}
+            active={filter.projekt === entry.projekt}
+            onClick={onValueClick}
+          />
+        ) : (
+          <span style={{ color: 'var(--text-muted)' }}>—</span>
+        )}{' '}
+        <span className="text-neutral-500">·</span>{' '}
+        {entry.taetigkeit && (
+          <ClickableValue
+            dim="taetigkeit"
+            value={entry.taetigkeit}
+            active={filter.taetigkeit === entry.taetigkeit}
+            onClick={onValueClick}
+          />
+        )}{' '}
+        {entry.format && (
+          <>
+            <span className="text-neutral-500">·</span>{' '}
+            <ClickableValue
+              dim="format"
+              value={entry.format}
+              active={filter.format === entry.format}
+              onClick={onValueClick}
+            />
+          </>
+        )}
+        {entry.notiz && (
+          <span style={{ color: 'var(--text-muted)' }}> · {entry.notiz}</span>
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={onDelete}
+        className="text-xs text-neutral-500 hover:text-red-400 px-2 leading-none"
+        aria-label={t('entry.delete')}
+      >
+        ×
+      </button>
+    </li>
+  );
+}
+
+function ClickableValue({
+  dim,
+  value,
+  active,
+  onClick,
+}: {
+  dim: EntriesFilterDim;
+  value: string;
+  active: boolean;
+  onClick: (dim: EntriesFilterDim, value: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(dim, value)}
+      className="hover:underline"
+      style={{
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        font: 'inherit',
+        color: active ? '#C9A962' : 'inherit',
+        fontWeight: active ? 600 : 400,
+      }}
+      title={`${dim}: ${value}`}
+    >
+      {value}
+    </button>
   );
 }
