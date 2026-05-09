@@ -11,6 +11,7 @@ export const de = {
     versionLabel: 'v3 — alpha',
     signOut: 'Abmelden',
     loading: 'Lade…',
+    close: 'Schließen',
   },
 
   auth: {
@@ -184,6 +185,20 @@ export const de = {
   scope: {
     self: 'Nur ich',
     team: 'Team',
+  },
+
+  report: {
+    title: 'Report',
+    create: 'Report erstellen',
+    summary: 'Zusammenfassung',
+    highlights: 'Highlights',
+    perMember: 'Per Mitglied',
+    kpiHours: 'Stunden',
+    kpiDays: 'Aktive Tage',
+    kpiAvg: 'Ø pro Tag',
+    kpiEntries: 'Einträge',
+    download: 'Download',
+    print: 'Drucken',
   },
 
   kpi: {

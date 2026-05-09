@@ -20,12 +20,13 @@
  * und Team-Scope wird ignoriert.
  */
 
-import { useMemo } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ArrowLeft, FileText } from 'lucide-react';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useTeamStore } from '@/stores/teamStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
+import { useIsAdmin } from '@/hooks/useRole';
 import { useI18n } from '@/i18n';
 import {
   filterEntriesByRange,
@@ -35,12 +36,14 @@ import {
 import { computeNaiveSumMs } from '@/lib/wallclock';
 import { isAbsenceEntry } from '@/lib/absences';
 import { getTodayISO } from '@/lib/utils';
+import type { ReportScope } from '@/lib/reportData';
 import KpiCards from './KpiCards';
 import PeriodPicker from './PeriodPicker';
 import BreakdownList from './BreakdownList';
 import Heatmap from './Heatmap';
 import ScopeToggle from './ScopeToggle';
 import TeamWorkload from './TeamWorkload';
+import ReportModal from './ReportModal';
 
 export default function DashboardView() {
   const { t } = useI18n();
@@ -56,10 +59,14 @@ export default function DashboardView() {
   const team = useTeamStore((s) => s.team);
   const members = useTeamStore((s) => s.members);
   const profile = useAuthStore((s) => s.profile);
+  const isAdmin = useIsAdmin();
 
   // Bin ich Admin? Nur Admins kriegen ScopeToggle und MemberFocus.
   const myRole = members.find((m) => m.user_id === profile?.id)?.role;
   const isAdminInTeam = !!team && myRole === 'admin';
+
+  // Report-Modal-State
+  const [reportOpen, setReportOpen] = useState(false);
 
   // Sicht-Modus bestimmen — drei Stufen:
   const viewMode: 'self' | 'team' | 'member' = memberFocus
@@ -114,6 +121,16 @@ export default function DashboardView() {
       ? members.find((m) => m.user_id === memberFocus)
       : null;
 
+  // Report-Konfiguration aus aktuellem View-Mode ableiten
+  const reportScope: ReportScope =
+    viewMode === 'member' ? 'member' : viewMode === 'team' ? 'team' : 'self';
+  const reportSubject =
+    viewMode === 'member'
+      ? focusedMember?.codename || '—'
+      : viewMode === 'team'
+        ? team?.name || '—'
+        : profile?.codename || '—';
+
   return (
     <section className="space-y-4">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
@@ -123,9 +140,31 @@ export default function DashboardView() {
         >
           {t('dashboard.title')} · {formatRangeLabel(period, range, t)}
         </h2>
-        <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
-          {range.from} — {range.to}
-        </span>
+        <div className="flex items-center gap-3">
+          <span
+            className="text-xs font-mono"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {range.from} — {range.to}
+          </span>
+          {/* Report-Button: Admin-only (oder Single-User ohne Team) */}
+          {isAdmin && periodEntries.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setReportOpen(true)}
+              className="text-xs py-1 px-2.5 rounded flex items-center gap-1 hover:bg-neutral-800"
+              style={{
+                background: 'rgba(201,169,98,0.10)',
+                border: '1px solid rgba(201,169,98,0.40)',
+                color: '#C9A962',
+              }}
+              title={t('report.create')}
+            >
+              <FileText size={12} />
+              {t('report.create')}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Member-Focus-Header (überschreibt ScopeToggle wenn aktiv) */}
@@ -232,6 +271,20 @@ export default function DashboardView() {
       <Heatmap
         title={t('dashboard.heatmap')}
         entries={periodEntriesNonAbsence}
+      />
+
+      <ReportModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        entries={periodEntries}
+        range={{
+          from: range.from,
+          to: range.to,
+          label: formatRangeLabel(period, range, t),
+        }}
+        scope={reportScope}
+        subjectName={reportSubject}
+        members={viewMode === 'team' ? members : []}
       />
     </section>
   );

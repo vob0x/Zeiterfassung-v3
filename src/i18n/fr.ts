@@ -11,6 +11,7 @@ export const fr = {
     versionLabel: 'v3 — alpha',
     signOut: 'Se déconnecter',
     loading: 'Chargement…',
+    close: 'Fermer',
   },
 
   auth: {
@@ -184,6 +185,20 @@ export const fr = {
   scope: {
     self: 'Moi seul',
     team: 'Équipe',
+  },
+
+  report: {
+    title: 'Rapport',
+    create: 'Créer le rapport',
+    summary: 'Résumé',
+    highlights: 'Points forts',
+    perMember: 'Par membre',
+    kpiHours: 'Heures',
+    kpiDays: 'Jours actifs',
+    kpiAvg: 'Moy. / jour',
+    kpiEntries: 'Entrées',
+    download: 'Télécharger',
+    print: 'Imprimer',
   },
 
   kpi: {
