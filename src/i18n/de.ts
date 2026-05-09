@@ -86,6 +86,13 @@ export const de = {
     filterEmpty: 'Keine Einträge im aktiven Filter.',
   },
 
+  backup: {
+    title: 'Backup / Export',
+    hint: 'Lade alle deine Einträge im Klartext herunter — als Sicherheitskopie oder zur Weiterverarbeitung. JSON ist verlustfrei (Re-Import möglich), CSV öffnet direkt in Excel.',
+    exportJson: 'Als JSON',
+    exportCsv: 'Als CSV',
+  },
+
   toast: {
     saved: 'Gespeichert',
     deleted: 'Gelöscht',

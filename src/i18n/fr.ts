@@ -86,6 +86,13 @@ export const fr = {
     filterEmpty: 'Aucune entrée pour ce filtre.',
   },
 
+  backup: {
+    title: 'Sauvegarde / Export',
+    hint: 'Télécharge toutes tes entrées en clair — pour archive ou traitement externe. JSON est sans perte (réimportable), CSV s’ouvre directement dans Excel.',
+    exportJson: 'JSON',
+    exportCsv: 'CSV',
+  },
+
   toast: {
     saved: 'Enregistré',
     deleted: 'Supprimé',

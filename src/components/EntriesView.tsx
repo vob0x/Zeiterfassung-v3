@@ -8,10 +8,12 @@
  */
 
 import { useMemo } from 'react';
-import { X } from 'lucide-react';
+import { Download, FileJson, FileSpreadsheet, X } from 'lucide-react';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useUiStore } from '@/stores/uiStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useI18n } from '@/i18n';
+import { downloadBackupJson, downloadBackupCsv } from '@/lib/backup';
 import ManualEntry from './ManualEntry';
 import type { TimeEntry } from '@/types';
 import type { EntriesFilter } from '@/stores/uiStore';
@@ -38,6 +40,7 @@ export default function EntriesView() {
   const entries = useEntriesStore((s) => s.entries);
   const deleteEntry = useEntriesStore((s) => s.deleteEntry);
   const filter = useUiStore((s) => s.entriesFilter);
+  const codename = useAuthStore((s) => s.profile?.codename) || 'export';
   const clearFilter = useUiStore((s) => s.clearEntriesFilter);
 
   const filtered = useMemo(() => {
@@ -156,6 +159,64 @@ export default function EntriesView() {
           )}
         </ul>
       </div>
+
+      {/* Backup: Export immer aller eigenen Einträge — IGNORIERT den
+          Drill-Down-Filter, weil ein Backup vollständig sein soll.
+          Bewusst kein Restore in M7 (gefährliche Operation, kommt
+          später falls gebraucht). */}
+      {entries.length > 0 && (
+        <div
+          className="rounded-lg p-4"
+          style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(201,169,98,0.18)',
+          }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Download size={12} style={{ color: 'var(--text-muted)' }} />
+            <span
+              className="text-xs uppercase tracking-widest"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              {t('backup.title')}
+            </span>
+          </div>
+          <p
+            className="text-xs mb-3"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {t('backup.hint')}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadBackupJson(entries, codename)}
+              className="text-xs py-1.5 px-3 rounded flex items-center gap-1.5"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+              }}
+            >
+              <FileJson size={12} />
+              {t('backup.exportJson')}
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadBackupCsv(entries, codename)}
+              className="text-xs py-1.5 px-3 rounded flex items-center gap-1.5"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+              }}
+            >
+              <FileSpreadsheet size={12} />
+              {t('backup.exportCsv')}
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
