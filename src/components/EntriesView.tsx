@@ -155,7 +155,7 @@ export default function EntriesView() {
           </span>
         </div>
         <ul className="text-xs text-neutral-300 space-y-1">
-          {filtered.slice(0, 50).map((e) => (
+          {filtered.map((e) => (
             <EntryRow
               key={e.id}
               entry={e}
@@ -167,11 +167,6 @@ export default function EntriesView() {
               t={t}
             />
           ))}
-          {filtered.length > 50 && (
-            <li className="text-neutral-500">
-              … {filtered.length - 50} {t('list.nMore')}
-            </li>
-          )}
           {filtered.length === 0 && active && (
             <li className="italic text-neutral-500">
               {t('entries.filterEmpty')}
