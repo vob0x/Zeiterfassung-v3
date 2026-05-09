@@ -5,10 +5,15 @@
  * entriesStore — eindeutig kleiner, weil die ganze Defense-Schicht (Soft-
  * Merge, Pending-IDs, Tombstones-als-Sync, Stop-Journal, Force-Resync)
  * unter Server-First wegfällt. Wahrheitsquelle ist immer Supabase.
- * `state.entries` ist nur ein Cache der letzten erfolgreichen Antwort.
  *
- * M2a-Scope: Read-only. fetchEntries() pulled vom Server, decrypted, setzt
- * state. Kein add/update/delete (kommt M2b).
+ * Cache-Form:
+ *   - `entries`     : Einträge des aktuellen Users (immer)
+ *   - `teamEntries` : Einträge der Team-Mitglieder (nur wenn im Team)
+ *
+ * Der Server liefert via RLS (`te_select_teammates`) bei aktivem Team
+ * automatisch alle Team-Einträge mit. Wir trennen client-seitig nach
+ * user_id, damit Views entscheiden können was sie anzeigen — Timer und
+ * Einträge-Tab nur eigene, Dashboard im Team-Scope alle.
  */
 
 import { create } from 'zustand';
@@ -49,7 +54,8 @@ export interface EntryPatch {
 }
 
 interface EntriesState {
-  entries: TimeEntry[];
+  entries: TimeEntry[];      // eigene Einträge
+  teamEntries: TimeEntry[];  // Einträge anderer Team-Mitglieder
   loading: boolean;
   error: string | null;
   fetchEntries: () => Promise<void>;
@@ -150,6 +156,7 @@ async function decryptEntryRow(row: any): Promise<TimeEntry> {
 
 export const useEntriesStore = create<EntriesState>((set, get) => ({
   entries: [],
+  teamEntries: [],
   loading: false,
   error: null,
 
@@ -171,12 +178,12 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         set({ error: 'Sitzung abgelaufen', loading: false });
         return;
       }
-      // Tombstones (deleted_at NOT NULL) explizit ausfiltern. Soft-Delete-
-      // Recovery wird ein eigener Read-Pfad in M5/M6.
+      // Kein .eq('user_id') mehr — RLS filtert: ohne Team nur eigene,
+      // mit Team auch die der Mitglieder. Tombstones (deleted_at NOT
+      // NULL) explizit raus.
       const { data, error } = await supabase
         .from('time_entries')
         .select('*')
-        .eq('user_id', profile.id)
         .is('deleted_at', null)
         .order('date', { ascending: false })
         .order('start_time', { ascending: false });
@@ -186,7 +193,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         return;
       }
       const decrypted = await Promise.all((data || []).map(decryptEntryRow));
-      set({ entries: decrypted, loading: false });
+      // Trennen nach user_id: eigene → entries, fremde → teamEntries
+      const own: TimeEntry[] = [];
+      const team: TimeEntry[] = [];
+      for (const e of decrypted) {
+        if (e.user_id === profile.id) own.push(e);
+        else team.push(e);
+      }
+      set({ entries: own, teamEntries: team, loading: false });
     } catch (e: any) {
       set({ error: e?.message || 'Fehler beim Laden', loading: false });
     }

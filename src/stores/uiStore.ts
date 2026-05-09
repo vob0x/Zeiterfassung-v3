@@ -32,6 +32,15 @@ export interface EntriesFilter {
   value: string;
 }
 
+/**
+ * Dashboard-Sichtbereich. Nur für Admins relevant — Mitarbeiter sehen
+ * immer "self".
+ *
+ *   self → nur eigene Einträge
+ *   team → eigene + Mitglieder zusammengefasst
+ */
+export type DashboardScope = 'self' | 'team';
+
 export interface ToastMsg {
   id: string;
   type: 'success' | 'error' | 'info' | 'warning';
@@ -57,6 +66,18 @@ interface UiState {
   drillDownToEntries: (filter: EntriesFilter) => void;
   clearEntriesFilter: () => void;
 
+  /** Dashboard-Scope (persistiert). */
+  dashboardScope: DashboardScope;
+  setDashboardScope: (s: DashboardScope) => void;
+
+  /**
+   * Member-Focus für die Member-Detail-View. Wenn gesetzt, zeigt das
+   * Dashboard nur die Einträge dieses Users (mit Header zum Zurück-
+   * Navigieren). Nicht persistiert — temporäre Drilldown-View.
+   */
+  memberFocus: string | null;
+  setMemberFocus: (userId: string | null) => void;
+
   toasts: ToastMsg[];
   showToast: (
     message: string,
@@ -69,6 +90,7 @@ interface UiState {
 const ACTIVE_TAB_KEY = 'ze_v3_active_tab';
 const PERIOD_KEY = 'ze_v3_dashboard_period';
 const RANGE_KEY = 'ze_v3_dashboard_range';
+const SCOPE_KEY = 'ze_v3_dashboard_scope';
 
 function loadActiveTab(): TabId {
   if (typeof window === 'undefined') return 'timer';
@@ -90,6 +112,25 @@ function loadActiveTab(): TabId {
 function saveActiveTab(id: TabId): void {
   try {
     localStorage.setItem(ACTIVE_TAB_KEY, id);
+  } catch {
+    // ignore
+  }
+}
+
+function loadScope(): DashboardScope {
+  if (typeof window === 'undefined') return 'self';
+  try {
+    const v = localStorage.getItem(SCOPE_KEY);
+    if (v === 'self' || v === 'team') return v;
+  } catch {
+    // ignore
+  }
+  return 'self';
+}
+
+function saveScope(s: DashboardScope): void {
+  try {
+    localStorage.setItem(SCOPE_KEY, s);
   } catch {
     // ignore
   }
@@ -166,6 +207,17 @@ export const useUiStore = create<UiState>((set, get) => {
       set({ entriesFilter: filter, activeTab: 'entries' });
     },
     clearEntriesFilter: () => set({ entriesFilter: null }),
+
+    dashboardScope: loadScope(),
+    setDashboardScope: (s) => {
+      saveScope(s);
+      // Beim Scope-Wechsel den Member-Focus zurücksetzen — sonst
+      // sehen Admins beim Toggle möglicherweise eine fokussierte Sicht.
+      set({ dashboardScope: s, memberFocus: null });
+    },
+
+    memberFocus: null,
+    setMemberFocus: (userId) => set({ memberFocus: userId }),
 
     toasts: [],
     showToast: (message, type = 'info', durationMs = 4000) => {

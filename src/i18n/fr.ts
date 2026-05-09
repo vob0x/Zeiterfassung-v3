@@ -165,6 +165,10 @@ export const fr = {
   dashboard: {
     title: 'Tableau de bord',
     heatmap: 'Mandant × Projet',
+    teamWorkload: "Charge de l'équipe",
+    viewMemberDetail: 'Ouvrir la vue détaillée de {name}',
+    memberFocus: 'Détail',
+    backToOverview: "Retour à la vue d'ensemble",
     period: {
       today: "Aujourd'hui",
       week: 'Semaine',
@@ -175,6 +179,11 @@ export const fr = {
       from: 'De',
       to: 'À',
     },
+  },
+
+  scope: {
+    self: 'Moi seul',
+    team: 'Équipe',
   },
 
   kpi: {

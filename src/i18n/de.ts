@@ -165,6 +165,10 @@ export const de = {
   dashboard: {
     title: 'Dashboard',
     heatmap: 'Stakeholder × Projekt',
+    teamWorkload: 'Team-Auslastung',
+    viewMemberDetail: 'Detail-Ansicht für {name} öffnen',
+    memberFocus: 'Detail',
+    backToOverview: 'Zurück zur Übersicht',
     period: {
       today: 'Heute',
       week: 'Woche',
@@ -175,6 +179,11 @@ export const de = {
       from: 'Von',
       to: 'Bis',
     },
+  },
+
+  scope: {
+    self: 'Nur ich',
+    team: 'Team',
   },
 
   kpi: {
