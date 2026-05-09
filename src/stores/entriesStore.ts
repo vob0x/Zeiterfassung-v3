@@ -99,6 +99,47 @@ async function encryptEntryForServer(input: {
 }
 
 /**
+ * Holt alle visible time_entries-Rows in Pagination-Batches. Supabase
+ * deckelt jeden Request bei `db_max_rows` (Default 1000). Bei Teams mit
+ * mehr als 1000 sichtbaren Einträgen würde ein einzelner Fetch trunkiert
+ * und Clients sähen unterschiedlich viele Rows — Schrödinger-Daten.
+ *
+ * Lösung: schleife mit `.range(offset, offset+SIZE-1)` bis weniger als
+ * SIZE Rows zurückkommen. Jeder Range-Request ist deterministisch durch
+ * die explizite ORDER BY date DESC, start_time DESC.
+ */
+const PAGE_SIZE = 1000;
+
+async function fetchAllVisibleRows(): Promise<any[]> {
+  const all: any[] = [];
+  let offset = 0;
+  // Hard-Cap als Sicherheitsnetz — falls die DB sich pathologisch
+  // verhält (z.B. Tombstones nicht respektiert), bricht die Schleife
+  // nach 50.000 Rows ab. Realistische Datenmengen liegen weit drunter.
+  const MAX_PAGES = 50;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const { data, error } = await supabase
+      .from('time_entries')
+      .select('*')
+      .is('deleted_at', null)
+      .order('date', { ascending: false })
+      .order('start_time', { ascending: false })
+      .order('id', { ascending: true }) // Tiebreak deterministisch über alle Pages
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+
+    all.push(...data);
+    if (data.length < PAGE_SIZE) break; // letzte Page
+
+    offset += PAGE_SIZE;
+  }
+  return all;
+}
+
+/**
  * Decrypted ein einzelnes time_entries-Row. stakeholder kann als String
  * (alt-v2) oder als JSON-stringified-Array (neu) vorliegen — immer auf
  * Array normalisieren.
@@ -178,21 +219,12 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         set({ error: 'Sitzung abgelaufen', loading: false });
         return;
       }
-      // Kein .eq('user_id') mehr — RLS filtert: ohne Team nur eigene,
-      // mit Team auch die der Mitglieder. Tombstones (deleted_at NOT
-      // NULL) explizit raus.
-      const { data, error } = await supabase
-        .from('time_entries')
-        .select('*')
-        .is('deleted_at', null)
-        .order('date', { ascending: false })
-        .order('start_time', { ascending: false });
+      // RLS regelt: ohne Team nur eigene, mit Team auch die der
+      // Mitglieder. Pagination via fetchAllVisibleRows() umgeht den
+      // Supabase-1000-Row-Default — siehe Helper-Doc.
+      const rows = await fetchAllVisibleRows();
+      const decrypted = await Promise.all(rows.map(decryptEntryRow));
 
-      if (error) {
-        set({ error: error.message, loading: false });
-        return;
-      }
-      const decrypted = await Promise.all((data || []).map(decryptEntryRow));
       // Trennen nach user_id: eigene → entries, fremde → teamEntries
       const own: TimeEntry[] = [];
       const team: TimeEntry[] = [];
