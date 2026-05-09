@@ -21,6 +21,7 @@ import { useIsAdmin } from '@/hooks/useRole';
 import { useI18n } from '@/i18n';
 import AuthWall from '@/components/AuthWall';
 import TabBar from '@/components/TabBar';
+import BottomNav from '@/components/BottomNav';
 import TimerView from '@/components/TimerView';
 import DashboardView from '@/components/DashboardView';
 import EntriesView from '@/components/EntriesView';
@@ -61,7 +62,10 @@ function Shell() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-neutral-900 text-neutral-100 p-6">
+    // pb-24 reserviert auf Mobile Platz für die fixe BottomNav (~56px
+    // Bar + safe-area-inset auf iPhones). Auf Desktop zurück auf das
+    // normale p-6 (md:pb-6), weil dort keine BottomNav existiert.
+    <main className="min-h-screen bg-neutral-900 text-neutral-100 p-6 pb-24 md:pb-6">
       <div className="max-w-3xl mx-auto">
         <header className="flex items-center justify-between mb-4">
           <div>
@@ -96,6 +100,7 @@ function Shell() {
         {activeTab === 'entries' && <EntriesView />}
         {activeTab === 'team' && <TeamView />}
       </div>
+      <BottomNav />
     </main>
   );
 }

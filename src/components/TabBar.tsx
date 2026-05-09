@@ -1,15 +1,17 @@
 /**
- * TabBar — Top-Navigation zwischen Timer / Dashboard / Einträge / Team.
+ * TabBar — Desktop-Top-Navigation. Auf Mobile (< md) ausgeblendet,
+ * dort zeigt App.tsx stattdessen die BottomNav.
  *
  * Aktiver Tab kommt aus uiStore (localStorage-persistiert), damit ein
  * Reload den User auf seinem letzten Tab landen lässt statt immer auf
  * "timer".
+ *
+ * Tabs werden aus TAB_DEFS gelesen — gemeinsam mit BottomNav.
  */
 
-import { useUiStore, type TabId } from '@/stores/uiStore';
+import { useUiStore } from '@/stores/uiStore';
 import { useI18n } from '@/i18n';
-
-const TABS: TabId[] = ['timer', 'dashboard', 'entries', 'team'];
+import { TAB_DEFS } from './tabConfig';
 
 export default function TabBar() {
   const { t } = useI18n();
@@ -19,14 +21,14 @@ export default function TabBar() {
   return (
     <nav
       role="tablist"
+      className="hidden md:flex"
       style={{
-        display: 'flex',
         gap: 2,
         borderBottom: '1px solid var(--border)',
         marginBottom: 16,
       }}
     >
-      {TABS.map((id) => {
+      {TAB_DEFS.map(({ id, icon: Icon, labelKey }) => {
         const isActive = activeTab === id;
         return (
           <button
@@ -36,6 +38,9 @@ export default function TabBar() {
             aria-selected={isActive}
             onClick={() => setActiveTab(id)}
             style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
               padding: '8px 14px',
               background: 'transparent',
               border: 'none',
@@ -47,7 +52,8 @@ export default function TabBar() {
               transition: 'color 0.15s, border-color 0.15s',
             }}
           >
-            {t(`tabs.${id}`)}
+            <Icon size={14} />
+            {t(`tabs.${labelKey}`)}
           </button>
         );
       })}
