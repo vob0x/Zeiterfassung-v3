@@ -49,15 +49,33 @@ function Shell() {
   const fetchEntries = useEntriesStore((s) => s.fetchEntries);
   const fetchMaster = useMasterStore((s) => s.fetchMaster);
   const initTimerFromStorage = useTimerStore((s) => s.initFromStorage);
+  const syncTimerFromServer = useTimerStore((s) => s.syncFromServer);
   const syncTeamData = useTeamStore((s) => s.syncTeamData);
   const activeTab = useUiStore((s) => s.activeTab);
 
-  // Ein-Mal-Initialisierung nach Login
+  // Ein-Mal-Initialisierung nach Login + Cross-Device-Sync für Timer.
+  // initFromStorage = instant Cache-Render. syncFromServer = Source-of-
+  // Truth-Hydration (überschreibt Cache mit Server-State).
   useEffect(() => {
     fetchEntries();
     fetchMaster();
     initTimerFromStorage();
+    void syncTimerFromServer();
     syncTeamData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-Sync wenn der Tab/Window wieder sichtbar wird — fängt den Fall
+  // „Mobile gestartet → später Desktop geöffnet" und „Mobile pausiert
+  // → zurück zum Desktop-Tab". Server ist Source-of-Truth.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        void syncTimerFromServer();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

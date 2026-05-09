@@ -1,19 +1,21 @@
 /**
- * timerStore — lokaler State für laufende Timer-Slots.
+ * timerStore — laufende Timer-Slots, server-synced.
  *
- * Wichtiger Unterschied zu v2: in v3 sind Timer-Slots **rein lokaler
- * UI-State**, nicht serverpersistiert. Sie repräsentieren die Intention
- * des Users, aktuell zu tracken; das Datenartefakt entsteht erst beim
- * Stop, wo ein TimeEntry am Server angelegt wird (Server-First).
+ * Architektur:
+ *   - Source of Truth: Server (`running_timers`-Table, RLS own-only)
+ *   - Local Cache:     localStorage für instant render beim App-Start
+ *   - Sync-Strategie:  push on every change (fire-and-forget),
+ *                      pull on app-mount und visibilitychange
+ *   - Konflikt:        last-write-wins (single user, normalerweise nur
+ *                      ein aktives Device gleichzeitig — bei Race
+ *                      gewinnt der spätere updated_at)
  *
- * localStorage-Persistenz: Slots überleben Page-Reload (z.B. F5
- * versehentlich), nicht aber Tab-Close — ähnlich wie der Personal Key.
- * User-scoped, damit verschiedene User auf demselben Browser sich nicht
- * gegenseitig die Slots klauen.
- *
- * Cross-Device-Sync: nicht in M3b. Zwei Devices = zwei unabhängige
- * Slot-Listen. Falls das später wichtig wird, kann ein optionales
- * `running_timers`-Table eingeführt werden.
+ * Cross-Device-Flow:
+ *   1. Mobile addSlot → lokal sofort sichtbar → INSERT zum Server
+ *   2. Desktop syncFromServer (beim Tab-Focus) → SELECT → fügt fehlenden
+ *      Slot lokal hinzu
+ *   3. Desktop pauseSlot → lokal sofort sichtbar → UPDATE zum Server
+ *   4. Mobile syncFromServer → SELECT → übernimmt is_paused / paused_ms
  *
  * Re-Render-Mechanik: ein zentraler tick-Counter wird jede Sekunde
  * inkrementiert, sobald mindestens ein Slot läuft. Komponenten lesen
@@ -22,6 +24,12 @@
 
 import { create } from 'zustand';
 import { generateUUID } from '@/lib/utils';
+import { supabase, ensureValidSession } from '@/lib/supabase';
+import {
+  decryptField,
+  encryptField,
+  hasEncryptionKey,
+} from '@/lib/crypto';
 import { useAuthStore } from './authStore';
 
 const PALETTE = [
@@ -64,10 +72,13 @@ interface TimerState {
    *  Doppel-Load + späteres Überschreiben. */
   hydrated: boolean;
 
-  /** Lädt Slots aus localStorage. Muss aufgerufen werden NACHDEM die
-   *  Auth-Init durch ist und profile.id verfügbar — sonst landet der
-   *  Storage-Key auf 'anonymous' und findet nichts. */
+  /** Lädt Slots aus localStorage (instant cache). Muss aufgerufen werden
+   *  NACHDEM die Auth-Init durch ist und profile.id verfügbar — sonst
+   *  landet der Storage-Key auf 'anonymous' und findet nichts. */
   initFromStorage: () => void;
+  /** Lädt aktuelle Slots vom Server und ersetzt den Local-State.
+   *  Wird beim App-Mount und bei visibilitychange aufgerufen. */
+  syncFromServer: () => Promise<void>;
 
   addSlot: (init?: Partial<NewSlotInit>) => string;
   removeSlot: (id: string) => void;
@@ -89,7 +100,7 @@ export interface NewSlotInit {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// localStorage-Persistenz — user-scoped
+// localStorage-Persistenz — user-scoped, nur als Optimistic-Cache
 // ─────────────────────────────────────────────────────────────────────────
 
 function storageKey(): string | null {
@@ -137,6 +148,98 @@ function saveSlots(slots: TimerSlot[]): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Server-Sync — Encrypted Blob für die fünf Eingabe-Dimensionen
+// ─────────────────────────────────────────────────────────────────────────
+
+interface EncryptedSlotPayload {
+  stakeholder: string[];
+  projekt: string;
+  taetigkeit: string;
+  format: string;
+  notiz: string;
+  color: string;
+}
+
+async function encryptSlotPayload(slot: TimerSlot): Promise<string> {
+  const payload: EncryptedSlotPayload = {
+    stakeholder: slot.stakeholder,
+    projekt: slot.projekt,
+    taetigkeit: slot.taetigkeit,
+    format: slot.format,
+    notiz: slot.notiz,
+    color: slot.color,
+  };
+  return encryptField(JSON.stringify(payload));
+}
+
+async function decryptSlotPayload(
+  encrypted: string
+): Promise<EncryptedSlotPayload | null> {
+  try {
+    const plain = await decryptField(encrypted);
+    const parsed = JSON.parse(plain);
+    return {
+      stakeholder: Array.isArray(parsed.stakeholder) ? parsed.stakeholder : [],
+      projekt: parsed.projekt || '',
+      taetigkeit: parsed.taetigkeit || '',
+      format: parsed.format || '',
+      notiz: parsed.notiz || '',
+      color: parsed.color || PALETTE[0],
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fire-and-forget UPSERT zum Server. Failures werden nur geloggt — der
+ * lokale State ist schon aktualisiert, der User soll nicht warten. Bei
+ * temporärem Netzfehler holt der nächste sync den Server in Sync.
+ */
+async function pushSlotToServer(slot: TimerSlot): Promise<void> {
+  try {
+    const userId = useAuthStore.getState().profile?.id;
+    if (!userId) return;
+    if (!hasEncryptionKey()) return;
+    const ok = await ensureValidSession();
+    if (!ok) return;
+
+    const encrypted_data = await encryptSlotPayload(slot);
+    const { error } = await supabase
+      .from('running_timers')
+      .upsert(
+        {
+          id: slot.id,
+          user_id: userId,
+          encrypted_data,
+          start_time: slot.startTime,
+          paused_ms: slot.pausedMs,
+          is_paused: slot.isPaused,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+    if (error) console.warn('[Timer] sync push failed:', error.message);
+  } catch (e: any) {
+    console.warn('[Timer] sync push exception:', e?.message);
+  }
+}
+
+async function deleteSlotOnServer(id: string): Promise<void> {
+  try {
+    const ok = await ensureValidSession();
+    if (!ok) return;
+    const { error } = await supabase
+      .from('running_timers')
+      .delete()
+      .eq('id', id);
+    if (error) console.warn('[Timer] sync delete failed:', error.message);
+  } catch (e: any) {
+    console.warn('[Timer] sync delete exception:', e?.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Color Assignment — pro Slot eine andere Farbe aus der Palette
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -166,10 +269,6 @@ export const useTimerStore = create<TimerState>((set, get) => {
   }
 
   return {
-    // Slots werden NICHT direkt beim Store-Create aus localStorage geladen,
-    // weil der Store-Create zum Module-Load-Zeitpunkt passiert und da der
-    // authStore noch keinen profile.id hat → storageKey wäre null. Stattdessen
-    // ruft App.tsx initFromStorage() auf sobald die Auth-Wand passiert ist.
     slots: [],
     tick: 0,
     hydrated: false,
@@ -178,6 +277,59 @@ export const useTimerStore = create<TimerState>((set, get) => {
       if (get().hydrated) return; // idempotent, mehrere Mounts sind OK
       const loaded = loadSlots();
       set({ slots: loaded, hydrated: true });
+    },
+
+    syncFromServer: async () => {
+      const userId = useAuthStore.getState().profile?.id;
+      if (!userId) return;
+      if (!hasEncryptionKey()) return; // ohne Key kann eh nicht decrypted werden
+      const ok = await ensureValidSession();
+      if (!ok) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('running_timers')
+          .select('*')
+          .eq('user_id', userId);
+        if (error) {
+          console.warn('[Timer] sync pull failed:', error.message);
+          return;
+        }
+
+        const decrypted: TimerSlot[] = [];
+        for (const row of data || []) {
+          const payload = await decryptSlotPayload(row.encrypted_data);
+          if (!payload) continue; // Decrypt-Failure → Row ignorieren
+          decrypted.push({
+            id: row.id,
+            stakeholder: payload.stakeholder,
+            projekt: payload.projekt,
+            taetigkeit: payload.taetigkeit,
+            format: payload.format,
+            notiz: payload.notiz,
+            startTime: Number(row.start_time),
+            pausedMs: Number(row.paused_ms),
+            isPaused: !!row.is_paused,
+            isStopping: false,
+            color: payload.color,
+          });
+        }
+
+        // isStopping aus dem aktuellen Lokal-State erhalten — damit ein
+        // gerade laufender Stop nicht mitten drin verschwindet.
+        const localStopping = new Map(
+          get().slots.map((s) => [s.id, s.isStopping])
+        );
+        const merged = decrypted.map((s) => ({
+          ...s,
+          isStopping: localStopping.get(s.id) || false,
+        }));
+
+        set({ slots: merged, hydrated: true });
+        saveSlots(merged);
+      } catch (e: any) {
+        console.warn('[Timer] sync pull exception:', e?.message);
+      }
     },
 
     addSlot: (init) => {
@@ -199,6 +351,8 @@ export const useTimerStore = create<TimerState>((set, get) => {
       const next = [...get().slots, slot];
       set({ slots: next });
       saveSlots(next);
+      // fire-and-forget — kein await, damit der UI-Klick instant ist
+      void pushSlotToServer(slot);
       return id;
     },
 
@@ -206,44 +360,56 @@ export const useTimerStore = create<TimerState>((set, get) => {
       const next = get().slots.filter((s) => s.id !== id);
       set({ slots: next });
       saveSlots(next);
+      void deleteSlotOnServer(id);
     },
 
     updateSlot: (id, patch) => {
-      const next = get().slots.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              ...(patch.stakeholder !== undefined && { stakeholder: patch.stakeholder }),
-              ...(patch.projekt !== undefined && { projekt: patch.projekt }),
-              ...(patch.taetigkeit !== undefined && { taetigkeit: patch.taetigkeit }),
-              ...(patch.format !== undefined && { format: patch.format }),
-              ...(patch.notiz !== undefined && { notiz: patch.notiz }),
-            }
-          : s
-      );
+      let updated: TimerSlot | undefined;
+      const next = get().slots.map((s) => {
+        if (s.id !== id) return s;
+        const u: TimerSlot = {
+          ...s,
+          ...(patch.stakeholder !== undefined && { stakeholder: patch.stakeholder }),
+          ...(patch.projekt !== undefined && { projekt: patch.projekt }),
+          ...(patch.taetigkeit !== undefined && { taetigkeit: patch.taetigkeit }),
+          ...(patch.format !== undefined && { format: patch.format }),
+          ...(patch.notiz !== undefined && { notiz: patch.notiz }),
+        };
+        updated = u;
+        return u;
+      });
       set({ slots: next });
       saveSlots(next);
+      if (updated) void pushSlotToServer(updated);
     },
 
     pauseSlot: (id) => {
+      let updated: TimerSlot | undefined;
       const next = get().slots.map((s) => {
         if (s.id !== id || s.isPaused) return s;
         // Beim Pause: aktuelle running-Zeit in pausedMs einfrieren
         const runningMs = Date.now() - s.startTime;
-        return { ...s, pausedMs: s.pausedMs + runningMs, isPaused: true };
+        const u = { ...s, pausedMs: s.pausedMs + runningMs, isPaused: true };
+        updated = u;
+        return u;
       });
       set({ slots: next });
       saveSlots(next);
+      if (updated) void pushSlotToServer(updated);
     },
 
     resumeSlot: (id) => {
+      let updated: TimerSlot | undefined;
       const next = get().slots.map((s) => {
         if (s.id !== id || !s.isPaused) return s;
         // Beim Resume: startTime neu setzen, pausedMs bleibt akkumuliert
-        return { ...s, startTime: Date.now(), isPaused: false };
+        const u = { ...s, startTime: Date.now(), isPaused: false };
+        updated = u;
+        return u;
       });
       set({ slots: next });
       saveSlots(next);
+      if (updated) void pushSlotToServer(updated);
     },
 
     setIsStopping: (id, v) => {
@@ -251,7 +417,7 @@ export const useTimerStore = create<TimerState>((set, get) => {
         s.id === id ? { ...s, isStopping: v } : s
       );
       set({ slots: next });
-      // isStopping NICHT persistieren — flüchtiger UI-State
+      // isStopping NICHT persistieren — flüchtiger UI-State, kein Server-Push
     },
 
     getElapsedMs: (id) => {
