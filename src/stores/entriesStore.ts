@@ -506,16 +506,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     const now = new Date().toISOString();
     const updated = affected.map(applyRename);
 
-    // Encrypten + zu DB-Rows formen, Single-Batch-Upsert.
-    const rows = await Promise.all(
-      updated.map(async (e) => ({
-        id: e.id,
-        user_id: e.user_id,
-        date: e.date,
-        start_time: e.start_time,
-        end_time: e.end_time,
-        duration_ms: e.duration_ms,
-        ...(await encryptEntryForServer({
+    // Bewusst KEIN .upsert(): das würde die INSERT-Policy auslösen,
+    // die nur own user_id erlaubt — bei Admin-Cascade auf
+    // Teammitglieder failed das (RLS 403). Stattdessen parallele
+    // .update().eq('id', …)-Calls. Triggert nur die UPDATE-Policy
+    // (te_update_self_or_admin), die own + admin-of-teammate erlaubt.
+    const updates = await Promise.all(
+      updated.map(async (e) => {
+        const encrypted = await encryptEntryForServer({
           date: e.date,
           stakeholder: e.stakeholder,
           projekt: e.projekt,
@@ -525,15 +523,17 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           end_time: e.end_time,
           duration_ms: e.duration_ms,
           notiz: e.notiz,
-        })),
-        updated_at: now,
-      }))
+        });
+        return supabase
+          .from('time_entries')
+          .update({ ...encrypted, updated_at: now })
+          .eq('id', e.id);
+      })
     );
 
-    const { error } = await supabase
-      .from('time_entries')
-      .upsert(rows, { onConflict: 'id' });
-    if (error) throw new Error(error.message);
+    // Erste Fehlermeldung übernehmen falls eine Update fehlschlägt.
+    const firstError = updates.find((r) => r.error)?.error;
+    if (firstError) throw new Error(firstError.message);
 
     // Lokal-State patchen — sowohl entries als auch teamEntries, je
     // nachdem wo die betroffenen Rows liegen.
