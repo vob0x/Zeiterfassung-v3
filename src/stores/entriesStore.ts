@@ -76,10 +76,16 @@ interface EntriesState {
   updateEntry: (id: string, patch: EntryPatch) => Promise<TimeEntry>;
   deleteEntry: (id: string) => Promise<void>;
   /**
-   * Cascade-Rename: ersetzt `oldName` durch `newName` in allen eigenen
-   * Einträgen, die das Feld verwenden. Stakeholder ist multi-valued
-   * (Array) — nur der gematchte Eintrag im Array wird ersetzt; andere
-   * Stakeholder im selben Eintrag bleiben.
+   * Cascade-Rename: ersetzt `oldName` durch `newName` in den
+   * passenden Einträgen. Stakeholder ist multi-valued (Array) — nur
+   * der gematchte Eintrag im Array wird ersetzt; andere Stakeholder
+   * im selben Eintrag bleiben.
+   *
+   * Scope:
+   *   - 'self' (default): nur eigene Einträge
+   *   - 'team': eigene + Teamkollegen-Einträge. RLS muss erlauben
+   *     (`te_update_self_or_admin` ab Migration 20260511…). Wird
+   *     vom masterStore in Admin-Cascade-Renames benutzt.
    *
    * Single batch-upsert: alle betroffenen Rows in einem Round-Trip.
    * Returnt die Anzahl der berührten Einträge.
@@ -87,7 +93,8 @@ interface EntriesState {
   bulkRenameField: (
     field: RenameableField,
     oldName: string,
-    newName: string
+    newName: string,
+    scope?: 'self' | 'team'
   ) => Promise<number>;
 }
 
@@ -454,7 +461,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     });
   },
 
-  bulkRenameField: async (field, oldName, newName) => {
+  bulkRenameField: async (field, oldName, newName, scope = 'self') => {
     const profile = useAuthStore.getState().profile;
     if (!profile?.id) throw new Error('Nicht authentifiziert');
     if (!hasEncryptionKey()) throw new Error('Personal Key fehlt');
@@ -462,9 +469,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     if (!trimmedNew) throw new Error('Neuer Name darf nicht leer sein');
     if (oldName === trimmedNew) return 0;
 
-    // Cascade-Scope ist BEWUSST nur eigene Einträge — Master-Daten sind
-    // user-scoped. Andere Team-Mitglieder haben ihre eigenen Master-
-    // Listen und sollen nicht mit-umbenannt werden.
     const matches = (e: TimeEntry): boolean => {
       if (field === 'stakeholder') {
         const list = Array.isArray(e.stakeholder) ? e.stakeholder : [];
@@ -473,7 +477,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       return (e[field] || '') === oldName;
     };
 
-    const affected = get().entries.filter(matches);
+    // Scope bestimmt das Suchfeld: 'team' nimmt eigene + Teamkollegen-
+    // Einträge mit, 'self' nur eigene. RLS auf Server-Seite spiegelt
+    // die Berechtigung — Mitarbeiter würde ein 'team'-Aufruf ohnehin
+    // nicht durchgehen.
+    const pool =
+      scope === 'team'
+        ? [...get().entries, ...get().teamEntries]
+        : get().entries;
+    const affected = pool.filter(matches);
     if (affected.length === 0) return 0;
 
     const ok = await ensureValidSession();
@@ -523,10 +535,12 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       .upsert(rows, { onConflict: 'id' });
     if (error) throw new Error(error.message);
 
-    // Lokal-State patchen
+    // Lokal-State patchen — sowohl entries als auch teamEntries, je
+    // nachdem wo die betroffenen Rows liegen.
     const updatedMap = new Map(updated.map((e) => [e.id, { ...e, updated_at: now }]));
     set({
       entries: get().entries.map((e) => updatedMap.get(e.id) ?? e),
+      teamEntries: get().teamEntries.map((e) => updatedMap.get(e.id) ?? e),
       error: null,
     });
     return affected.length;

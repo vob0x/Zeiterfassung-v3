@@ -157,13 +157,14 @@ export const fr = {
   manage: {
     title: 'Gestion',
     intro:
-      "Renommer ou supprimer les données de référence. Lors du renommage, toutes vos entrées sont mises à jour (cascade). Lors de la suppression, les anciennes entrées conservent la valeur en texte libre.",
+      "Renommer ou supprimer les données de référence. En mode équipe, la liste affiche toutes les données des membres dédupliquées. Les renommages d'admin se propagent à toute l'équipe (toutes les rows + entrées) ; les renommages de collaborateur ne touchent que les propres données.",
     empty: 'Aucune entrée pour le moment.',
     add: 'Ajouter',
     saving: 'sauvegarde…',
     addPlaceholder: 'Ajouter…',
     rename: 'Renommer',
     delete: 'Supprimer',
+    readOnly: 'Lecture seule (membre)',
     useCountTooltip: 'Utilisé dans {count} entrées',
     renameConfirm:
       "« {old} » → « {new} » : {count} entrées seront aussi renommées. Continuer ?",

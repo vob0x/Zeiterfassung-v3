@@ -157,13 +157,14 @@ export const de = {
   manage: {
     title: 'Verwaltung',
     intro:
-      'Master-Daten umbenennen oder löschen. Beim Umbenennen werden alle eigenen Einträge mit-aktualisiert (Cascade). Beim Löschen behalten Alteinträge den Wert als Freitext.',
+      'Master-Daten umbenennen oder löschen. Im Team-Modus zeigt die Liste alle Master-Daten der Team-Mitglieder dedupliziert. Admin-Renames cascaden teamweit (alle gleichnamigen Master-Rows + alle Einträge), Mitarbeiter-Renames nur eigene.',
     empty: 'Noch keine Einträge.',
     add: 'Hinzufügen',
     saving: 'speichere…',
     addPlaceholder: 'Neu hinzufügen…',
     rename: 'Umbenennen',
     delete: 'Löschen',
+    readOnly: 'Read-only (Mitglied)',
     useCountTooltip: 'Wird in {count} Einträgen verwendet',
     renameConfirm:
       '„{old}" → „{new}": {count} Einträge werden mit-umbenannt. Fortfahren?',

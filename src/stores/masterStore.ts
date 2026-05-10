@@ -5,7 +5,15 @@
  * demselben Shape (`MasterDataItem`). Das `name`-Feld ist verschlüsselt
  * im Schema — wir decrypten beim Pull.
  *
- * M2a-Scope: Read-only. Add/Update/Delete kommt M2b.
+ * Team-Sharing (Pfad A der M5-Erweiterung): in einem Team enthalten die
+ * Listen die Master-Rows ALLER Team-Mitglieder. RLS regelt das, wir
+ * filtern nicht mehr per `.eq('user_id', ...)`. Der Picker dedupliziert
+ * nach Name, Aggregationen werden durch geteilte Vokabel konsistent.
+ *
+ * Cascade-Rename:
+ *   - Solo + Mitarbeiter: rename eigene Master-Row + cascade eigene Einträge
+ *   - Admin im Team: rename ALLE Team-Master-Rows mit gleichem Namen +
+ *     cascade ALLE Einträge teamweit
  */
 
 import { create } from 'zustand';
@@ -13,6 +21,7 @@ import { supabase, ensureValidSession } from '@/lib/supabase';
 import { decryptField, encryptField, hasEncryptionKey } from '@/lib/crypto';
 import { useAuthStore } from './authStore';
 import { useEntriesStore } from './entriesStore';
+import { useTeamStore } from './teamStore';
 import { generateUUID } from '@/lib/utils';
 import type {
   Stakeholder,
@@ -21,6 +30,22 @@ import type {
   Format,
   MasterDataItem,
 } from '@/types';
+
+/**
+ * Bestimmt den Cascade-Scope für Rename basierend auf der aktiven Rolle:
+ *   - kein Team:                    'self' (Solo)
+ *   - Team + role === 'admin':      'team' (cascade teamweit)
+ *   - Team + role === 'mitarbeiter':'self' (eigene Daten, Defensive)
+ */
+function getRenameScope(): 'self' | 'team' {
+  const team = useTeamStore.getState().team;
+  if (!team) return 'self';
+  const profile = useAuthStore.getState().profile;
+  const role = useTeamStore.getState().members.find(
+    (m) => m.user_id === profile?.id
+  )?.role;
+  return role === 'admin' ? 'team' : 'self';
+}
 
 /**
  * Vier Master-Daten-Tabellen, gleiches Schema. `MasterTable` typisiert
@@ -153,6 +178,36 @@ async function renameItemServer(
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Admin-Variante: alle Team-Master-Rows mit demselben Namen umbenennen.
+ * RLS lässt nur durch wenn current user Admin in einem gemeinsamen Team
+ * mit dem Row-Owner ist (oder selbst Owner) — siehe Migration
+ * 20260511000000_team_shared_master_data.
+ *
+ * Returnt die Anzahl umbenannter Master-Rows.
+ */
+async function renameMasterByNameTeamWide(
+  table: MasterTable,
+  newName: string,
+  candidateIds: string[]
+): Promise<number> {
+  if (candidateIds.length === 0) return 0;
+  const ok = await ensureValidSession();
+  if (!ok) throw new Error('Sitzung abgelaufen');
+  if (!hasEncryptionKey()) throw new Error('Personal Key fehlt');
+
+  const encryptedName = await encryptField(newName);
+  const now = new Date().toISOString();
+
+  // Eine Update-Query für alle IDs gleichzeitig — Round-Trip-sparend.
+  const { error, count } = await supabase
+    .from(table)
+    .update({ name: encryptedName, updated_at: now }, { count: 'exact' })
+    .in('id', candidateIds);
+  if (error) throw new Error(error.message);
+  return count ?? candidateIds.length;
+}
+
 async function removeItemServer(
   table: MasterTable,
   id: string
@@ -163,6 +218,83 @@ async function removeItemServer(
   // Recovery-Use-Case. Echtes DELETE.
   const { error } = await supabase.from(table).delete().eq('id', id);
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Map: Tabellen-Name → State-Slot, damit der Generic-Renamer den State
+ * nach Erfolg patchen kann ohne 4 Switch-Cases.
+ */
+const TABLE_TO_STATE_KEY: Record<
+  MasterTable,
+  'stakeholders' | 'projects' | 'activities' | 'formats'
+> = {
+  stakeholders: 'stakeholders',
+  projects: 'projects',
+  activities: 'activities',
+  formats: 'formats',
+};
+
+/**
+ * Generischer Rename: macht den Cascade-Algorithmus einmal und wird
+ * von allen vier renameXxx-Methoden aufgerufen. Returnt die Anzahl
+ * der gecascadeten Einträge (für UI-Feedback).
+ */
+async function renameMasterWithCascade(
+  set: (
+    update:
+      | Partial<MasterState>
+      | ((s: MasterState) => Partial<MasterState>)
+  ) => void,
+  table: MasterTable,
+  id: string,
+  newName: string,
+  entryField: 'stakeholder' | 'projekt' | 'taetigkeit' | 'format'
+): Promise<number> {
+  const stateKey = TABLE_TO_STATE_KEY[table];
+  const state = useMasterStore.getState();
+  const list = state[stateKey] as MasterDataItem[];
+  const old = list.find((x) => x.id === id);
+  if (!old) throw new Error('Eintrag nicht gefunden');
+  const trimmed = newName.trim();
+  if (!trimmed || trimmed === old.name) return 0;
+
+  const scope = getRenameScope();
+  const now = new Date().toISOString();
+
+  if (scope === 'team') {
+    // Admin-Cascade: alle Master-Rows mit gleichem Namen finden und
+    // alle gemeinsam umbenennen. RLS lässt das durch (Migration
+    // 20260511…) — Mitarbeiter-Rows der Kollegen mit gleichem Namen
+    // werden ebenfalls aktualisiert.
+    const candidates = list.filter((x) => x.name === old.name);
+    await renameMasterByNameTeamWide(
+      table,
+      trimmed,
+      candidates.map((x) => x.id)
+    );
+    // Lokal-State: alle gleichnamigen Items aktualisieren
+    const idsToUpdate = new Set(candidates.map((x) => x.id));
+    set((s) => ({
+      [stateKey]: (s[stateKey] as MasterDataItem[]).map((x) =>
+        idsToUpdate.has(x.id) ? { ...x, name: trimmed, updated_at: now } : x
+      ),
+      error: null,
+    }) as Partial<MasterState>);
+  } else {
+    // Self-Scope: nur eigenes Master-Row updaten
+    await renameItemServer(table, id, trimmed);
+    set((s) => ({
+      [stateKey]: (s[stateKey] as MasterDataItem[]).map((x) =>
+        x.id === id ? { ...x, name: trimmed, updated_at: now } : x
+      ),
+      error: null,
+    }) as Partial<MasterState>);
+  }
+
+  // Eintrags-Cascade — gleicher Scope wie Master-Update
+  return useEntriesStore
+    .getState()
+    .bulkRenameField(entryField, old.name, trimmed, scope);
 }
 
 export const useMasterStore = create<MasterState>((set) => ({
@@ -192,27 +324,24 @@ export const useMasterStore = create<MasterState>((set) => ({
         return;
       }
 
-      // Vier Tabellen parallel ziehen — Promise.all spart Round-Trips.
+      // Kein .eq('user_id') mehr — RLS gibt: ohne Team nur eigene Rows,
+      // mit Team auch die der Mitglieder. Vier Tabellen parallel.
       const [shRes, prRes, actRes, fmtRes] = await Promise.all([
         supabase
           .from('stakeholders')
           .select('*')
-          .eq('user_id', profile.id)
           .order('sort_order', { ascending: true }),
         supabase
           .from('projects')
           .select('*')
-          .eq('user_id', profile.id)
           .order('sort_order', { ascending: true }),
         supabase
           .from('activities')
           .select('*')
-          .eq('user_id', profile.id)
           .order('sort_order', { ascending: true }),
         supabase
           .from('formats')
           .select('*')
-          .eq('user_id', profile.id)
           .order('sort_order', { ascending: true }),
       ]);
 
@@ -269,90 +398,26 @@ export const useMasterStore = create<MasterState>((set) => ({
   },
 
   // ───────────────────────────────────────────────────────────────────
-  // Rename mit Cascade — Master-Eintrag umbenennen UND alle Time-Entries
-  // mit-umbenennen die diesen Wert tragen. Reihenfolge: erst Server-
-  // Confirm fürs Master-Daten-Row, dann Cascade in entries (Single-
-  // Batch-Upsert), dann Lokal-State updaten. Wenn die Cascade scheitert,
-  // ist Master-Daten schon umbenannt — User sieht beide Namen und kann
-  // manuell nacharbeiten. Akzeptiert für ein Single-User-Tool.
+  // Rename mit Cascade
+  //
+  // Rolle-abhängiger Scope (siehe getRenameScope):
+  //   - Solo / Mitarbeiter: nur eigene Master-Row + eigene Einträge
+  //   - Admin im Team:      ALLE Master-Rows mit gleichem Namen +
+  //                          ALLE Einträge teamweit
+  //
+  // Reihenfolge: Master-Row(s) updaten → Eintrags-Cascade → Lokal-State.
+  // Bei Failure des zweiten Schritts ist die Master-Row schon um —
+  // akzeptiert, User kann via Verwaltung nacharbeiten.
   // ───────────────────────────────────────────────────────────────────
 
-  renameStakeholder: async (id, name) => {
-    const old = useMasterStore.getState().stakeholders.find((x) => x.id === id);
-    if (!old) throw new Error('Stakeholder nicht gefunden');
-    const trimmed = name.trim();
-    if (!trimmed || trimmed === old.name) return 0;
-
-    await renameItemServer(TABLES.stakeholders, id, trimmed);
-    const cascade = await useEntriesStore
-      .getState()
-      .bulkRenameField('stakeholder', old.name, trimmed);
-
-    set((s) => ({
-      stakeholders: s.stakeholders.map((x) =>
-        x.id === id ? { ...x, name: trimmed, updated_at: new Date().toISOString() } : x
-      ),
-      error: null,
-    }));
-    return cascade;
-  },
-  renameProject: async (id, name) => {
-    const old = useMasterStore.getState().projects.find((x) => x.id === id);
-    if (!old) throw new Error('Projekt nicht gefunden');
-    const trimmed = name.trim();
-    if (!trimmed || trimmed === old.name) return 0;
-
-    await renameItemServer(TABLES.projects, id, trimmed);
-    const cascade = await useEntriesStore
-      .getState()
-      .bulkRenameField('projekt', old.name, trimmed);
-
-    set((s) => ({
-      projects: s.projects.map((x) =>
-        x.id === id ? { ...x, name: trimmed, updated_at: new Date().toISOString() } : x
-      ),
-      error: null,
-    }));
-    return cascade;
-  },
-  renameActivity: async (id, name) => {
-    const old = useMasterStore.getState().activities.find((x) => x.id === id);
-    if (!old) throw new Error('Tätigkeit nicht gefunden');
-    const trimmed = name.trim();
-    if (!trimmed || trimmed === old.name) return 0;
-
-    await renameItemServer(TABLES.activities, id, trimmed);
-    const cascade = await useEntriesStore
-      .getState()
-      .bulkRenameField('taetigkeit', old.name, trimmed);
-
-    set((s) => ({
-      activities: s.activities.map((x) =>
-        x.id === id ? { ...x, name: trimmed, updated_at: new Date().toISOString() } : x
-      ),
-      error: null,
-    }));
-    return cascade;
-  },
-  renameFormat: async (id, name) => {
-    const old = useMasterStore.getState().formats.find((x) => x.id === id);
-    if (!old) throw new Error('Format nicht gefunden');
-    const trimmed = name.trim();
-    if (!trimmed || trimmed === old.name) return 0;
-
-    await renameItemServer(TABLES.formats, id, trimmed);
-    const cascade = await useEntriesStore
-      .getState()
-      .bulkRenameField('format', old.name, trimmed);
-
-    set((s) => ({
-      formats: s.formats.map((x) =>
-        x.id === id ? { ...x, name: trimmed, updated_at: new Date().toISOString() } : x
-      ),
-      error: null,
-    }));
-    return cascade;
-  },
+  renameStakeholder: (id, name) =>
+    renameMasterWithCascade(set, 'stakeholders', id, name, 'stakeholder'),
+  renameProject: (id, name) =>
+    renameMasterWithCascade(set, 'projects', id, name, 'projekt'),
+  renameActivity: (id, name) =>
+    renameMasterWithCascade(set, 'activities', id, name, 'taetigkeit'),
+  renameFormat: (id, name) =>
+    renameMasterWithCascade(set, 'formats', id, name, 'format'),
 
   // ───────────────────────────────────────────────────────────────────
   // Remove — echter DB-DELETE (kein Soft-Delete für Master-Daten).

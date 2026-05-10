@@ -21,6 +21,8 @@ import { useMemo, useState } from 'react';
 import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
+import { useTeamStore } from '@/stores/teamStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useI18n } from '@/i18n';
 import type { MasterDataItem, TimeEntry } from '@/types';
 
@@ -66,9 +68,16 @@ export default function ManageView() {
   const projects = useMasterStore((s) => s.projects);
   const activities = useMasterStore((s) => s.activities);
   const formats = useMasterStore((s) => s.formats);
-  const entries = useEntriesStore((s) => s.entries);
+  const ownEntries = useEntriesStore((s) => s.entries);
+  const teamEntries = useEntriesStore((s) => s.teamEntries);
 
-  const counters = useMemo(() => buildUseCounters(entries), [entries]);
+  // Im Team-Modus zählt der Use-Counter teamweit, damit der Admin sieht
+  // wie viele Team-Einträge ein Master-Item benutzen. Solo: nur eigene.
+  const allEntries = useMemo(
+    () => [...ownEntries, ...teamEntries],
+    [ownEntries, teamEntries]
+  );
+  const counters = useMemo(() => buildUseCounters(allEntries), [allEntries]);
 
   const itemsByDim: Record<Dim, MasterDataItem[]> = {
     stakeholder: stakeholders,
@@ -125,6 +134,12 @@ function Section({
   const addProject = useMasterStore((s) => s.addProject);
   const addActivity = useMasterStore((s) => s.addActivity);
   const addFormat = useMasterStore((s) => s.addFormat);
+  const profile = useAuthStore((s) => s.profile);
+  const team = useTeamStore((s) => s.team);
+  const myRole = useTeamStore(
+    (s) => s.members.find((m) => m.user_id === profile?.id)?.role
+  );
+  const isAdmin = !team || myRole === 'admin';
 
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -158,9 +173,31 @@ function Section({
     }
   };
 
+  // Dedup nach Name (case-insensitive). Bei Team-Sharing können
+  // mehrere Master-Rows mit gleichem Namen von verschiedenen Ownern
+  // existieren — ManageView zeigt jeden Namen einmal. Wir picken die
+  // eigene Row als „Display"-Row falls vorhanden (User edit/delete
+  // wirkt dann sicher auf seine eigene Master-Row), sonst irgendeine.
+  // Cascade-Rename teamweit deckt den Rest ab.
+  const dedupedItems = useMemo(() => {
+    const groups = new Map<string, MasterDataItem[]>();
+    for (const it of items) {
+      const key = it.name.trim().toLowerCase();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(it);
+    }
+    const display: MasterDataItem[] = [];
+    for (const group of groups.values()) {
+      const own = group.find((g) => g.user_id === profile?.id);
+      display.push(own || group[0]);
+    }
+    return display;
+  }, [items, profile?.id]);
+
   const sorted = useMemo(
-    () => [...items].sort((a, b) => a.name.localeCompare(b.name, 'de')),
-    [items]
+    () =>
+      [...dedupedItems].sort((a, b) => a.name.localeCompare(b.name, 'de')),
+    [dedupedItems]
   );
 
   return (
@@ -195,14 +232,21 @@ function Section({
         </div>
       ) : (
         <ul className="space-y-1 mb-3">
-          {sorted.map((item) => (
-            <ItemRow
-              key={item.id}
-              dim={dim}
-              item={item}
-              useCount={counter.get(item.name) || 0}
-            />
-          ))}
+          {sorted.map((item) => {
+            const isOwn = item.user_id === profile?.id;
+            // Edit/Delete nur wenn eigene Row ODER Admin (Admin kann
+            // Team-Master-Rows umbenennen via Cascade).
+            const canEdit = isOwn || isAdmin;
+            return (
+              <ItemRow
+                key={item.id}
+                dim={dim}
+                item={item}
+                useCount={counter.get(item.name) || 0}
+                canEdit={canEdit}
+              />
+            );
+          })}
         </ul>
       )}
 
@@ -244,10 +288,14 @@ function ItemRow({
   dim,
   item,
   useCount,
+  canEdit,
 }: {
   dim: Dim;
   item: MasterDataItem;
   useCount: number;
+  /** Wenn false: keine Edit/Delete-Buttons (User darf das Item nicht
+   *  ändern — z.B. Mitarbeiter sieht das Item eines Kollegen). */
+  canEdit: boolean;
 }) {
   const { t } = useI18n();
   const renameStakeholder = useMasterStore((s) => s.renameStakeholder);
@@ -397,28 +445,43 @@ function ItemRow({
               ×{useCount}
             </span>
           )}
-          <button
-            type="button"
-            onClick={onStartEdit}
-            disabled={busy}
-            className="p-1 rounded hover:bg-neutral-800"
-            style={{ color: 'var(--text-muted)' }}
-            aria-label={t('manage.rename')}
-            title={t('manage.rename')}
-          >
-            <Pencil size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={busy}
-            className="p-1 rounded hover:bg-neutral-800"
-            style={{ color: '#D4706E' }}
-            aria-label={t('manage.delete')}
-            title={t('manage.delete')}
-          >
-            <Trash2 size={12} />
-          </button>
+          {canEdit ? (
+            <>
+              <button
+                type="button"
+                onClick={onStartEdit}
+                disabled={busy}
+                className="p-1 rounded hover:bg-neutral-800"
+                style={{ color: 'var(--text-muted)' }}
+                aria-label={t('manage.rename')}
+                title={t('manage.rename')}
+              >
+                <Pencil size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={busy}
+                className="p-1 rounded hover:bg-neutral-800"
+                style={{ color: '#D4706E' }}
+                aria-label={t('manage.delete')}
+                title={t('manage.delete')}
+              >
+                <Trash2 size={12} />
+              </button>
+            </>
+          ) : (
+            // Read-only Anzeige für nicht-editierbare Items (Team-Member-
+            // Items aus Sicht des Mitarbeiters). Spacer für Layout-
+            // Konsistenz mit den Edit-Buttons rechts.
+            <span
+              className="text-[10px] uppercase tracking-widest pr-1"
+              style={{ color: 'var(--text-muted)', opacity: 0.5 }}
+              title={t('manage.readOnly')}
+            >
+              ·
+            </span>
+          )}
         </>
       )}
     </li>

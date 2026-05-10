@@ -88,11 +88,26 @@ export default function Picker(props: Props) {
     };
   }, [open]);
 
+  // Dedup nach Name (case-insensitive) — bei Team-Sharing können mehrere
+  // Master-Daten-Rows mit demselben Namen existieren (eine pro Owner).
+  // Im Picker zeigen wir jeden Wert genau einmal.
+  const dedupedOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: typeof options = [];
+    for (const o of options) {
+      const key = o.name.trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(o);
+    }
+    return out;
+  }, [options]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => o.name.toLowerCase().includes(q));
-  }, [options, search]);
+    if (!q) return dedupedOptions;
+    return dedupedOptions.filter((o) => o.name.toLowerCase().includes(q));
+  }, [dedupedOptions, search]);
 
   const exactMatch = useMemo(() => {
     const q = search.trim().toLowerCase();
