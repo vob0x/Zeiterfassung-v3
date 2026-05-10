@@ -21,12 +21,12 @@
  *   - Bei Fehler: Form bleibt mit eingegebenen Werten, Error-Message
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
 import { useIsAdmin } from '@/hooks/useRole';
 import { useI18n } from '@/i18n';
-import { formatDateISO } from '@/lib/utils';
+import { dateRangeISO, formatDateISO } from '@/lib/utils';
 import { isAbsenceActivity } from '@/lib/absences';
 import Picker from './Picker';
 
@@ -41,6 +41,10 @@ const ABSENCE_DEFAULT_DURATION_MS = (8 * 60 + 24) * 60_000;
 
 interface FormState {
   date: string;
+  /** Optional: Bis-Datum für Zeitspannen-Erfassung. Leer = Einzeltag. */
+  dateTo: string;
+  /** Bei aktiver Zeitspanne: Wochenenden im Bulk-Insert ausschließen. */
+  excludeWeekends: boolean;
   start_time: string;
   end_time: string;
   stakeholder: string[];
@@ -53,6 +57,8 @@ interface FormState {
 function makeDefaults(t: (k: string) => string): FormState {
   return {
     date: formatDateISO(new Date()),
+    dateTo: '',
+    excludeWeekends: false,
     start_time: '09:00',
     end_time: '10:00',
     stakeholder: [],
@@ -75,6 +81,7 @@ function computeDurationMs(start: string, end: string): number {
 export default function ManualEntry() {
   const { t } = useI18n();
   const addEntry = useEntriesStore((s) => s.addEntry);
+  const addEntries = useEntriesStore((s) => s.addEntries);
   const stakeholders = useMasterStore((s) => s.stakeholders);
   const projects = useMasterStore((s) => s.projects);
   const activities = useMasterStore((s) => s.activities);
@@ -104,11 +111,22 @@ export default function ManualEntry() {
 
   const isAbsence = isAbsenceActivity(form.taetigkeit);
 
+  // Range-Berechnung: leeres oder gleiches Bis-Datum = Einzeltag.
+  const dates = useMemo(() => {
+    if (!form.dateTo || form.dateTo === form.date) return [form.date];
+    return dateRangeISO(form.date, form.dateTo, form.excludeWeekends);
+  }, [form.date, form.dateTo, form.excludeWeekends]);
+  const isRange = dates.length > 1;
+
   const validate = (): string | null => {
     if (!form.date) return t('entry.fillRequired');
     if (!form.taetigkeit) return t('entry.fillRequired');
+    if (form.dateTo && form.dateTo < form.date) {
+      return t('entry.invalidDateRange');
+    }
+    if (dates.length === 0) return t('entry.fillRequired');
 
-    // Bei Abwesenheit (Ferien/Krankheit/Militär/Freistellung) sind
+    // Bei Abwesenheit (Ferien/Krankheit/Militär/Abwesend) sind
     // Stakeholder/Projekt/Format/Zeit optional — wir füllen Zeit-
     // Defaults beim Submit. Frühe Rückkehr verhindert Pflicht-Checks.
     if (isAbsence) return null;
@@ -143,8 +161,9 @@ export default function ManualEntry() {
         ? ABSENCE_DEFAULT_DURATION_MS
         : computeDurationMs(start_time, end_time);
 
-      await addEntry({
-        date: form.date,
+      // Build inputs für jeden Tag im Range (oder einzelnen Tag).
+      const inputs = dates.map((d) => ({
+        date: d,
         stakeholder: form.stakeholder,
         projekt: form.projekt,
         taetigkeit: form.taetigkeit,
@@ -153,9 +172,20 @@ export default function ManualEntry() {
         end_time,
         duration_ms,
         notiz: form.notiz,
-      });
+      }));
+
+      if (inputs.length === 1) {
+        await addEntry(inputs[0]);
+      } else {
+        await addEntries(inputs);
+      }
+
       setForm(makeDefaults(t));
-      setOkMsg(t('toast.saved'));
+      setOkMsg(
+        inputs.length === 1
+          ? t('toast.saved')
+          : t('toast.savedN').replace('{n}', String(inputs.length))
+      );
     } catch (err: any) {
       setError(err?.message || t('toast.saveFailed'));
     } finally {
@@ -180,7 +210,7 @@ export default function ManualEntry() {
       </summary>
 
       <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 text-xs mt-2">
-        {/* Zeile 1: Datum + Dauer-Anzeige */}
+        {/* Zeile 1: Datum (von) + Bis-Datum (optional, leer = Einzeltag) */}
         <Field label={t('entry.date')}>
           <input
             type="date"
@@ -189,16 +219,69 @@ export default function ManualEntry() {
             className={inputClass}
           />
         </Field>
+        <Field label={t('entry.dateTo')}>
+          <input
+            type="date"
+            value={form.dateTo}
+            min={form.date}
+            onChange={(e) => setForm({ ...form, dateTo: e.target.value })}
+            placeholder={t('entry.dateToOptional')}
+            className={inputClass}
+          />
+        </Field>
+
+        {/* Zeile 1b: Range-Optionen + Dauer-Anzeige.
+            Bei Range erscheint Wochenend-Toggle, sonst nur die Dauer rechts. */}
         <div className="flex flex-col justify-end">
-          <span className="text-[10px] uppercase tracking-widest text-neutral-500 mb-0.5">
-            {t('entry.duration')}
-          </span>
-          <span
-            className="text-xs font-mono py-1"
-            style={{ color: durMin > 0 ? '#C9A962' : 'var(--text-muted)' }}
-          >
-            {durMin > 0 ? `${Math.floor(durMin / 60)}:${String(durMin % 60).padStart(2, '0')}` : '—'}
-          </span>
+          {isRange ? (
+            <label
+              className="flex items-center gap-2 text-xs"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <input
+                type="checkbox"
+                checked={form.excludeWeekends}
+                onChange={(e) =>
+                  setForm({ ...form, excludeWeekends: e.target.checked })
+                }
+              />
+              {t('entry.excludeWeekends')}
+            </label>
+          ) : (
+            <span className="text-[10px] uppercase tracking-widest text-neutral-500">
+              &nbsp;
+            </span>
+          )}
+        </div>
+        <div className="flex flex-col justify-end">
+          {isRange ? (
+            <>
+              <span className="text-[10px] uppercase tracking-widest text-neutral-500 mb-0.5">
+                {t('entry.rangeCount')}
+              </span>
+              <span
+                className="text-xs font-mono py-1"
+                style={{ color: '#C9A962' }}
+                title={`${dates[0]} – ${dates[dates.length - 1]}`}
+              >
+                {t('entry.rangeCountValue').replace('{n}', String(dates.length))}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] uppercase tracking-widest text-neutral-500 mb-0.5">
+                {t('entry.duration')}
+              </span>
+              <span
+                className="text-xs font-mono py-1"
+                style={{ color: durMin > 0 ? '#C9A962' : 'var(--text-muted)' }}
+              >
+                {durMin > 0
+                  ? `${Math.floor(durMin / 60)}:${String(durMin % 60).padStart(2, '0')}`
+                  : '—'}
+              </span>
+            </>
+          )}
         </div>
 
         {/* Zeile 2: Von + Bis */}

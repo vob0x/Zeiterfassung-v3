@@ -60,6 +60,12 @@ export const de = {
     addManual: 'Manueller Eintrag',
     fillRequired: 'Bitte alle Pflichtfelder ausfüllen',
     invalidTimeRange: 'Bis-Zeit muss nach Von-Zeit liegen',
+    invalidDateRange: 'Bis-Datum darf nicht vor Datum liegen',
+    dateTo: 'Bis-Datum',
+    dateToOptional: 'Optional',
+    excludeWeekends: 'Wochenenden ausschließen',
+    rangeCount: 'Einträge',
+    rangeCountValue: '→ {n} Tage',
     absenceHint:
       'Abwesenheit erkannt — Stakeholder, Projekt, Format und Zeit sind optional. Leere Zeit-Felder werden mit dem Tagessoll (8:24h) aufgefüllt.',
   },
@@ -101,6 +107,7 @@ export const de = {
 
   toast: {
     saved: 'Gespeichert',
+    savedN: '{n} Einträge gespeichert',
     deleted: 'Gelöscht',
     error: 'Fehler:',
     saveFailed: 'Speichern fehlgeschlagen',

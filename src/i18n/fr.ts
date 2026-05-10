@@ -60,6 +60,12 @@ export const fr = {
     addManual: 'Saisie manuelle',
     fillRequired: 'Veuillez remplir tous les champs obligatoires',
     invalidTimeRange: 'L\'heure de fin doit être postérieure à l\'heure de début',
+    invalidDateRange: 'La date de fin ne peut pas être antérieure à la date de début',
+    dateTo: 'Date de fin',
+    dateToOptional: 'Optionnel',
+    excludeWeekends: 'Exclure les week-ends',
+    rangeCount: 'Entrées',
+    rangeCountValue: '→ {n} jours',
     absenceHint:
       "Absence détectée — mandant, projet, format et heures sont facultatifs. Les heures vides sont remplies avec le quota journalier (8h24).",
   },
@@ -101,6 +107,7 @@ export const fr = {
 
   toast: {
     saved: 'Enregistré',
+    savedN: '{n} entrées enregistrées',
     deleted: 'Supprimé',
     error: 'Erreur :',
     saveFailed: 'Échec de l\'enregistrement',

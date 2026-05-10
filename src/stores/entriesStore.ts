@@ -67,6 +67,12 @@ interface EntriesState {
   error: string | null;
   fetchEntries: () => Promise<void>;
   addEntry: (input: NewEntryInput) => Promise<TimeEntry>;
+  /**
+   * Batch-Variante: encryptet alle Inputs und macht einen einzigen
+   * Server-Insert. State wird einmal am Ende aktualisiert — kein
+   * Listen-Flackern bei z.B. 14 Ferien-Einträgen auf einmal.
+   */
+  addEntries: (inputs: NewEntryInput[]) => Promise<TimeEntry[]>;
   updateEntry: (id: string, patch: EntryPatch) => Promise<TimeEntry>;
   deleteEntry: (id: string) => Promise<void>;
   /**
@@ -314,6 +320,65 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     };
     set({ entries: [newEntry, ...get().entries], error: null });
     return newEntry;
+  },
+
+  addEntries: async (inputs) => {
+    const profile = useAuthStore.getState().profile;
+    if (!profile?.id) throw new Error('Nicht authentifiziert');
+    if (!hasEncryptionKey()) throw new Error('Personal Key fehlt');
+    if (inputs.length === 0) return [];
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    const now = new Date().toISOString();
+
+    // Pro Input: ID + Encryption + Row-Shape parallel rechnen
+    const prepared = await Promise.all(
+      inputs.map(async (input) => {
+        const id = generateUUID();
+        const encrypted = await encryptEntryForServer(input);
+        const row = {
+          id,
+          user_id: profile.id,
+          ...encrypted,
+          created_at: now,
+          updated_at: now,
+          deleted_at: null,
+        };
+        const localEntry: TimeEntry = {
+          id,
+          user_id: profile.id,
+          date: input.date,
+          stakeholder: input.stakeholder,
+          projekt: input.projekt,
+          taetigkeit: input.taetigkeit,
+          format: input.format,
+          start_time: input.start_time,
+          end_time: input.end_time,
+          duration_ms: input.duration_ms,
+          notiz: input.notiz || '',
+          created_at: now,
+          updated_at: now,
+          deleted_at: null,
+        };
+        return { row, localEntry };
+      })
+    );
+
+    const { error } = await supabase
+      .from('time_entries')
+      .insert(prepared.map((p) => p.row));
+    if (error) {
+      set({ error: error.message });
+      throw new Error(error.message);
+    }
+
+    // State einmal aktualisieren — neue Einträge nach vorn (Liste ist
+    // date desc / start_time desc sortiert und neue Inserts sind
+    // typischerweise heute oder zumindest jung).
+    const newEntries = prepared.map((p) => p.localEntry);
+    set({ entries: [...newEntries, ...get().entries], error: null });
+    return newEntries;
   },
 
   updateEntry: async (id, patch) => {
