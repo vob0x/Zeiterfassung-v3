@@ -50,6 +50,7 @@ export default function DashboardView() {
   const ownEntries = useEntriesStore((s) => s.entries);
   const teamEntries = useEntriesStore((s) => s.teamEntries);
   const period = useUiStore((s) => s.period);
+  const periodOffset = useUiStore((s) => s.periodOffset);
   const dateFrom = useUiStore((s) => s.dateFrom);
   const dateTo = useUiStore((s) => s.dateTo);
   const drillDown = useUiStore((s) => s.drillDownToEntries);
@@ -89,8 +90,13 @@ export default function DashboardView() {
   }, [viewMode, memberFocus, ownEntries, teamEntries]);
 
   const range = useMemo(
-    () => getPeriodRange(period, { customFrom: dateFrom, customTo: dateTo }),
-    [period, dateFrom, dateTo]
+    () =>
+      getPeriodRange(period, {
+        offset: periodOffset,
+        customFrom: dateFrom,
+        customTo: dateTo,
+      }),
+    [period, periodOffset, dateFrom, dateTo]
   );
 
   // "Heute"-KPI: identische Logik wie zuvor, aber auf der Source-Auswahl
@@ -138,7 +144,7 @@ export default function DashboardView() {
           className="text-xs uppercase tracking-widest"
           style={{ color: 'var(--text-muted)' }}
         >
-          {t('dashboard.title')} · {formatRangeLabel(period, range, t)}
+          {t('dashboard.title')} · {formatRangeLabel(period, range, t, periodOffset)}
         </h2>
         <div className="flex items-center gap-3">
           <span
@@ -276,7 +282,7 @@ export default function DashboardView() {
         range={{
           from: range.from,
           to: range.to,
-          label: formatRangeLabel(period, range, t),
+          label: formatRangeLabel(period, range, t, periodOffset),
         }}
         scope={reportScope}
         subjectName={reportSubject}

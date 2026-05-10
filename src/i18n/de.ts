@@ -181,6 +181,7 @@ export const de = {
     backToOverview: 'Zurück zur Übersicht',
     period: {
       today: 'Heute',
+      thisWeek: 'Diese Woche',
       week: 'Woche',
       month: 'Monat',
       year: 'Jahr',
@@ -188,6 +189,9 @@ export const de = {
       custom: 'Zeitraum',
       from: 'Von',
       to: 'Bis',
+      prev: 'Zurück',
+      next: 'Vor',
+      resetToNow: 'Heute',
     },
   },
 

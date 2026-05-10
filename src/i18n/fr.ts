@@ -181,6 +181,7 @@ export const fr = {
     backToOverview: "Retour à la vue d'ensemble",
     period: {
       today: "Aujourd'hui",
+      thisWeek: 'Cette semaine',
       week: 'Semaine',
       month: 'Mois',
       year: 'Année',
@@ -188,6 +189,9 @@ export const fr = {
       custom: 'Période',
       from: 'De',
       to: 'À',
+      prev: 'Précédent',
+      next: 'Suivant',
+      resetToNow: "Aujourd'hui",
     },
   },
 

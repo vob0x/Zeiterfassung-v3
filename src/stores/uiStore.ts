@@ -63,10 +63,18 @@ interface UiState {
 
   /** Period-Auswahl im Dashboard. */
   period: Period;
+  /**
+   * Verschiebung in Period-Einheiten (-1 = ein Zeitraum zurück, 0 =
+   * aktuell). Wird beim Period-Wechsel auf 0 zurückgesetzt — Switch von
+   * „Woche" auf „Monat" soll nicht plötzlich „letzten Monat" anzeigen.
+   * Nicht persistiert: ein Reload landet auf dem aktuellen Zeitraum.
+   */
+  periodOffset: number;
   /** Custom-Range, nur relevant wenn period === 'custom'. YYYY-MM-DD. */
   dateFrom: string;
   dateTo: string;
   setPeriod: (p: Period) => void;
+  setPeriodOffset: (offset: number) => void;
   setCustomRange: (from: string, to: string) => void;
 
   /** Einträge-Tab Drill-Down-Filter (multi-dim). */
@@ -200,19 +208,27 @@ export const useUiStore = create<UiState>((set, get) => {
     },
 
     period: loadPeriod(),
+    periodOffset: 0,
     dateFrom: initialRange.from,
     dateTo: initialRange.to,
     setPeriod: (p) => {
       try {
         localStorage.setItem(PERIOD_KEY, p);
       } catch {}
-      set({ period: p });
+      // Bei Period-Wechsel offset zurücksetzen — sonst zeigt Switch
+      // von „Woche -3" auf „Monat" überraschend „letzten Monat".
+      set({ period: p, periodOffset: 0 });
+    },
+    setPeriodOffset: (offset) => {
+      // Maximum offset = 0 (keine Zukunft), Minimum theoretisch unendlich
+      // — clampen wir oben.
+      set({ periodOffset: Math.min(0, offset) });
     },
     setCustomRange: (from, to) => {
       try {
         localStorage.setItem(RANGE_KEY, JSON.stringify({ from, to }));
       } catch {}
-      set({ period: 'custom', dateFrom: from, dateTo: to });
+      set({ period: 'custom', dateFrom: from, dateTo: to, periodOffset: 0 });
       try {
         localStorage.setItem(PERIOD_KEY, 'custom');
       } catch {}

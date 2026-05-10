@@ -27,13 +27,19 @@ export default function TeamWorkload() {
   const teamEntries = useEntriesStore((s) => s.teamEntries);
   const members = useTeamStore((s) => s.members);
   const period = useUiStore((s) => s.period);
+  const periodOffset = useUiStore((s) => s.periodOffset);
   const dateFrom = useUiStore((s) => s.dateFrom);
   const dateTo = useUiStore((s) => s.dateTo);
   const setMemberFocus = useUiStore((s) => s.setMemberFocus);
 
   const range = useMemo(
-    () => getPeriodRange(period, { customFrom: dateFrom, customTo: dateTo }),
-    [period, dateFrom, dateTo]
+    () =>
+      getPeriodRange(period, {
+        offset: periodOffset,
+        customFrom: dateFrom,
+        customTo: dateTo,
+      }),
+    [period, periodOffset, dateFrom, dateTo]
   );
 
   const allInRange = useMemo(() => {
