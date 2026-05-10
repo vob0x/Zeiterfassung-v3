@@ -60,6 +60,8 @@ export const de = {
     addManual: 'Manueller Eintrag',
     fillRequired: 'Bitte alle Pflichtfelder ausfüllen',
     invalidTimeRange: 'Bis-Zeit muss nach Von-Zeit liegen',
+    absenceHint:
+      'Abwesenheit erkannt — Stakeholder, Projekt, Format und Zeit sind optional. Leere Zeit-Felder werden mit dem Tagessoll (8:24h) aufgefüllt.',
   },
 
   picker: {
@@ -140,6 +142,25 @@ export const de = {
     dashboard: 'Dashboard',
     entries: 'Einträge',
     team: 'Team',
+    manage: 'Verwaltung',
+  },
+
+  manage: {
+    title: 'Verwaltung',
+    intro:
+      'Master-Daten umbenennen oder löschen. Beim Umbenennen werden alle eigenen Einträge mit-aktualisiert (Cascade). Beim Löschen behalten Alteinträge den Wert als Freitext.',
+    empty: 'Noch keine Einträge.',
+    add: 'Hinzufügen',
+    saving: 'speichere…',
+    addPlaceholder: 'Neu hinzufügen…',
+    rename: 'Umbenennen',
+    delete: 'Löschen',
+    useCountTooltip: 'Wird in {count} Einträgen verwendet',
+    renameConfirm:
+      '„{old}" → „{new}": {count} Einträge werden mit-umbenannt. Fortfahren?',
+    deleteConfirm: '„{name}" wirklich löschen?',
+    deleteConfirmInUse:
+      '„{name}" wird in {count} Einträgen verwendet. Wenn du es löschst, behalten diese Einträge den Wert als Freitext (sind aber nicht mehr in der Master-Liste). Trotzdem löschen?',
   },
 
   team: {

@@ -26,6 +26,7 @@ import TimerView from '@/components/TimerView';
 import DashboardView from '@/components/DashboardView';
 import EntriesView from '@/components/EntriesView';
 import TeamView from '@/components/TeamView';
+import ManageView from '@/components/ManageView';
 import DayRing from '@/components/DayRing';
 import TrackingCoverage from '@/components/TrackingCoverage';
 import { computeLivePresenceMs, computeLiveWallClockMs } from '@/lib/wallclock';
@@ -99,6 +100,7 @@ function Shell() {
         {activeTab === 'dashboard' && <DashboardView />}
         {activeTab === 'entries' && <EntriesView />}
         {activeTab === 'team' && <TeamView />}
+        {activeTab === 'manage' && <ManageView />}
       </div>
       <BottomNav />
     </main>

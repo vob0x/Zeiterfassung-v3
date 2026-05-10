@@ -11,6 +11,7 @@
  */
 
 import { useUiStore } from '@/stores/uiStore';
+import { useIsAdmin } from '@/hooks/useRole';
 import { useI18n } from '@/i18n';
 import { TAB_DEFS } from './tabConfig';
 
@@ -18,6 +19,8 @@ export default function BottomNav() {
   const { t } = useI18n();
   const activeTab = useUiStore((s) => s.activeTab);
   const setActiveTab = useUiStore((s) => s.setActiveTab);
+  const isAdmin = useIsAdmin();
+  const tabs = TAB_DEFS.filter((td) => !td.adminOnly || isAdmin);
 
   return (
     <nav
@@ -39,7 +42,7 @@ export default function BottomNav() {
         zIndex: 40,
       }}
     >
-      {TAB_DEFS.map(({ id, icon: Icon, labelKey }) => {
+      {tabs.map(({ id, icon: Icon, labelKey }) => {
         const isActive = activeTab === id;
         return (
           <button

@@ -13,7 +13,7 @@ import { create } from 'zustand';
 import { generateUUID, getTodayISO } from '@/lib/utils';
 import type { Period } from '@/lib/dateRange';
 
-export type TabId = 'timer' | 'dashboard' | 'entries' | 'team';
+export type TabId = 'timer' | 'dashboard' | 'entries' | 'team' | 'manage';
 
 /**
  * Drill-Down-Filter für den Einträge-Tab. Multi-Dim: jede Dimension
@@ -125,7 +125,8 @@ function loadActiveTab(): TabId {
       v === 'timer' ||
       v === 'dashboard' ||
       v === 'entries' ||
-      v === 'team'
+      v === 'team' ||
+      v === 'manage'
     )
       return v;
   } catch {

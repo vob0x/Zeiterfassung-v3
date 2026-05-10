@@ -12,6 +12,7 @@ import { create } from 'zustand';
 import { supabase, ensureValidSession } from '@/lib/supabase';
 import { decryptField, encryptField, hasEncryptionKey } from '@/lib/crypto';
 import { useAuthStore } from './authStore';
+import { useEntriesStore } from './entriesStore';
 import { generateUUID } from '@/lib/utils';
 import type {
   Stakeholder,
@@ -43,10 +44,16 @@ interface MasterState {
   addActivity: (name: string) => Promise<Activity>;
   addFormat: (name: string) => Promise<Format>;
 
-  renameStakeholder: (id: string, name: string) => Promise<void>;
-  renameProject: (id: string, name: string) => Promise<void>;
-  renameActivity: (id: string, name: string) => Promise<void>;
-  renameFormat: (id: string, name: string) => Promise<void>;
+  /**
+   * Renamed das Master-Daten-Item UND propagiert den neuen Namen in
+   * alle eigenen Time-Entries, die den alten Namen verwenden (Cascade).
+   * Returnt die Anzahl der betroffenen Einträge — wird in der UI als
+   * Bestätigung angezeigt.
+   */
+  renameStakeholder: (id: string, name: string) => Promise<number>;
+  renameProject: (id: string, name: string) => Promise<number>;
+  renameActivity: (id: string, name: string) => Promise<number>;
+  renameFormat: (id: string, name: string) => Promise<number>;
 
   removeStakeholder: (id: string) => Promise<void>;
   removeProject: (id: string) => Promise<void>;
@@ -262,48 +269,89 @@ export const useMasterStore = create<MasterState>((set) => ({
   },
 
   // ───────────────────────────────────────────────────────────────────
-  // Rename — wieder Server-Confirm, dann Lokal-Update.
+  // Rename mit Cascade — Master-Eintrag umbenennen UND alle Time-Entries
+  // mit-umbenennen die diesen Wert tragen. Reihenfolge: erst Server-
+  // Confirm fürs Master-Daten-Row, dann Cascade in entries (Single-
+  // Batch-Upsert), dann Lokal-State updaten. Wenn die Cascade scheitert,
+  // ist Master-Daten schon umbenannt — User sieht beide Namen und kann
+  // manuell nacharbeiten. Akzeptiert für ein Single-User-Tool.
   // ───────────────────────────────────────────────────────────────────
 
   renameStakeholder: async (id, name) => {
-    await renameItemServer(TABLES.stakeholders, id, name);
+    const old = useMasterStore.getState().stakeholders.find((x) => x.id === id);
+    if (!old) throw new Error('Stakeholder nicht gefunden');
     const trimmed = name.trim();
+    if (!trimmed || trimmed === old.name) return 0;
+
+    await renameItemServer(TABLES.stakeholders, id, trimmed);
+    const cascade = await useEntriesStore
+      .getState()
+      .bulkRenameField('stakeholder', old.name, trimmed);
+
     set((s) => ({
       stakeholders: s.stakeholders.map((x) =>
         x.id === id ? { ...x, name: trimmed, updated_at: new Date().toISOString() } : x
       ),
       error: null,
     }));
+    return cascade;
   },
   renameProject: async (id, name) => {
-    await renameItemServer(TABLES.projects, id, name);
+    const old = useMasterStore.getState().projects.find((x) => x.id === id);
+    if (!old) throw new Error('Projekt nicht gefunden');
     const trimmed = name.trim();
+    if (!trimmed || trimmed === old.name) return 0;
+
+    await renameItemServer(TABLES.projects, id, trimmed);
+    const cascade = await useEntriesStore
+      .getState()
+      .bulkRenameField('projekt', old.name, trimmed);
+
     set((s) => ({
       projects: s.projects.map((x) =>
         x.id === id ? { ...x, name: trimmed, updated_at: new Date().toISOString() } : x
       ),
       error: null,
     }));
+    return cascade;
   },
   renameActivity: async (id, name) => {
-    await renameItemServer(TABLES.activities, id, name);
+    const old = useMasterStore.getState().activities.find((x) => x.id === id);
+    if (!old) throw new Error('Tätigkeit nicht gefunden');
     const trimmed = name.trim();
+    if (!trimmed || trimmed === old.name) return 0;
+
+    await renameItemServer(TABLES.activities, id, trimmed);
+    const cascade = await useEntriesStore
+      .getState()
+      .bulkRenameField('taetigkeit', old.name, trimmed);
+
     set((s) => ({
       activities: s.activities.map((x) =>
         x.id === id ? { ...x, name: trimmed, updated_at: new Date().toISOString() } : x
       ),
       error: null,
     }));
+    return cascade;
   },
   renameFormat: async (id, name) => {
-    await renameItemServer(TABLES.formats, id, name);
+    const old = useMasterStore.getState().formats.find((x) => x.id === id);
+    if (!old) throw new Error('Format nicht gefunden');
     const trimmed = name.trim();
+    if (!trimmed || trimmed === old.name) return 0;
+
+    await renameItemServer(TABLES.formats, id, trimmed);
+    const cascade = await useEntriesStore
+      .getState()
+      .bulkRenameField('format', old.name, trimmed);
+
     set((s) => ({
       formats: s.formats.map((x) =>
         x.id === id ? { ...x, name: trimmed, updated_at: new Date().toISOString() } : x
       ),
       error: null,
     }));
+    return cascade;
   },
 
   // ───────────────────────────────────────────────────────────────────

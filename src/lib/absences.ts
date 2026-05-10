@@ -2,19 +2,23 @@
  * Abwesenheits-Tätigkeiten — werden bei Wallclock-/Präsenz-/Naive-
  * Berechnungen meistens AUSGESCHLOSSEN, weil sie keine Arbeit darstellen.
  *
- * Die Liste muss exakt mit v2 übereinstimmen, da v2 + v3 dieselben Daten
- * lesen und schreiben. Wenn ein User in v2 „Ferien" als Tätigkeit
- * verwendet, muss v3 das genauso als Abwesenheit behandeln.
+ * Recht weite Liste aus zwei Gründen:
+ *   1. v2-Backward-Compat: bestehende Einträge mit den alten Kategorien
+ *      (Ferien/Krankheit/Militär) müssen weiterhin als Abwesenheit
+ *      erkannt werden, sonst kompromittieren sie den Stunden-Durchschnitt.
+ *   2. Neue Standard-Kategorie „Abwesend" für v3: User kann alle
+ *      Abwesenheits-Arten unter einer Bezeichnung führen. Mathematisch
+ *      gleicher Effekt — Trennung war in v2 nur kosmetisch.
  *
  * Case-insensitive Matching, Trim, Diakritik-tolerant nicht — die
  * Tätigkeits-Strings sind controlled vocabulary aus dem Picker.
  */
 
 export const ABSENCE_ACTIVITIES = [
+  'Abwesend',
   'Ferien',
   'Krankheit',
   'Militär',
-  'Freistellung',
 ] as const;
 
 const ABSENCE_SET = new Set(

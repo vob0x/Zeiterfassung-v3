@@ -60,6 +60,8 @@ export const fr = {
     addManual: 'Saisie manuelle',
     fillRequired: 'Veuillez remplir tous les champs obligatoires',
     invalidTimeRange: 'L\'heure de fin doit être postérieure à l\'heure de début',
+    absenceHint:
+      "Absence détectée — mandant, projet, format et heures sont facultatifs. Les heures vides sont remplies avec le quota journalier (8h24).",
   },
 
   picker: {
@@ -140,6 +142,25 @@ export const fr = {
     dashboard: 'Tableau de bord',
     entries: 'Entrées',
     team: 'Équipe',
+    manage: 'Gestion',
+  },
+
+  manage: {
+    title: 'Gestion',
+    intro:
+      "Renommer ou supprimer les données de référence. Lors du renommage, toutes vos entrées sont mises à jour (cascade). Lors de la suppression, les anciennes entrées conservent la valeur en texte libre.",
+    empty: 'Aucune entrée pour le moment.',
+    add: 'Ajouter',
+    saving: 'sauvegarde…',
+    addPlaceholder: 'Ajouter…',
+    rename: 'Renommer',
+    delete: 'Supprimer',
+    useCountTooltip: 'Utilisé dans {count} entrées',
+    renameConfirm:
+      "« {old} » → « {new} » : {count} entrées seront aussi renommées. Continuer ?",
+    deleteConfirm: 'Vraiment supprimer « {name} » ?',
+    deleteConfirmInUse:
+      "« {name} » est utilisé dans {count} entrées. Si tu le supprimes, ces entrées conservent la valeur en texte libre (mais ne seront plus dans la liste). Supprimer quand même ?",
   },
 
   team: {

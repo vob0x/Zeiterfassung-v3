@@ -27,7 +27,17 @@ import { useMasterStore } from '@/stores/masterStore';
 import { useIsAdmin } from '@/hooks/useRole';
 import { useI18n } from '@/i18n';
 import { formatDateISO } from '@/lib/utils';
+import { isAbsenceActivity } from '@/lib/absences';
 import Picker from './Picker';
+
+/**
+ * Default-Defaults für Abwesenheits-Einträge: 00:00–08:24 entspricht
+ * dem täglichen Soll (8h24m). So neutralisiert ein Abwesenheits-Tag
+ * exakt das Tagessoll in der Überzeit-Berechnung.
+ */
+const ABSENCE_DEFAULT_START = '00:00';
+const ABSENCE_DEFAULT_END = '08:24';
+const ABSENCE_DEFAULT_DURATION_MS = (8 * 60 + 24) * 60_000;
 
 interface FormState {
   date: string;
@@ -92,10 +102,19 @@ export default function ManualEntry() {
     return () => clearTimeout(id);
   }, [okMsg]);
 
+  const isAbsence = isAbsenceActivity(form.taetigkeit);
+
   const validate = (): string | null => {
     if (!form.date) return t('entry.fillRequired');
+    if (!form.taetigkeit) return t('entry.fillRequired');
+
+    // Bei Abwesenheit (Ferien/Krankheit/Militär/Freistellung) sind
+    // Stakeholder/Projekt/Format/Zeit optional — wir füllen Zeit-
+    // Defaults beim Submit. Frühe Rückkehr verhindert Pflicht-Checks.
+    if (isAbsence) return null;
+
     if (!form.start_time || !form.end_time) return t('entry.fillRequired');
-    if (!form.taetigkeit || !form.format) return t('entry.fillRequired');
+    if (!form.format) return t('entry.fillRequired');
     const dur = computeDurationMs(form.start_time, form.end_time);
     if (dur <= 0) return t('entry.invalidTimeRange');
     return null;
@@ -112,15 +131,27 @@ export default function ManualEntry() {
     }
     setBusy(true);
     try {
+      // Absence-Defaults: leere Zeit-Felder mit Tagessoll auffüllen.
+      // Nicht-leere Eingaben werden respektiert (User darf z.B. einen
+      // halben Tag Ferien als 00:00–04:12 erfassen).
+      const useDefaults = isAbsence && (!form.start_time || !form.end_time);
+      const start_time = useDefaults
+        ? ABSENCE_DEFAULT_START
+        : form.start_time;
+      const end_time = useDefaults ? ABSENCE_DEFAULT_END : form.end_time;
+      const duration_ms = useDefaults
+        ? ABSENCE_DEFAULT_DURATION_MS
+        : computeDurationMs(start_time, end_time);
+
       await addEntry({
         date: form.date,
         stakeholder: form.stakeholder,
         projekt: form.projekt,
         taetigkeit: form.taetigkeit,
         format: form.format,
-        start_time: form.start_time,
-        end_time: form.end_time,
-        duration_ms: computeDurationMs(form.start_time, form.end_time),
+        start_time,
+        end_time,
+        duration_ms,
         notiz: form.notiz,
       });
       setForm(makeDefaults(t));
@@ -231,6 +262,22 @@ export default function ManualEntry() {
             }
           />
         </Field>
+
+        {/* Hinweis bei Abwesenheit — Zeit/Format/Stakeholder/Projekt
+            werden bei Submit mit Tagessoll-Defaults aufgefüllt, wenn
+            leer. */}
+        {isAbsence && (
+          <div
+            className="col-span-2 text-xs px-3 py-2 rounded"
+            style={{
+              background: 'rgba(110,196,158,0.08)',
+              border: '1px solid rgba(110,196,158,0.30)',
+              color: '#6EC49E',
+            }}
+          >
+            {t('entry.absenceHint')}
+          </div>
+        )}
 
         {/* Zeile 5: Format + Notiz */}
         <Field label={t('entry.format')}>

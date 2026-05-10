@@ -53,6 +53,13 @@ export interface EntryPatch {
   notiz?: string;
 }
 
+/** Nicht-multi-Felder, die per Bulk-Rename in Einträgen ersetzt werden können. */
+export type RenameableField =
+  | 'stakeholder'
+  | 'projekt'
+  | 'taetigkeit'
+  | 'format';
+
 interface EntriesState {
   entries: TimeEntry[];      // eigene Einträge
   teamEntries: TimeEntry[];  // Einträge anderer Team-Mitglieder
@@ -62,6 +69,20 @@ interface EntriesState {
   addEntry: (input: NewEntryInput) => Promise<TimeEntry>;
   updateEntry: (id: string, patch: EntryPatch) => Promise<TimeEntry>;
   deleteEntry: (id: string) => Promise<void>;
+  /**
+   * Cascade-Rename: ersetzt `oldName` durch `newName` in allen eigenen
+   * Einträgen, die das Feld verwenden. Stakeholder ist multi-valued
+   * (Array) — nur der gematchte Eintrag im Array wird ersetzt; andere
+   * Stakeholder im selben Eintrag bleiben.
+   *
+   * Single batch-upsert: alle betroffenen Rows in einem Round-Trip.
+   * Returnt die Anzahl der berührten Einträge.
+   */
+  bulkRenameField: (
+    field: RenameableField,
+    oldName: string,
+    newName: string
+  ) => Promise<number>;
 }
 
 /**
@@ -366,5 +387,83 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       entries: get().entries.filter((e) => e.id !== id),
       error: null,
     });
+  },
+
+  bulkRenameField: async (field, oldName, newName) => {
+    const profile = useAuthStore.getState().profile;
+    if (!profile?.id) throw new Error('Nicht authentifiziert');
+    if (!hasEncryptionKey()) throw new Error('Personal Key fehlt');
+    const trimmedNew = newName.trim();
+    if (!trimmedNew) throw new Error('Neuer Name darf nicht leer sein');
+    if (oldName === trimmedNew) return 0;
+
+    // Cascade-Scope ist BEWUSST nur eigene Einträge — Master-Daten sind
+    // user-scoped. Andere Team-Mitglieder haben ihre eigenen Master-
+    // Listen und sollen nicht mit-umbenannt werden.
+    const matches = (e: TimeEntry): boolean => {
+      if (field === 'stakeholder') {
+        const list = Array.isArray(e.stakeholder) ? e.stakeholder : [];
+        return list.includes(oldName);
+      }
+      return (e[field] || '') === oldName;
+    };
+
+    const affected = get().entries.filter(matches);
+    if (affected.length === 0) return 0;
+
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    const applyRename = (e: TimeEntry): TimeEntry => {
+      if (field === 'stakeholder') {
+        return {
+          ...e,
+          stakeholder: (e.stakeholder || []).map((s) =>
+            s === oldName ? trimmedNew : s
+          ),
+        };
+      }
+      return { ...e, [field]: trimmedNew };
+    };
+
+    const now = new Date().toISOString();
+    const updated = affected.map(applyRename);
+
+    // Encrypten + zu DB-Rows formen, Single-Batch-Upsert.
+    const rows = await Promise.all(
+      updated.map(async (e) => ({
+        id: e.id,
+        user_id: e.user_id,
+        date: e.date,
+        start_time: e.start_time,
+        end_time: e.end_time,
+        duration_ms: e.duration_ms,
+        ...(await encryptEntryForServer({
+          date: e.date,
+          stakeholder: e.stakeholder,
+          projekt: e.projekt,
+          taetigkeit: e.taetigkeit,
+          format: e.format,
+          start_time: e.start_time,
+          end_time: e.end_time,
+          duration_ms: e.duration_ms,
+          notiz: e.notiz,
+        })),
+        updated_at: now,
+      }))
+    );
+
+    const { error } = await supabase
+      .from('time_entries')
+      .upsert(rows, { onConflict: 'id' });
+    if (error) throw new Error(error.message);
+
+    // Lokal-State patchen
+    const updatedMap = new Map(updated.map((e) => [e.id, { ...e, updated_at: now }]));
+    set({
+      entries: get().entries.map((e) => updatedMap.get(e.id) ?? e),
+      error: null,
+    });
+    return affected.length;
   },
 }));
