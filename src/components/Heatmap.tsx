@@ -119,6 +119,10 @@ export default function Heatmap({ title, entries }: Props) {
           —
         </div>
       ) : (
+        // overflowX:auto schafft den Scroll-Container für position:sticky
+        // auf der ersten Spalte. Background auf den sticky-Zellen ist
+        // opak (#1c1a17, App-Theme), damit scrollende Daten-Zellen nicht
+        // durchscheinen — die Card hat semi-transparenten Hintergrund.
         <div style={{ overflowX: 'auto' }}>
           <table
             className="text-xs"
@@ -138,7 +142,14 @@ export default function Heatmap({ title, entries }: Props) {
                     fontSize: 10,
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
-                    minWidth: 80,
+                    width: 140,
+                    position: 'sticky',
+                    left: 0,
+                    background: '#1c1a17',
+                    // höher als Body-Sticky, damit Header oben-links über
+                    // scrollenden Body-Cells bleibt
+                    zIndex: 2,
+                    borderRight: '1px solid rgba(201,169,98,0.18)',
                   }}
                 ></th>
                 {projekte.map((p) => (
@@ -175,7 +186,12 @@ export default function Heatmap({ title, entries }: Props) {
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
-                      maxWidth: 140,
+                      width: 140,
+                      position: 'sticky',
+                      left: 0,
+                      background: '#1c1a17',
+                      zIndex: 1,
+                      borderRight: '1px solid rgba(201,169,98,0.18)',
                     }}
                     title={sh}
                   >
