@@ -3,13 +3,17 @@
  *
  * Workflow:
  *   1. Auf Dashboard „Report"-Button klicken → Modal öffnet
- *   2. Auto-Generierte Narrative-Texte erscheinen — User kann editieren
- *   3. Vorschau zeigt KPIs und Top-Breakdowns
+ *   2. Auto-generiertes Management-Summary (HTML) erscheint im Editor
+ *   3. Vorschau zeigt KPIs + Coverage-Snapshot
  *   4. Print / Download / Schließen
  *
  * Daten-Inputs kommen vom Aufrufer (DashboardView): bereits gefilterte
- * `entries`, der `range` und der `scope`. Das Modal selbst ist „dumm" —
- * keine eigene Period- oder Scope-Logik.
+ * `entries`, `range` und `scope`. Das Modal selbst ist dumm — keine
+ * eigene Period- oder Scope-Logik.
+ *
+ * Loop-4-Refactor: der Editor enthält jetzt das komplette qualitative
+ * Summary als HTML (mehrere Paragraphen), nicht mehr Summary + Highlights
+ * getrennt. Findings sind read-only — sie werden algorithmisch berechnet.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -23,9 +27,7 @@ import {
   downloadReportHtml,
   openReportPrintWindow,
 } from '@/lib/reportRenderer';
-import { formatHoursAdaptive } from '@/lib/utils';
-import type { TimeEntry } from '@/types';
-import type { TeamMemberWithRole } from '@/types';
+import type { TimeEntry, TeamMemberWithRole } from '@/types';
 import { useI18n } from '@/i18n';
 
 interface ReportModalProps {
@@ -39,6 +41,14 @@ interface ReportModalProps {
   members?: TeamMemberWithRole[];
 }
 
+function fmt(ms: number): string {
+  if (!ms || ms <= 0) return '0:00h';
+  const totalMin = Math.round(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}:${String(m).padStart(2, '0')}h`;
+}
+
 export default function ReportModal({
   open,
   onClose,
@@ -50,8 +60,6 @@ export default function ReportModal({
 }: ReportModalProps) {
   const { t } = useI18n();
 
-  // Frische Report-Daten generieren bei jeder Öffnung — die Eingabedaten
-  // (entries, range, scope, subject) sind die Identitäts-Schlüssel.
   const baseData = useMemo(
     () =>
       buildReportData(entries, {
@@ -67,28 +75,18 @@ export default function ReportModal({
     [entries, range, scope, subjectName, members]
   );
 
-  // Lokale Narrative-States, damit der User editieren kann ohne dass
-  // ein Re-Compute beim Tippen den Text überschreibt.
-  const [summary, setSummary] = useState(baseData.narratives.summary);
-  const [highlights, setHighlights] = useState(baseData.narratives.highlights);
-
-  // Wenn die Eingabedaten sich ändern (Modal frisch geöffnet, andere
-  // Period etc.), Narratives neu setzen.
+  // Lokales Narrative-State (editierbar)
+  const [narrativeHtml, setNarrativeHtml] = useState(baseData.narrativeHtml);
   useEffect(() => {
-    setSummary(baseData.narratives.summary);
-    setHighlights(baseData.narratives.highlights);
+    setNarrativeHtml(baseData.narrativeHtml);
   }, [baseData]);
 
-  // Final-Datenobjekt mit aktuellen Narratives für Render/Download/Print
+  // Finales Daten-Objekt mit dem aktuellen Narrative
   const finalData = useMemo(
-    () => ({
-      ...baseData,
-      narratives: { summary, highlights },
-    }),
-    [baseData, summary, highlights]
+    () => ({ ...baseData, narrativeHtml }),
+    [baseData, narrativeHtml]
   );
 
-  // ESC-Key schließt
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -99,6 +97,10 @@ export default function ReportModal({
   }, [open, onClose]);
 
   if (!open) return null;
+
+  const k = finalData.kpis;
+  const covPct = k.coverage * 100;
+  const covColor = covPct >= 80 ? '#6EC49E' : covPct >= 60 ? '#C9A962' : '#D4706E';
 
   return (
     <div
@@ -125,7 +127,7 @@ export default function ReportModal({
           border: '1px solid var(--border)',
           borderRadius: 8,
           width: '100%',
-          maxWidth: 720,
+          maxWidth: 760,
           maxHeight: 'calc(100vh - 32px)',
           display: 'flex',
           flexDirection: 'column',
@@ -150,10 +152,7 @@ export default function ReportModal({
             >
               {finalData.meta.title}
             </div>
-            <div
-              className="text-xs"
-              style={{ color: 'var(--text-muted)' }}
-            >
+            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
               {finalData.meta.range.label}
             </div>
           </div>
@@ -168,68 +167,104 @@ export default function ReportModal({
           </button>
         </div>
 
-        {/* Body — scrollbar */}
-        <div
-          className="px-4 py-3 space-y-3"
-          style={{ overflowY: 'auto', flex: 1 }}
-        >
-          {/* KPIs */}
-          <div
-            className="grid grid-cols-2 sm:grid-cols-4 gap-2"
-          >
+        {/* Body */}
+        <div className="px-4 py-3 space-y-3" style={{ overflowY: 'auto', flex: 1 }}>
+          {/* KPI-Tiles */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <KpiTile label={t('report.kpiWallclock')} value={fmt(k.totalWallclockMs)} />
+            <KpiTile label={t('report.kpiPresence')} value={fmt(k.totalPresenceMs)} />
             <KpiTile
-              label={t('report.kpiHours')}
-              value={formatHoursAdaptive(finalData.kpis.totalNaiveMs)}
+              label={t('report.kpiCoverage')}
+              value={`${covPct.toFixed(0)}%`}
+              accent={covColor}
+            />
+            <KpiTile
+              label={t('report.kpiMultiTask')}
+              value={`${k.multiTaskingFactor.toFixed(2)}x`}
+            />
+            <KpiTile
+              label={t('report.kpiProductive')}
+              value={`${k.productivePct.toFixed(0)}%`}
             />
             <KpiTile
               label={t('report.kpiDays')}
-              value={String(finalData.kpis.workingDays)}
-            />
-            <KpiTile
-              label={t('report.kpiAvg')}
-              value={formatHoursAdaptive(finalData.kpis.avgPerDayMs)}
-            />
-            <KpiTile
-              label={t('report.kpiEntries')}
-              value={String(finalData.kpis.entriesCount)}
+              value={`${k.workingDays}`}
+              sub={t('report.kpiDaysSub')}
             />
           </div>
 
-          {/* Narrative-Editor: Zusammenfassung */}
+          {/* Coverage-Snapshot */}
+          <div
+            className="rounded p-3 grid grid-cols-3 gap-2 text-xs"
+            style={{
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <CovBucket count={finalData.coverage.daysGood} label="≥80%" color="#6EC49E" />
+            <CovBucket count={finalData.coverage.daysOk} label="60–80%" color="#C9A962" />
+            <CovBucket count={finalData.coverage.daysThin} label="<60%" color="#D4706E" />
+          </div>
+
+          {/* Narrative-Editor */}
           <div>
             <label
               className="text-[10px] uppercase tracking-widest block mb-1"
               style={{ color: 'var(--text-muted)' }}
             >
               {t('report.summary')}
+              <span
+                className="ml-2 normal-case"
+                style={{ fontWeight: 400, opacity: 0.7 }}
+              >
+                ({t('report.summaryHint')})
+              </span>
             </label>
             <textarea
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              rows={3}
-              className="w-full text-xs rounded p-2 bg-neutral-800 border border-neutral-700 focus:border-amber-600 focus:outline-none resize-y"
-              style={{ color: 'var(--text)', minHeight: 60 }}
+              value={narrativeHtml}
+              onChange={(e) => setNarrativeHtml(e.target.value)}
+              rows={10}
+              className="w-full text-xs rounded p-2 bg-neutral-800 border border-neutral-700 focus:border-amber-600 focus:outline-none resize-y font-mono"
+              style={{ color: 'var(--text)', minHeight: 160 }}
             />
           </div>
 
-          {/* Narrative-Editor: Highlights */}
-          <div>
-            <label
-              className="text-[10px] uppercase tracking-widest block mb-1"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              {t('report.highlights')}
-            </label>
-            <textarea
-              value={highlights}
-              onChange={(e) => setHighlights(e.target.value)}
-              rows={3}
-              className="w-full text-xs rounded p-2 bg-neutral-800 border border-neutral-700 focus:border-amber-600 focus:outline-none resize-y"
-              style={{ color: 'var(--text)', minHeight: 60 }}
-            />
-          </div>
+          {/* Findings-Preview (read-only) */}
+          {finalData.findings.length > 0 && (
+            <div>
+              <div
+                className="text-[10px] uppercase tracking-widest mb-1"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {t('report.findings')}
+              </div>
+              <div className="space-y-1.5">
+                {finalData.findings.map((f, i) => {
+                  const color =
+                    f.level === 'warn'
+                      ? '#D4706E'
+                      : f.level === 'info'
+                        ? '#6EC49E'
+                        : '#5BA4D9';
+                  return (
+                    <div
+                      key={i}
+                      className="text-xs rounded p-2"
+                      style={{
+                        background: `${color}1a`,
+                        border: `1px solid ${color}55`,
+                        color: 'var(--text)',
+                      }}
+                      // findings sind read-only und aus eigenem Datensatz (kein User-Input)
+                      dangerouslySetInnerHTML={{ __html: f.htmlMessage }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-          {/* Per-Member Vorschau (nur bei team scope) */}
+          {/* Per-Member preview (Team) */}
           {finalData.perMember && finalData.perMember.length > 0 && (
             <div>
               <div
@@ -243,7 +278,7 @@ export default function ReportModal({
                 style={{
                   background: 'rgba(255,255,255,0.02)',
                   border: '1px solid var(--border)',
-                  maxHeight: 140,
+                  maxHeight: 120,
                   overflowY: 'auto',
                 }}
               >
@@ -263,40 +298,17 @@ export default function ReportModal({
                         </span>
                       )}
                     </span>
-                    <span
-                      className="font-mono"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      {formatHoursAdaptive(m.ms)} · {Math.round(m.pct)}%
+                    <span className="font-mono" style={{ color: 'var(--text-muted)' }}>
+                      {fmt(m.ms)} · {m.pct.toFixed(0)}%
                     </span>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-
-          {/* Top-3 Breakdowns als Vorschau */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <BreakdownPreview
-              title={t('list.stakeholdersCount')}
-              rows={finalData.breakdowns.stakeholders.slice(0, 5)}
-            />
-            <BreakdownPreview
-              title={t('list.projectsCount')}
-              rows={finalData.breakdowns.projekte.slice(0, 5)}
-            />
-            <BreakdownPreview
-              title={t('list.activitiesCount')}
-              rows={finalData.breakdowns.taetigkeiten.slice(0, 5)}
-            />
-            <BreakdownPreview
-              title={t('list.formatsCount')}
-              rows={finalData.breakdowns.formate.slice(0, 5)}
-            />
-          </div>
         </div>
 
-        {/* Footer mit Actions */}
+        {/* Footer */}
         <div
           className="flex items-center justify-end gap-2 px-4 py-3"
           style={{ borderTop: '1px solid var(--border)' }}
@@ -333,17 +345,24 @@ export default function ReportModal({
   );
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   Sub-Komponenten
-   ───────────────────────────────────────────────────────────────────── */
-
-function KpiTile({ label, value }: { label: string; value: string }) {
+function KpiTile({
+  label,
+  value,
+  sub,
+  accent = '#C9A962',
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: string;
+}) {
   return (
     <div
       className="rounded p-2"
       style={{
         background: 'rgba(255,255,255,0.02)',
         border: '1px solid var(--border)',
+        borderLeft: `3px solid ${accent}`,
       }}
     >
       <div
@@ -352,60 +371,45 @@ function KpiTile({ label, value }: { label: string; value: string }) {
       >
         {label}
       </div>
-      <div
-        className="text-base font-bold font-mono"
-        style={{ color: '#C9A962' }}
-      >
+      <div className="text-base font-bold font-mono" style={{ color: '#C9A962' }}>
         {value}
       </div>
+      {sub && (
+        <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
 
-function BreakdownPreview({
-  title,
-  rows,
+function CovBucket({
+  count,
+  label,
+  color,
 }: {
-  title: string;
-  rows: { name: string; ms: number; pct: number }[];
+  count: number;
+  label: string;
+  color: string;
 }) {
-  if (rows.length === 0) return null;
   return (
     <div
-      className="rounded p-2"
       style={{
+        textAlign: 'center',
+        padding: '6px 4px',
+        borderLeft: `3px solid ${color}`,
         background: 'rgba(255,255,255,0.02)',
-        border: '1px solid var(--border)',
       }}
     >
       <div
-        className="text-[10px] uppercase tracking-widest mb-1"
-        style={{ color: 'var(--text-muted)' }}
+        className="text-lg font-bold font-mono"
+        style={{ color: 'var(--text)' }}
       >
-        {title}
+        {count}
       </div>
-      <ul className="text-xs space-y-0.5">
-        {rows.map((r, i) => (
-          <li
-            key={`${r.name}-${i}`}
-            className="flex items-baseline justify-between gap-2"
-          >
-            <span
-              className="truncate"
-              style={{ color: 'var(--text)', flex: 1 }}
-              title={r.name}
-            >
-              {r.name}
-            </span>
-            <span
-              className="font-mono"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              {Math.round(r.pct)}%
-            </span>
-          </li>
-        ))}
-      </ul>
+      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+        {label}
+      </div>
     </div>
   );
 }

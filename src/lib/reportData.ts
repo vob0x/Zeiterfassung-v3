@@ -1,30 +1,33 @@
 /**
  * reportData — Aggregiert TimeEntries zu einem strukturierten Report-Modell.
  *
- * Pure Funktionen ohne Zustand. UI-Komponenten und Renderer konsumieren
- * `ReportData` direkt. Narrative-Texte werden mit eigenen Generatoren
- * (generateSummaryNarrative, generateHighlightsNarrative) erzeugt — der
- * User darf sie im Modal editieren, aber die Defaults kommen hier raus.
+ * Loop-4-Modell: qualitativer Report mit Tracking-Coverage statt Soll-Vergleich.
  *
- * Drei Sicht-Modi:
- *   - 'self'   — Report über die eigenen Einträge des Users
- *   - 'member' — Report über einen einzelnen Teammitglied (Detail-Sicht)
- *   - 'team'   — Aggregierter Team-Report; perMember mit Per-Person-Zeilen
+ * Sektionen die der Report liefert:
+ *   - KPIs (Wallclock, Präsenz, Coverage, Multi-Tasking, Produktiv-Quote)
+ *   - Tracking-Qualität (Coverage-Buckets + Liste schwacher Tage)
+ *   - Tätigkeits-/Format-Mix
+ *   - Wochen-Verlauf
+ *   - Schwerpunkte (Stakeholder + Projekte)
+ *   - Verschiebungen 1. vs 2. Periodenhälfte (Trend)
+ *   - Aus den Daten (findings: Daten-Hygiene, Beobachtungen, Empfehlungen)
+ *
+ * Drei Sicht-Modi: 'self' | 'member' | 'team' (team mit perMember).
  */
 
 import type { TimeEntry } from '@/types';
-import { computeNaiveSumMs } from './wallclock';
+import {
+  computeNaiveSumMs,
+  computeUnionMs,
+  computePresenceForDayMs,
+} from './wallclock';
 import { isAbsenceEntry } from './absences';
-import { formatHoursAdaptive } from './utils';
 
 export type ReportScope = 'self' | 'member' | 'team';
 
 export interface ReportRange {
-  /** YYYY-MM-DD inklusiv */
   from: string;
-  /** YYYY-MM-DD inklusiv */
   to: string;
-  /** Lesbares Label, z.B. "Februar 2026" oder "01.02.–28.02.2026" */
   label: string;
 }
 
@@ -32,6 +35,7 @@ export interface BreakdownRow {
   name: string;
   ms: number;
   pct: number;
+  count: number;
 }
 
 export interface PerMemberRow {
@@ -44,12 +48,31 @@ export interface PerMemberRow {
 }
 
 export interface AbsenceCount {
-  /** Wert der Tätigkeit, z.B. "Ferien", "Krankheit". */
   type: string;
-  /** Anzahl Tage / Einträge mit dieser Abwesenheit. */
   count: number;
-  /** Summe Stunden (für transparente Gesamtsicht). */
   ms: number;
+}
+
+export interface LowCoverageDay {
+  date: string;
+  coveragePct: number;
+  presenceMs: number;
+  wallclockMs: number;
+  gapMs: number;
+}
+
+export interface TrendChange {
+  name: string;
+  firstPct: number;
+  secondPct: number;
+  deltaPct: number;
+  firstMs: number;
+  secondMs: number;
+}
+
+export interface Finding {
+  level: 'warn' | 'info' | 'ok';
+  htmlMessage: string;
 }
 
 export interface ReportData {
@@ -57,21 +80,24 @@ export interface ReportData {
     title: string;
     range: ReportRange;
     scope: ReportScope;
-    /** Codename des Subjekts (User oder Team-Name). */
     subjectName: string;
     generatedAt: string;
   };
   kpis: {
-    /** Naive-Summe (Multi-Tasking voll, Multi-Stakeholder voll). */
     totalNaiveMs: number;
-    /** Anzahl Einträge ohne Abwesenheiten. */
+    totalWallclockMs: number;
+    totalPresenceMs: number;
+    /** Naive / Wallclock — >1 = parallele Tracker. */
+    multiTaskingFactor: number;
+    /** Wallclock / Präsenz — Datenqualität. */
+    coverage: number;
+    avgWallclockMsPerDay: number;
+    avgPresenceMsPerDay: number;
     entriesCount: number;
-    /** Distinct dates mit min. einem Eintrag. */
     workingDays: number;
-    /** Durchschnitt pro Arbeitstag. */
-    avgPerDayMs: number;
+    productivePct: number;
+    productiveMs: number;
   };
-  /** Pro Member-Aufschlüsselung (nur scope === 'team'). */
   perMember?: PerMemberRow[];
   breakdowns: {
     stakeholders: BreakdownRow[];
@@ -79,78 +105,120 @@ export interface ReportData {
     taetigkeiten: BreakdownRow[];
     formate: BreakdownRow[];
   };
-  absences: AbsenceCount[];
-  /** Auto-generierte Narrative-Texte als Default. */
-  narratives: {
-    summary: string;
-    highlights: string;
+  /** Pro-Woche-Aggregat, sortiert chronologisch. */
+  weeks: Array<{
+    label: string;
+    activeDays: number;
+    wallclockMs: number;
+    presenceMs: number;
+    coverage: number;
+  }>;
+  coverage: {
+    daysGood: number; // >=80%
+    daysOk: number;   // 60-80%
+    daysThin: number; // <60% (nur Tage mit >=2h Präsenz)
+    lowCoverageDays: LowCoverageDay[];
   };
+  trend: {
+    firstHalfMs: number;
+    secondHalfMs: number;
+    firstHalfDays: number;
+    secondHalfDays: number;
+    growth: TrendChange[];
+    decline: TrendChange[];
+  };
+  absences: AbsenceCount[];
+  findings: Finding[];
+  /** Qualitatives Management-Summary als HTML (mehrere Paragraphen).
+   *  User kann's im Modal editieren. */
+  narrativeHtml: string;
 }
 
 interface BuildOptions {
   scope: ReportScope;
   range: ReportRange;
-  /** Codename oder Team-Name für die Header-Zeile. */
   subjectName: string;
-  /** Nur für scope === 'team' relevant. */
   members?: Array<{
     user_id: string;
     codename: string;
     role: 'admin' | 'mitarbeiter';
   }>;
-  /** Locale für Narratives — beeinflusst Formulierungen. Default 'de'. */
-  locale?: 'de' | 'fr';
 }
 
 /* ─────────────────────────────────────────────────────────────────────
-   Helpers
+   Formatting helpers (shared with renderer)
+   ───────────────────────────────────────────────────────────────────── */
+
+function fmtHours(ms: number): string {
+  if (!ms || ms <= 0) return '0:00h';
+  const totalMin = Math.round(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}:${String(m).padStart(2, '0')}h`;
+}
+
+function normalizeTaetigkeit(t: string | undefined): string {
+  const s = (t || '').trim();
+  if (s.toLowerCase().replace(/\.$/, '') === 'produktiv') return 'Produktiv';
+  return s;
+}
+
+function htmlEsc(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Breakdown helper
    ───────────────────────────────────────────────────────────────────── */
 
 function buildBreakdown(
   entries: TimeEntry[],
   dimension: 'stakeholder' | 'projekt' | 'taetigkeit' | 'format'
 ): BreakdownRow[] {
-  const buckets = new Map<string, number>();
+  const buckets = new Map<string, { ms: number; count: number }>();
   for (const e of entries) {
     if (isAbsenceEntry(e)) continue;
     const ms = e.duration_ms || 0;
     if (ms <= 0) continue;
+    const addToKey = (key: string) => {
+      const cur = buckets.get(key) || { ms: 0, count: 0 };
+      cur.ms += ms;
+      cur.count += 1;
+      buckets.set(key, cur);
+    };
     if (dimension === 'stakeholder') {
       const list = Array.isArray(e.stakeholder)
         ? e.stakeholder
         : e.stakeholder
           ? [e.stakeholder]
           : [];
-      if (list.length === 0) {
-        buckets.set('—', (buckets.get('—') || 0) + ms);
-      } else {
-        for (const s of list) {
-          const key = s || '—';
-          buckets.set(key, (buckets.get(key) || 0) + ms);
-        }
-      }
+      if (list.length === 0) addToKey('—');
+      else for (const s of list) addToKey(s || '—');
+    } else if (dimension === 'taetigkeit') {
+      addToKey(normalizeTaetigkeit(e.taetigkeit) || '—');
     } else {
-      const key = (e[dimension] || '—') as string;
-      buckets.set(key, (buckets.get(key) || 0) + ms);
+      addToKey(((e[dimension] as string) || '—').trim() || '—');
     }
   }
-  const total = Array.from(buckets.values()).reduce((a, b) => a + b, 0);
-  const list: BreakdownRow[] = Array.from(buckets.entries()).map(
-    ([name, ms]) => ({
+  const total = Array.from(buckets.values()).reduce((a, b) => a + b.ms, 0);
+  return Array.from(buckets.entries())
+    .map(([name, v]) => ({
       name,
-      ms,
-      pct: total > 0 ? (ms / total) * 100 : 0,
-    })
-  );
-  list.sort((a, b) => b.ms - a.ms);
-  return list;
+      ms: v.ms,
+      pct: total > 0 ? (v.ms / total) * 100 : 0,
+      count: v.count,
+    }))
+    .sort((a, b) => b.ms - a.ms);
 }
 
 function countAbsences(entries: TimeEntry[]): AbsenceCount[] {
   const buckets = new Map<string, { count: number; ms: number }>();
   for (const e of entries) {
     if (!isAbsenceEntry(e)) continue;
-    // Bei Abwesenheiten ist `taetigkeit` der Type (Ferien/Krankheit/etc.)
     const type = e.taetigkeit || 'Abwesenheit';
     const cur = buckets.get(type) || { count: 0, ms: 0 };
     cur.count += 1;
@@ -170,18 +238,77 @@ export function buildReportData(
   entries: TimeEntry[],
   opts: BuildOptions
 ): ReportData {
-  const { scope, range, subjectName, members = [], locale = 'de' } = opts;
+  const { scope, range, subjectName, members = [] } = opts;
 
-  // Period filtern (entries werden vom Caller schon nach Range gefiltert
-  // übergeben — buildReportData verlässt sich darauf, aber wir defensive
-  // doppeln nicht).
   const nonAbsence = entries.filter((e) => !isAbsenceEntry(e));
 
-  const totalNaiveMs = computeNaiveSumMs(nonAbsence);
-  const distinctDates = new Set(nonAbsence.map((e) => e.date));
-  const workingDays = distinctDates.size;
-  const avgPerDayMs = workingDays > 0 ? totalNaiveMs / workingDays : 0;
+  // Per-Day Aggregate
+  const byDay = new Map<string, TimeEntry[]>();
+  for (const e of nonAbsence) {
+    if (!e.date) continue;
+    const list = byDay.get(e.date);
+    if (list) list.push(e);
+    else byDay.set(e.date, [e]);
+  }
 
+  // KPIs
+  const totalNaiveMs = computeNaiveSumMs(nonAbsence);
+  let totalWallMs = 0;
+  let totalPresMs = 0;
+  const dayWallMs = new Map<string, number>();
+  const dayPresMs = new Map<string, number>();
+  byDay.forEach((es, d) => {
+    const w = computeUnionMs(es);
+    const p = computePresenceForDayMs(es);
+    dayWallMs.set(d, w);
+    dayPresMs.set(d, p);
+    totalWallMs += w;
+    totalPresMs += p;
+  });
+
+  const workingDays = byDay.size;
+  const mtFactor = totalWallMs > 0 ? totalNaiveMs / totalWallMs : 1;
+  const coverage = totalPresMs > 0 ? totalWallMs / totalPresMs : 1;
+  const avgWall = workingDays > 0 ? totalWallMs / workingDays : 0;
+  const avgPres = workingDays > 0 ? totalPresMs / workingDays : 0;
+
+  // Tätigkeits-Mix für Produktiv-Quote
+  const taetBuckets = new Map<string, number>();
+  for (const e of nonAbsence) {
+    const k = normalizeTaetigkeit(e.taetigkeit);
+    if (!k) continue;
+    taetBuckets.set(k, (taetBuckets.get(k) || 0) + (e.duration_ms || 0));
+  }
+  const productiveMs = taetBuckets.get('Produktiv') || 0;
+  const productivePct =
+    totalNaiveMs > 0 ? (productiveMs / totalNaiveMs) * 100 : 0;
+
+  // Coverage-Buckets
+  let daysGood = 0;
+  let daysOk = 0;
+  let daysThin = 0;
+  const lowCovDays: LowCoverageDay[] = [];
+  dayPresMs.forEach((presMs, d) => {
+    const wMs = dayWallMs.get(d) || 0;
+    if (presMs <= 0) return;
+    const cov = wMs / presMs;
+    if (cov >= 0.8) daysGood += 1;
+    else if (cov >= 0.6) daysOk += 1;
+    else if (presMs >= 2 * 60 * 60_000) {
+      // mindestens 2h Präsenz, sonst zu marginal
+      daysThin += 1;
+      lowCovDays.push({
+        date: d,
+        coveragePct: cov * 100,
+        presenceMs: presMs,
+        wallclockMs: wMs,
+        gapMs: presMs - wMs,
+      });
+    }
+  });
+  lowCovDays.sort((a, b) => a.coveragePct - b.coveragePct);
+
+  // perMember
   let perMember: PerMemberRow[] | undefined;
   if (scope === 'team' && members.length > 0) {
     perMember = members.map((m) => {
@@ -199,6 +326,7 @@ export function buildReportData(
     perMember.sort((a, b) => b.ms - a.ms);
   }
 
+  // Breakdowns
   const breakdowns = {
     stakeholders: buildBreakdown(nonAbsence, 'stakeholder'),
     projekte: buildBreakdown(nonAbsence, 'projekt'),
@@ -206,15 +334,227 @@ export function buildReportData(
     formate: buildBreakdown(nonAbsence, 'format'),
   };
 
+  // Wochen-Aggregat
+  const weekMap = new Map<
+    string,
+    { wallMs: number; presMs: number; days: Set<string> }
+  >();
+  for (const [d, es] of byDay) {
+    void es;
+    const wk = isoWeek(d);
+    const cur = weekMap.get(wk) || { wallMs: 0, presMs: 0, days: new Set() };
+    cur.wallMs += dayWallMs.get(d) || 0;
+    cur.presMs += dayPresMs.get(d) || 0;
+    cur.days.add(d);
+    weekMap.set(wk, cur);
+  }
+  const weeks = Array.from(weekMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([label, v]) => ({
+      label,
+      activeDays: v.days.size,
+      wallclockMs: v.wallMs,
+      presenceMs: v.presMs,
+      coverage: v.presMs > 0 ? v.wallMs / v.presMs : 1,
+    }));
+
+  // Halbzeit-Trend (Stakeholder-Bewegung)
+  const sortedDates = Array.from(byDay.keys()).sort();
+  const halfIdx = Math.floor(sortedDates.length / 2);
+  const firstDates = new Set(sortedDates.slice(0, halfIdx));
+  const secondDates = new Set(sortedDates.slice(halfIdx));
+  const firstEntries = nonAbsence.filter((e) => firstDates.has(e.date));
+  const secondEntries = nonAbsence.filter((e) => secondDates.has(e.date));
+
+  function stakeholderShareMs(es: TimeEntry[]): Map<string, number> {
+    const m = new Map<string, number>();
+    for (const e of es) {
+      const list = Array.isArray(e.stakeholder)
+        ? e.stakeholder
+        : e.stakeholder
+          ? [e.stakeholder]
+          : [];
+      const targets = list.length === 0 ? ['—'] : list.map((s) => s || '—');
+      for (const t of targets) {
+        m.set(t, (m.get(t) || 0) + (e.duration_ms || 0));
+      }
+    }
+    return m;
+  }
+  const firstSh = stakeholderShareMs(firstEntries);
+  const secondSh = stakeholderShareMs(secondEntries);
+  const firstTotal = Array.from(firstSh.values()).reduce((a, b) => a + b, 0);
+  const secondTotal = Array.from(secondSh.values()).reduce((a, b) => a + b, 0);
+
+  const universe = new Set<string>([...firstSh.keys(), ...secondSh.keys()]);
+  const trendChanges: TrendChange[] = [];
+  universe.forEach((sh) => {
+    const f = firstSh.get(sh) || 0;
+    const s = secondSh.get(sh) || 0;
+    const fp = firstTotal > 0 ? (f / firstTotal) * 100 : 0;
+    const sp = secondTotal > 0 ? (s / secondTotal) * 100 : 0;
+    if (fp < 3 && sp < 3) return; // zu marginal
+    const delta = sp - fp;
+    if (Math.abs(delta) < 3) return; // unter Signifikanz-Schwelle
+    trendChanges.push({
+      name: sh,
+      firstPct: fp,
+      secondPct: sp,
+      deltaPct: delta,
+      firstMs: f,
+      secondMs: s,
+    });
+  });
+  trendChanges.sort((a, b) => Math.abs(b.deltaPct) - Math.abs(a.deltaPct));
+
+  const trend = {
+    firstHalfMs: firstTotal,
+    secondHalfMs: secondTotal,
+    firstHalfDays: firstDates.size,
+    secondHalfDays: secondDates.size,
+    growth: trendChanges.filter((t) => t.deltaPct > 0).slice(0, 5),
+    decline: trendChanges.filter((t) => t.deltaPct < 0).slice(0, 5),
+  };
+
   const absences = countAbsences(entries);
 
+  // ─── Findings (Data-Hygiene + Beobachtungen) ─────────────────────
+  const findings: Finding[] = [];
+
+  // Tippfehler-Detection
+  const taetCount = new Map<string, number>();
+  for (const e of entries) {
+    const t = e.taetigkeit || '';
+    if (!t) continue;
+    taetCount.set(t, (taetCount.get(t) || 0) + 1);
+  }
+  const taetKeys = Array.from(taetCount.keys());
+  const dupPairs: Array<{ a: string; b: string; ca: number; cb: number }> = [];
+  for (let i = 0; i < taetKeys.length; i++) {
+    for (let j = i + 1; j < taetKeys.length; j++) {
+      const a = taetKeys[i];
+      const b = taetKeys[j];
+      if (
+        a.trim().toLowerCase().replace(/\.$/, '') ===
+        b.trim().toLowerCase().replace(/\.$/, '')
+      ) {
+        dupPairs.push({
+          a,
+          b,
+          ca: taetCount.get(a) || 0,
+          cb: taetCount.get(b) || 0,
+        });
+      }
+    }
+  }
+  if (dupPairs.length > 0) {
+    const msgs = dupPairs
+      .map(
+        (p) =>
+          `&quot;${htmlEsc(p.a)}&quot; (${p.ca}x) / &quot;${htmlEsc(p.b)}&quot; (${p.cb}x)`
+      )
+      .join(' &middot; ');
+    findings.push({
+      level: 'warn',
+      htmlMessage: `<b>Tippfehler in Tätigkeit:</b> ${msgs}. Im Verwaltungs-Tab konsolidieren — sonst zerteilt sich die Aggregat-Sicht künstlich.`,
+    });
+  }
+
+  // Lange Tage
+  const veryLongDays: Array<{ date: string; ms: number }> = [];
+  dayWallMs.forEach((ms, d) => {
+    if (ms > 14 * 60 * 60_000) veryLongDays.push({ date: d, ms });
+  });
+  if (veryLongDays.length > 0) {
+    veryLongDays.sort((a, b) => b.ms - a.ms);
+    const examples = veryLongDays
+      .slice(0, 3)
+      .map((x) => `${x.date} (${fmtHours(x.ms)})`)
+      .join(', ');
+    findings.push({
+      level: 'info',
+      htmlMessage: `<b>${veryLongDays.length} Tag(e) mit &gt;14h Wallclock</b> (${examples}). Falls Nacherfassung mehrerer Tage in einem Schritt: für sauberere Kennzahlen auf die echten Tage rückverteilen.`,
+    });
+  }
+
+  // Konzentration
+  if (
+    breakdowns.stakeholders.length > 0 &&
+    breakdowns.stakeholders[0].pct > 35
+  ) {
+    const top = breakdowns.stakeholders[0];
+    findings.push({
+      level: 'info',
+      htmlMessage: `<b>Konzentrations-Risiko ${htmlEsc(top.name)}:</b> ${top.pct.toFixed(0)}% der Zeit auf einen Stakeholder. Falls dieser Stakeholder wegfällt oder das Hauptprojekt abgeschlossen wird, verschiebt sich das Profil schnell. Frage als Teamleader: proaktive Diversifikation oder bewusste Akzeptanz dass die Rolle so fokussiert ist?`,
+    });
+  }
+
+  // Multi-Tasking sehr hoch
+  if (mtFactor > 1.5) {
+    findings.push({
+      level: 'info',
+      htmlMessage: `<b>Multi-Tasking sehr hoch (${mtFactor.toFixed(2)}x).</b> Falls als Belastung empfunden: prüfen ob einzelne Slots als Single-Task bewusst geplant werden können, oder ob hier vergessene Tracker-Stops Schatten-Stunden erzeugen.`,
+    });
+  }
+
+  // Nicht-Produktiv hoch
+  const nonprodMs = taetBuckets.get('Nicht produktiv') || 0;
+  const nonprodPct = totalNaiveMs > 0 ? (nonprodMs / totalNaiveMs) * 100 : 0;
+  if (nonprodPct > 45) {
+    findings.push({
+      level: 'info',
+      htmlMessage: `<b>Nicht-Produktiv-Anteil bei ${nonprodPct.toFixed(0)}%.</b> Lohnt ein Blick: welche der Top-Projekte dort sind wirklich nötig, welche könnten asynchron oder als kürzere Slots laufen?`,
+    });
+  }
+
+  // Coverage schwach
+  if (daysThin >= 5) {
+    findings.push({
+      level: 'info',
+      htmlMessage: `<b>${daysThin} Tage mit Tracking-Coverage unter 60%.</b> Auf den schwächsten Tagen ist die Detail-Verteilung im Report weniger belastbar — für wichtige Reports ggf. nachvollziehen wo die untrackten Stunden hingingen.`,
+    });
+  }
+
+  if (findings.length === 0) {
+    findings.push({
+      level: 'ok',
+      htmlMessage:
+        'Keine roten Flaggen — Verteilung plausibel, Datenqualität in Ordnung, Mix gesund.',
+    });
+  }
+
+  // Title je nach Scope
   const titleByScope: Record<ReportScope, string> = {
-    self: locale === 'fr' ? 'Mon rapport' : 'Mein Report',
-    member:
-      locale === 'fr' ? `Rapport – ${subjectName}` : `Report – ${subjectName}`,
-    team:
-      locale === 'fr' ? `Rapport d'équipe – ${subjectName}` : `Team-Report – ${subjectName}`,
+    self: 'Mein Report',
+    member: `Report – ${subjectName}`,
+    team: `Team-Report – ${subjectName}`,
   };
+
+  // Narrative HTML (mehrere Paragraphen)
+  const narrativeHtml = generateNarrativeHtml({
+    range,
+    workingDays,
+    weeksCount: weeks.length,
+    scope,
+    subjectName,
+    breakdowns,
+    avgWall,
+    avgPres,
+    mtFactor,
+    coverage,
+    productivePct,
+    nonprodPct,
+    konzeptPct:
+      totalNaiveMs > 0
+        ? ((taetBuckets.get('Konzeption') || 0) / totalNaiveMs) * 100
+        : 0,
+    konzeptMs: taetBuckets.get('Konzeption') || 0,
+    fmtBuckets: breakdowns.formate,
+    trend,
+    daysGood,
+    daysOk,
+    daysThin,
+  });
 
   const data: ReportData = {
     meta: {
@@ -226,101 +566,165 @@ export function buildReportData(
     },
     kpis: {
       totalNaiveMs,
+      totalWallclockMs: totalWallMs,
+      totalPresenceMs: totalPresMs,
+      multiTaskingFactor: mtFactor,
+      coverage,
+      avgWallclockMsPerDay: avgWall,
+      avgPresenceMsPerDay: avgPres,
       entriesCount: nonAbsence.length,
       workingDays,
-      avgPerDayMs,
+      productivePct,
+      productiveMs,
     },
     perMember,
     breakdowns,
-    absences,
-    narratives: {
-      summary: '',
-      highlights: '',
+    weeks,
+    coverage: {
+      daysGood,
+      daysOk,
+      daysThin,
+      lowCoverageDays: lowCovDays.slice(0, 8),
     },
+    trend,
+    absences,
+    findings,
+    narrativeHtml,
   };
-
-  // Narratives erst NACH dem Daten-Aufbau generieren — sie greifen darauf zu.
-  data.narratives.summary = generateSummaryNarrative(data, locale);
-  data.narratives.highlights = generateHighlightsNarrative(data, locale);
   return data;
 }
 
 /* ─────────────────────────────────────────────────────────────────────
-   Narrative-Generatoren
+   Narrative-Generator — qualitatives Management-Summary als HTML
    ───────────────────────────────────────────────────────────────────── */
 
-export function generateSummaryNarrative(
-  d: ReportData,
-  locale: 'de' | 'fr' = 'de'
-): string {
-  const hours = formatHoursAdaptive(d.kpis.totalNaiveMs);
-  const days = d.kpis.workingDays;
-  const avg = formatHoursAdaptive(d.kpis.avgPerDayMs);
-  const period = d.meta.range.label;
-  const subject = d.meta.subjectName;
-
-  if (locale === 'fr') {
-    if (d.meta.scope === 'team') {
-      return `L'équipe ${subject} a saisi ${hours} sur ${period}, répartis sur ${days} jours actifs. Moyenne quotidienne : ${avg}.`;
-    }
-    return `${subject} a saisi ${hours} sur ${period}, répartis sur ${days} jours actifs. Moyenne quotidienne : ${avg}.`;
-  }
-
-  if (d.meta.scope === 'team') {
-    return `Das Team ${subject} hat im Zeitraum ${period} insgesamt ${hours} erfasst, verteilt auf ${days} aktive Arbeitstage. Tagesdurchschnitt: ${avg}.`;
-  }
-  return `${subject} hat im Zeitraum ${period} insgesamt ${hours} erfasst, verteilt auf ${days} aktive Arbeitstage. Tagesdurchschnitt: ${avg}.`;
+interface NarrativeOpts {
+  range: ReportRange;
+  workingDays: number;
+  weeksCount: number;
+  scope: ReportScope;
+  subjectName: string;
+  breakdowns: ReportData['breakdowns'];
+  avgWall: number;
+  avgPres: number;
+  mtFactor: number;
+  coverage: number;
+  productivePct: number;
+  nonprodPct: number;
+  konzeptPct: number;
+  konzeptMs: number;
+  fmtBuckets: BreakdownRow[];
+  trend: ReportData['trend'];
+  daysGood: number;
+  daysOk: number;
+  daysThin: number;
 }
 
-export function generateHighlightsNarrative(
-  d: ReportData,
-  locale: 'de' | 'fr' = 'de'
-): string {
-  const top3 = (rows: BreakdownRow[]) =>
-    rows
-      .slice(0, 3)
-      .map((r) => `${r.name} (${Math.round(r.pct)}%)`)
-      .join(', ');
+export function generateNarrativeHtml(o: NarrativeOpts): string {
+  const paras: string[] = [];
 
-  const stakeholders = top3(d.breakdowns.stakeholders);
-  const projekte = top3(d.breakdowns.projekte);
-  const taetigkeiten = top3(d.breakdowns.taetigkeiten);
+  const topSh = o.breakdowns.stakeholders[0];
+  if (!topSh) {
+    return '<p>Keine Daten im Zeitraum.</p>';
+  }
 
-  const parts: string[] = [];
-  if (stakeholders) {
-    parts.push(
-      locale === 'fr'
-        ? `Mandants principaux : ${stakeholders}.`
-        : `Stakeholder-Schwerpunkt: ${stakeholders}.`
-    );
-  }
-  if (projekte) {
-    parts.push(
-      locale === 'fr'
-        ? `Projets principaux : ${projekte}.`
-        : `Projekt-Schwerpunkt: ${projekte}.`
-    );
-  }
-  if (taetigkeiten) {
-    parts.push(
-      locale === 'fr'
-        ? `Activités principales : ${taetigkeiten}.`
-        : `Tätigkeits-Schwerpunkt: ${taetigkeiten}.`
+  // Para 1: Charakter
+  const others = o.breakdowns.stakeholders
+    .slice(1, 4)
+    .map((s) => htmlEsc(s.name))
+    .join(', ');
+  paras.push(
+    `Im Zeitraum <b>${htmlEsc(o.range.label)}</b> (${o.workingDays} aktive Tage, ${o.weeksCount} Wochen) zeigt sich ein konzentriertes Arbeitsprofil. <b>${htmlEsc(topSh.name)}</b> bindet allein ${topSh.pct.toFixed(0)}% der erfassten Zeit — die nächsten drei (${others}) folgen mit deutlichem Abstand. Operativ: starker Schwerpunkt, wenig Streuung.`
+  );
+
+  // Para 2: Projekt-Charakter
+  if (o.breakdowns.projekte.length >= 2) {
+    const tp1 = o.breakdowns.projekte[0];
+    const tp2 = o.breakdowns.projekte[1];
+    const top2sum = tp1.pct + tp2.pct;
+    paras.push(
+      `<b>Wo die Stunden hingehen.</b> &laquo;${htmlEsc(tp1.name)}&raquo; (${tp1.pct.toFixed(0)}%) und &laquo;${htmlEsc(tp2.name)}&raquo; (${tp2.pct.toFixed(0)}%) binden zusammen ${top2sum.toFixed(0)}% der Zeit. Die scheinbare Breite (${o.breakdowns.projekte.length} Projekte) täuscht — klare Kraftbündelung. Operativ effizient, aber bei Projekt-Abschluss verschiebt sich das Bild rasch.`
     );
   }
 
-  // Abwesenheiten erwähnen falls relevant
-  if (d.absences.length > 0) {
-    const totalAbsenceDays = d.absences.reduce((acc, a) => acc + a.count, 0);
-    const list = d.absences
-      .map((a) => `${a.count}× ${a.type}`)
-      .join(', ');
-    parts.push(
-      locale === 'fr'
-        ? `Absences (${totalAbsenceDays} jours) : ${list}.`
-        : `Abwesenheiten (${totalAbsenceDays} Tage): ${list}.`
+  // Para 3: Modus
+  const prodJudge =
+    o.productivePct >= 50
+      ? 'starker Output-Modus'
+      : o.productivePct >= 40
+        ? 'ausgeglichener Mix von Output und Steuerung'
+        : 'stark steuerungs- und abstimmungslastiger Modus';
+
+  const totalFmt = o.fmtBuckets.reduce((a, b) => a + b.ms, 0);
+  const einzel = o.fmtBuckets.find((f) => f.name === 'Einzelarbeit');
+  const einzelPct = einzel && totalFmt > 0 ? (einzel.ms / totalFmt) * 100 : 0;
+  const asynJudge =
+    einzelPct > 75
+      ? ', asynchron-dominiert (auffallend wenige Meetings für eine Kommunikationsfunktion — Abstimmung läuft offenbar primär über Mail/Telefon)'
+      : '';
+  const mtJudge =
+    o.mtFactor > 1.3
+      ? `. Multi-Tasking-Faktor ${o.mtFactor.toFixed(2)} — du trackst ~${((o.mtFactor - 1) * 100).toFixed(0)}% mehr Aufgabenzeit als reine Wallclock, klares Indiz für parallel laufende Stränge`
+      : '';
+
+  paras.push(
+    `<b>Wie gearbeitet wird.</b> ${prodJudge}: ${o.productivePct.toFixed(0)}% Produktiv, ${o.nonprodPct.toFixed(0)}% Nicht-produktiv${o.konzeptMs > 0 ? `, ${o.konzeptPct.toFixed(0)}% Konzeption` : ''}${asynJudge}${mtJudge}.`
+  );
+
+  // Para 4: Trend
+  if (o.trend.growth.length > 0 || o.trend.decline.length > 0) {
+    const parts: string[] = [];
+    if (o.trend.growth.length > 0) {
+      const descs = o.trend.growth
+        .slice(0, 3)
+        .map(
+          (t) =>
+            `<b>${htmlEsc(t.name)}</b> wuchs von ${t.firstPct.toFixed(0)}% auf ${t.secondPct.toFixed(0)}%`
+        )
+        .join(', ');
+      parts.push(`Gewinner: ${descs}`);
+    }
+    if (o.trend.decline.length > 0) {
+      const descs = o.trend.decline
+        .slice(0, 3)
+        .map(
+          (t) =>
+            `<b>${htmlEsc(t.name)}</b> fiel von ${t.firstPct.toFixed(0)}% auf ${t.secondPct.toFixed(0)}%`
+        )
+        .join(', ');
+      parts.push(`Verlierer: ${descs}`);
+    }
+    paras.push(
+      `<b>Verschiebung im Zeitraum.</b> Vergleicht man die erste mit der zweiten Periodenhälfte: ${parts.join('. ')}.`
     );
   }
 
-  return parts.join(' ');
+  // Para 5: Datenqualität
+  const covPct = o.coverage * 100;
+  const covMeaning =
+    covPct >= 85
+      ? 'die Detail-Insights sind belastbar — fast alles, was passiert ist, ist auch erfasst'
+      : covPct >= 70
+        ? 'die Detail-Insights tragen; kleinere Lücken sind die Regel'
+        : covPct >= 55
+          ? 'die Tendenz stimmt, aber bei Detail-Kennzahlen mit Vorsicht — etwa ein Drittel der Anwesenheit ist nicht in Slots'
+          : 'Detail-Aggregationen sind tendenziell zu niedrig — die echte Verteilung dürfte breiter sein';
+
+  paras.push(
+    `<b>Wie sicher die Zahlen sind.</b> Ø ${fmtHours(o.avgPres)} Präsenz / ${fmtHours(o.avgWall)} Wallclock pro aktivem Tag — Period-Coverage <b>${covPct.toFixed(0)}%</b> (${covMeaning}). Verteilung: ${o.daysGood} Tage ≥80%, ${o.daysOk} Tage 60–80%${o.daysThin > 0 ? `, ${o.daysThin} Tage unter 60% (Detail-Aussagen dort wackelig)` : ', keine Tage unter 60%'}.`
+  );
+
+  return paras.map((p) => `<p>${p}</p>`).join('\n');
+}
+
+function isoWeek(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dayNum = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(
+    ((dt.getTime() - yearStart.getTime()) / 86400000 + 1) / 7
+  );
+  return `${dt.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
