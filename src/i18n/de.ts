@@ -88,6 +88,8 @@ export const de = {
     clearAllFilters: 'Alle entfernen',
     removeFilter: 'Filter entfernen',
     filterEmpty: 'Keine Einträge im aktiven Filter.',
+    searchPlaceholder: 'Einträge durchsuchen…',
+    clearSearch: 'Suche leeren',
   },
 
   backup: {

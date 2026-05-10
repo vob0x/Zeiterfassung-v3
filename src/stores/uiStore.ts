@@ -34,11 +34,18 @@ export interface EntriesFilter {
   projekt?: string;
   taetigkeit?: string;
   format?: string;
+  /** Free-Text-Suche, case-insensitive Substring über alle Felder. */
+  search?: string;
 }
 
-/** True wenn mindestens eine Dimension gesetzt ist. */
+/** True wenn mindestens eine Dimension gesetzt ist (Chips, ohne search). */
 export function hasActiveFilter(f: EntriesFilter): boolean {
   return !!(f.stakeholder || f.projekt || f.taetigkeit || f.format);
+}
+
+/** True wenn IRGENDETWAS aktiv ist — Chip oder Search. */
+export function hasAnyFilter(f: EntriesFilter): boolean {
+  return hasActiveFilter(f) || !!(f.search && f.search.trim());
 }
 
 /**
@@ -84,6 +91,8 @@ interface UiState {
    * mit anderen aktiven Dimensionen via AND.
    */
   setEntriesFilterDim: (dim: EntriesFilterDim, value: string | null) => void;
+  /** Free-Text-Such-String (leer/null = aus). Kombiniert AND mit Chips. */
+  setEntriesSearch: (value: string) => void;
   /**
    * Filter (eine Dimension) setzen UND in den Einträge-Tab springen.
    * Andere aktive Dimensionen bleiben unverändert — Drill-Down kombiniert.
@@ -244,6 +253,13 @@ export const useUiStore = create<UiState>((set, get) => {
       } else {
         next[dim] = value;
       }
+      set({ entriesFilter: next });
+    },
+    setEntriesSearch: (value) => {
+      const cur = get().entriesFilter;
+      const next: EntriesFilter = { ...cur };
+      if (!value || !value.trim()) delete next.search;
+      else next.search = value;
       set({ entriesFilter: next });
     },
     drillDownToEntries: (dim, value) => {

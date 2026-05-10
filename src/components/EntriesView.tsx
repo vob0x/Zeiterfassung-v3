@@ -14,11 +14,12 @@
  */
 
 import { useMemo } from 'react';
-import { Download, FileJson, FileSpreadsheet, X } from 'lucide-react';
+import { Download, FileJson, FileSpreadsheet, Search, X } from 'lucide-react';
 import { useEntriesStore } from '@/stores/entriesStore';
 import {
   useUiStore,
   hasActiveFilter,
+  hasAnyFilter,
   type EntriesFilter,
   type EntriesFilterDim,
 } from '@/stores/uiStore';
@@ -29,10 +30,12 @@ import ManualEntry from './ManualEntry';
 import type { TimeEntry } from '@/types';
 
 /**
- * Prüft ob ein Eintrag dem Multi-Dim-Filter entspricht. Stakeholder ist
- * multi-valued (Naive-Attribution) — Eintrag matched, wenn der Filter-
- * Wert in der Liste auftaucht. Andere Dimensionen sind single-valued
- * Strict-Equality.
+ * Prüft ob ein Eintrag dem Multi-Dim-Filter entspricht. Logik:
+ *   - Chip-Filter (stakeholder/projekt/taetigkeit/format) sind Strict-
+ *     Equality, kombiniert mit AND. Stakeholder ist multi-valued: matcht
+ *     wenn der Filter-Wert in der Liste auftaucht.
+ *   - search ist case-insensitive Substring-Match über alle relevanten
+ *     Felder (Datum, Zeit, alle Dimensionen, Notiz). AND mit den Chips.
  */
 function entryMatchesFilter(e: TimeEntry, f: EntriesFilter): boolean {
   if (f.stakeholder) {
@@ -46,6 +49,28 @@ function entryMatchesFilter(e: TimeEntry, f: EntriesFilter): boolean {
   if (f.projekt && (e.projekt || '') !== f.projekt) return false;
   if (f.taetigkeit && (e.taetigkeit || '') !== f.taetigkeit) return false;
   if (f.format && (e.format || '') !== f.format) return false;
+
+  if (f.search) {
+    const q = f.search.trim().toLowerCase();
+    if (q) {
+      const list = Array.isArray(e.stakeholder) ? e.stakeholder : [];
+      const haystack = [
+        e.date,
+        e.start_time,
+        e.end_time,
+        ...list,
+        e.projekt,
+        e.taetigkeit,
+        e.format,
+        e.notiz,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+  }
+
   return true;
 }
 
@@ -55,15 +80,17 @@ export default function EntriesView() {
   const deleteEntry = useEntriesStore((s) => s.deleteEntry);
   const filter = useUiStore((s) => s.entriesFilter);
   const setFilterDim = useUiStore((s) => s.setEntriesFilterDim);
+  const setSearch = useUiStore((s) => s.setEntriesSearch);
   const clearFilter = useUiStore((s) => s.clearEntriesFilter);
   const codename = useAuthStore((s) => s.profile?.codename) || 'export';
 
-  const active = hasActiveFilter(filter);
+  const chipsActive = hasActiveFilter(filter);
+  const anyActive = hasAnyFilter(filter);
 
   const filtered = useMemo(() => {
-    if (!active) return entries;
+    if (!anyActive) return entries;
     return entries.filter((e) => entryMatchesFilter(e, filter));
-  }, [entries, filter, active]);
+  }, [entries, filter, anyActive]);
 
   /** Setzt eine Dimension oder togglet sie ab, wenn schon aktiv mit
    *  demselben Wert. Genutzt von den klickbaren Eintragswerten. */
@@ -80,7 +107,37 @@ export default function EntriesView() {
     <section className="space-y-4">
       <ManualEntry />
 
-      {active && (
+      {/* Search-Box — immer sichtbar. Suche kombiniert per AND mit Chips. */}
+      <div
+        className="flex items-center gap-2 px-2.5 py-1.5 rounded"
+        style={{
+          background: '#25221e',
+          border: '1px solid var(--border)',
+        }}
+      >
+        <Search size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+        <input
+          type="text"
+          value={filter.search || ''}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t('entries.searchPlaceholder')}
+          className="flex-1 bg-transparent border-none outline-none text-xs"
+          style={{ color: '#f5f1e8', minWidth: 0 }}
+        />
+        {filter.search && (
+          <button
+            type="button"
+            onClick={() => setSearch('')}
+            className="p-0.5 hover:opacity-70"
+            style={{ color: 'var(--text-muted)' }}
+            aria-label={t('entries.clearSearch')}
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+
+      {chipsActive && (
         <div
           className="flex items-center justify-between gap-2 px-3 py-2 rounded flex-wrap"
           style={{
@@ -167,7 +224,7 @@ export default function EntriesView() {
               t={t}
             />
           ))}
-          {filtered.length === 0 && active && (
+          {filtered.length === 0 && anyActive && (
             <li className="italic text-neutral-500">
               {t('entries.filterEmpty')}
             </li>
