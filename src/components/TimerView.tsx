@@ -15,7 +15,7 @@ import { Plus, Square } from 'lucide-react';
 import { useTimerStore } from '@/stores/timerStore';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useI18n } from '@/i18n';
-import { formatDateISO } from '@/lib/utils';
+import { splitTimerSpanAtMidnight } from '@/lib/timerSegments';
 import TimerLane from './TimerLane';
 import FuzzySearch from './FuzzySearch';
 import QuickShortcuts from './QuickShortcuts';
@@ -31,6 +31,7 @@ export default function TimerView() {
   useTimerStore((s) => s.tick);
 
   const addEntry = useEntriesStore((s) => s.addEntry);
+  const addEntries = useEntriesStore((s) => s.addEntries);
 
   const [error, setError] = useState<string | null>(null);
   const [endingDay, setEndingDay] = useState(false);
@@ -75,22 +76,25 @@ export default function TimerView() {
       setIsStopping(id, true);
       try {
         const now = new Date();
-        const endTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
         const startDate = new Date(now.getTime() - elapsed);
-        const startTime = `${pad(startDate.getHours())}:${pad(
-          startDate.getMinutes()
-        )}`;
-        await addEntry({
-          date: formatDateISO(now),
+        // Über Mitternacht → ein Eintrag pro Kalendertag.
+        const segments = splitTimerSpanAtMidnight(startDate, now);
+        const inputs = segments.map((seg) => ({
+          date: seg.date,
           stakeholder: slot.stakeholder,
           projekt: slot.projekt,
           taetigkeit: slot.taetigkeit,
           format: slot.format,
-          start_time: startTime,
-          end_time: endTime,
-          duration_ms: elapsed,
+          start_time: seg.start_time,
+          end_time: seg.end_time,
+          duration_ms: seg.duration_ms,
           notiz: slot.notiz,
-        });
+        }));
+        if (inputs.length === 1) {
+          await addEntry(inputs[0]);
+        } else {
+          await addEntries(inputs);
+        }
         removeSlot(id);
       } catch (e: any) {
         if (!firstError) firstError = e?.message || t('toast.saveFailed');
