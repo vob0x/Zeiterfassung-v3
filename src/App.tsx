@@ -29,7 +29,11 @@ import TeamView from '@/components/TeamView';
 import ManageView from '@/components/ManageView';
 import DayRing from '@/components/DayRing';
 import TrackingCoverage from '@/components/TrackingCoverage';
-import { computeLivePresenceMs, computeLiveWallClockMs } from '@/lib/wallclock';
+import {
+  buildSplitTailDates,
+  computeLivePresenceMs,
+  computeLiveWallClockMs,
+} from '@/lib/wallclock';
 import { getTodayISO } from '@/lib/utils';
 
 const DAILY_GOAL_MS = (8 * 60 + 24) * 60_000; // 8:24h
@@ -128,6 +132,20 @@ function TimerTabContent() {
     return entries.filter((e) => e.date === today);
   }, [entries]);
 
+  // Hat der Vortag einen '23:59'-Tail (= Timer wurde über Mitternacht
+  // gestoppt)? Dann ist heute der 00:00-Eintrag ein Spillover und darf
+  // den Präsenz-Anker nicht künstlich vorverlegen.
+  const previousDayHadSplitTail = useMemo(() => {
+    const tails = buildSplitTailDates(entries);
+    const today = getTodayISO();
+    const [y, m, d] = today.split('-').map(Number);
+    const prev = new Date(y, m - 1, d - 1);
+    const yesterday = `${prev.getFullYear()}-${String(
+      prev.getMonth() + 1
+    ).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`;
+    return tails.has(yesterday);
+  }, [entries]);
+
   const runningSlots = useMemo(
     () =>
       slots
@@ -139,8 +157,14 @@ function TimerTabContent() {
   );
 
   const presenceMs = useMemo(
-    () => computeLivePresenceMs(todayEntries, runningSlots),
-    [todayEntries, runningSlots]
+    () =>
+      computeLivePresenceMs(
+        todayEntries,
+        runningSlots,
+        new Date(),
+        previousDayHadSplitTail
+      ),
+    [todayEntries, runningSlots, previousDayHadSplitTail]
   );
 
   const trackedMs = useMemo(

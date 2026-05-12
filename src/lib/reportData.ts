@@ -17,9 +17,11 @@
 
 import type { TimeEntry } from '@/types';
 import {
+  buildSplitTailDates,
   computeNaiveSumMs,
   computeUnionMs,
   computePresenceForDayMs,
+  isMidnightSpillover,
 } from './wallclock';
 import { isAbsenceEntry } from './absences';
 
@@ -251,6 +253,12 @@ export function buildReportData(
     else byDay.set(e.date, [e]);
   }
 
+  // Spillover-Vorbereitung: Set der Daten mit '23:59'-Tail. Wird beim
+  // Per-Day-Loop gebraucht, um Mitternachts-Spillover aus dem Präsenz-
+  // Fenster auszufiltern (sie bleiben in Wallclock + Naive, da
+  // duration_ms reale Arbeit ist).
+  const splitTails = buildSplitTailDates(nonAbsence);
+
   // KPIs
   const totalNaiveMs = computeNaiveSumMs(nonAbsence);
   let totalWallMs = 0;
@@ -259,7 +267,10 @@ export function buildReportData(
   const dayPresMs = new Map<string, number>();
   byDay.forEach((es, d) => {
     const w = computeUnionMs(es);
-    const p = computePresenceForDayMs(es);
+    const presenceEntries = es.filter(
+      (e) => !isMidnightSpillover(e, splitTails)
+    );
+    const p = computePresenceForDayMs(presenceEntries);
     dayWallMs.set(d, w);
     dayPresMs.set(d, p);
     totalWallMs += w;

@@ -40,6 +40,57 @@ function toMin(time: string | undefined): number | null {
   return h * 60 + m;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Mitternachts-Spillover — Erkennung von Einträgen, die durch das Split-
+// ten eines Über-Mitternacht-Timers auf den Folgetag „getropft" sind.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Hilfsfunktion: vorheriger Kalendertag im YYYY-MM-DD-Format. Lokale TZ.
+ * Rein deterministisch, ohne Date.parse-Quirks.
+ */
+function previousISODate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  const prev = new Date(y, m - 1, d - 1);
+  const py = prev.getFullYear();
+  const pm = String(prev.getMonth() + 1).padStart(2, '0');
+  const pd = String(prev.getDate()).padStart(2, '0');
+  return `${py}-${pm}-${pd}`;
+}
+
+/**
+ * Liefert die Menge aller Daten, deren Einträge ein '23:59'-Tail haben.
+ * Genau das ist die Signatur, die `splitTimerSpanAtMidnight` an der
+ * Tagesgrenze schreibt — also ein zuverlässiger Indikator dafür, dass am
+ * Folgetag ein 00:00-Eintrag als Spillover beginnt.
+ */
+export function buildSplitTailDates(entries: EntryLike[]): Set<string> {
+  const out = new Set<string>();
+  for (const e of entries) {
+    if (e.end_time === '23:59' && e.date) out.add(e.date);
+  }
+  return out;
+}
+
+/**
+ * Ist `entry` ein Mitternachts-Spillover? Bedingung: start_time '00:00'
+ * UND der Vortag taucht in `splitTails` auf (= hat einen '23:59'-Tail).
+ *
+ * Bewusst NICHT auf Dimensions-Match geprüft — der Helper soll auch dann
+ * funktionieren, wenn der User unmittelbar nach Mitternacht den Slot
+ * gewechselt hat. Falscher-Positiv-Fall (Nachtschicht, die genau 00:00
+ * startet und deren Vortag zufällig 23:59 endete) ist in der Praxis
+ * vernachlässigbar.
+ */
+export function isMidnightSpillover(
+  entry: EntryLike,
+  splitTails: Set<string>
+): boolean {
+  if (entry.start_time !== '00:00' || !entry.date) return false;
+  return splitTails.has(previousISODate(entry.date));
+}
+
 /**
  * Effektive Dauer in ms — bevorzugt das gespeicherte `duration_ms`,
  * fällt zurück auf Berechnung aus start/end falls nicht gesetzt.
@@ -196,6 +247,11 @@ export function computePresenceForDayMs(
  * Präsenzzeit über mehrere Tage. Pro Tag bucket'en, jedes Bucket-
  * Brutto-Fenster summieren. Optional Absences ausfiltern (für „wie
  * lange war ich gearbeitet" sind Ferien irrelevant).
+ *
+ * Mitternachts-Spillover (00:00-Einträge nach einem 23:59-Tail des
+ * Vortages) werden ausgefiltert — sie sind technisch Vortags-Arbeit
+ * und sollen das Präsenz-Fenster des Folgetages nicht künstlich
+ * vorverlegen.
  */
 export function computePresenceMs(
   entries: EntryLike[],
@@ -205,9 +261,12 @@ export function computePresenceMs(
     ? entries.filter((e) => !isAbsenceEntry(e))
     : entries;
 
+  const splitTails = buildSplitTailDates(filtered);
+
   const byDate = new Map<string, EntryLike[]>();
   for (const e of filtered) {
     if (!e.date) continue;
+    if (isMidnightSpillover(e, splitTails)) continue;
     const list = byDate.get(e.date);
     if (list) list.push(e);
     else byDate.set(e.date, [e]);
@@ -224,16 +283,25 @@ export function computePresenceMs(
  * Präsenzzeit für HEUTE inkl. laufender Timer-Slots. Slots erweitern
  * das `latest`-End, falls der jüngste Slot später läuft als der letzte
  * gespeicherte Eintrag endet.
+ *
+ * `previousDayHadSplitTail` aktiviert die Spillover-Erkennung: wenn
+ * gestern ein '23:59'-Tail existiert, werden heute alle 00:00-Einträge
+ * als Mitternachts-Spillover behandelt und nicht als Präsenz-Start
+ * gewertet. Der Caller kennt seinen Daten-Pool und liefert das Flag —
+ * das hält die Signatur stabil ohne Cross-Day-Lookup hier drin.
  */
 export function computeLivePresenceMs(
   savedEntriesToday: EntryLike[],
   runningSlots: Array<{ elapsedMs: number; isPaused?: boolean }>,
-  now: Date = new Date()
+  now: Date = new Date(),
+  previousDayHadSplitTail: boolean = false
 ): number {
   let earliest: number | null = null;
   let latest: number | null = null;
   for (const e of savedEntriesToday) {
     if (isAbsenceEntry(e)) continue;
+    // Spillover vom Vortags-Stop: zählt nicht als Präsenz-Anker.
+    if (previousDayHadSplitTail && e.start_time === '00:00') continue;
     const s = toMin(e.start_time);
     let en = toMin(e.end_time);
     if (s == null || en == null) continue;
