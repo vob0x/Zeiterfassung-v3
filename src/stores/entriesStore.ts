@@ -96,6 +96,23 @@ interface EntriesState {
     newName: string,
     scope?: 'self' | 'team'
   ) => Promise<number>;
+  /**
+   * Mehrere Einträge gleichzeitig patchen — derselbe Patch wird auf
+   * jeden ID-Eintrag angewandt. Returnt die Anzahl erfolgreich
+   * aktualisierter Einträge. Wirft, sobald ein UPDATE fehlschlägt
+   * (Caller sieht teilweise Ergebnisse via aktualisiertem State).
+   *
+   * Use cases:
+   *   - "Ganzen Morgen aufs falsche Projekt gebucht" → projekt setzen
+   *   - "Alle Einträge des Tages 30min später" → start_time/end_time
+   *     pre-computed im Caller (siehe BatchEditBar Time-Shift)
+   */
+  bulkUpdateByIds: (ids: string[], patch: EntryPatch) => Promise<number>;
+  /**
+   * Mehrere Einträge soft-löschen (gleiche Semantik wie deleteEntry).
+   * Returnt die Anzahl gelöschter Einträge.
+   */
+  bulkDeleteByIds: (ids: string[]) => Promise<number>;
 }
 
 /**
@@ -544,5 +561,91 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       error: null,
     });
     return affected.length;
+  },
+
+  bulkUpdateByIds: async (ids, patch) => {
+    const profile = useAuthStore.getState().profile;
+    if (!profile?.id) throw new Error('Nicht authentifiziert');
+    if (!hasEncryptionKey()) throw new Error('Personal Key fehlt');
+    if (ids.length === 0) return 0;
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    const idSet = new Set(ids);
+    const affected = get().entries.filter((e) => idSet.has(e.id));
+    if (affected.length === 0) return 0;
+
+    const now = new Date().toISOString();
+    const merged = affected.map((e) => ({
+      ...e,
+      date: patch.date ?? e.date,
+      stakeholder: patch.stakeholder ?? e.stakeholder,
+      projekt: patch.projekt ?? e.projekt,
+      taetigkeit: patch.taetigkeit ?? e.taetigkeit,
+      format: patch.format ?? e.format,
+      start_time: patch.start_time ?? e.start_time,
+      end_time: patch.end_time ?? e.end_time,
+      duration_ms: patch.duration_ms ?? e.duration_ms,
+      notiz: patch.notiz ?? e.notiz,
+      updated_at: now,
+    }));
+
+    // Wie bulkRenameField: parallele update()-Calls, nicht upsert
+    // (sonst INSERT-Policy bei Team-Cascade-Konstellationen problematisch).
+    const updates = await Promise.all(
+      merged.map(async (e) => {
+        const encrypted = await encryptEntryForServer({
+          date: e.date,
+          stakeholder: e.stakeholder,
+          projekt: e.projekt,
+          taetigkeit: e.taetigkeit,
+          format: e.format,
+          start_time: e.start_time,
+          end_time: e.end_time,
+          duration_ms: e.duration_ms,
+          notiz: e.notiz,
+        });
+        return supabase
+          .from('time_entries')
+          .update({ ...encrypted, updated_at: now })
+          .eq('id', e.id);
+      })
+    );
+    const firstError = updates.find((r) => r.error)?.error;
+    if (firstError) throw new Error(firstError.message);
+
+    const updatedMap = new Map(merged.map((e) => [e.id, e]));
+    set({
+      entries: get().entries.map((e) => updatedMap.get(e.id) ?? e),
+      error: null,
+    });
+    return affected.length;
+  },
+
+  bulkDeleteByIds: async (ids) => {
+    const profile = useAuthStore.getState().profile;
+    if (!profile?.id) throw new Error('Nicht authentifiziert');
+    if (ids.length === 0) return 0;
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    const now = new Date().toISOString();
+    const updates = await Promise.all(
+      ids.map((id) =>
+        supabase
+          .from('time_entries')
+          .update({ deleted_at: now, updated_at: now })
+          .eq('id', id)
+      )
+    );
+    const firstError = updates.find((r) => r.error)?.error;
+    if (firstError) throw new Error(firstError.message);
+
+    const idSet = new Set(ids);
+    set({
+      entries: get().entries.filter((e) => !idSet.has(e.id)),
+      error: null,
+    });
+    return ids.length;
   },
 }));

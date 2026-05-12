@@ -13,8 +13,17 @@
  * jeweilige Dimension; Klick auf einen aktiven Chip entfernt sie.
  */
 
-import { useMemo } from 'react';
-import { Download, FileJson, FileSpreadsheet, Search, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import {
+  CheckSquare,
+  Download,
+  FileJson,
+  FileSpreadsheet,
+  Pencil,
+  Search,
+  Square,
+  X,
+} from 'lucide-react';
 import { useEntriesStore } from '@/stores/entriesStore';
 import {
   useUiStore,
@@ -27,6 +36,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { useI18n } from '@/i18n';
 import { downloadBackupJson, downloadBackupCsv } from '@/lib/backup';
 import ManualEntry from './ManualEntry';
+import EditEntryModal from './EditEntryModal';
+import BatchEditBar from './BatchEditBar';
 import type { TimeEntry } from '@/types';
 
 /**
@@ -84,6 +95,12 @@ export default function EntriesView() {
   const clearFilter = useUiStore((s) => s.clearEntriesFilter);
   const codename = useAuthStore((s) => s.profile?.codename) || 'export';
 
+  // Edit-Modal-State: ID des zu editierenden Eintrags oder null.
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Batch-Select-State: Set von Entry-IDs.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
   const chipsActive = hasActiveFilter(filter);
   const anyActive = hasAnyFilter(filter);
 
@@ -91,6 +108,50 @@ export default function EntriesView() {
     if (!anyActive) return entries;
     return entries.filter((e) => entryMatchesFilter(e, filter));
   }, [entries, filter, anyActive]);
+
+  // Wenn die Liste sich ändert, entferne IDs aus der Selektion, die
+  // nicht mehr da sind (z.B. nach bulkDelete oder Filterwechsel).
+  const visibleIds = useMemo(
+    () => new Set(filtered.map((e) => e.id)),
+    [filtered]
+  );
+  const effectiveSelected = useMemo(() => {
+    const out = new Set<string>();
+    for (const id of selected) if (visibleIds.has(id)) out.add(id);
+    return out;
+  }, [selected, visibleIds]);
+
+  const selectedEntries = useMemo(
+    () => filtered.filter((e) => effectiveSelected.has(e.id)),
+    [filtered, effectiveSelected]
+  );
+
+  const toggleSelected = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelected = () => setSelected(new Set());
+
+  const toggleAllVisible = () => {
+    if (effectiveSelected.size === filtered.length && filtered.length > 0) {
+      clearSelected();
+    } else {
+      setSelected(new Set(filtered.map((e) => e.id)));
+    }
+  };
+
+  const editingEntry = useMemo(
+    () => (editingId ? entries.find((e) => e.id === editingId) : null) ?? null,
+    [entries, editingId]
+  );
+
+  const allVisibleSelected =
+    filtered.length > 0 && effectiveSelected.size === filtered.length;
 
   /** Setzt eine Dimension oder togglet sie ab, wenn schon aktiv mit
    *  demselben Wert. Genutzt von den klickbaren Eintragswerten. */
@@ -196,6 +257,14 @@ export default function EntriesView() {
         </div>
       )}
 
+      {effectiveSelected.size > 0 && (
+        <BatchEditBar
+          selectedIds={Array.from(effectiveSelected)}
+          selectedEntries={selectedEntries}
+          onClear={clearSelected}
+        />
+      )}
+
       <div
         className="rounded-lg p-4"
         style={{
@@ -204,9 +273,34 @@ export default function EntriesView() {
         }}
       >
         <div className="flex items-baseline justify-between mb-2">
-          <span className="text-xs uppercase tracking-widest text-neutral-500">
-            {t('list.entriesCount')}
-          </span>
+          <div className="flex items-center gap-3">
+            {filtered.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleAllVisible}
+                className="text-neutral-500 hover:text-neutral-300"
+                aria-label={
+                  allVisibleSelected
+                    ? t('batch.selectNone')
+                    : t('batch.selectAll')
+                }
+                title={
+                  allVisibleSelected
+                    ? t('batch.selectNone')
+                    : t('batch.selectAll')
+                }
+              >
+                {allVisibleSelected ? (
+                  <CheckSquare size={14} style={{ color: '#C9A962' }} />
+                ) : (
+                  <Square size={14} />
+                )}
+              </button>
+            )}
+            <span className="text-xs uppercase tracking-widest text-neutral-500">
+              {t('list.entriesCount')}
+            </span>
+          </div>
           <span className="text-2xl font-bold" style={{ color: '#C9A962' }}>
             {filtered.length}
           </span>
@@ -217,6 +311,9 @@ export default function EntriesView() {
               key={e.id}
               entry={e}
               filter={filter}
+              selected={effectiveSelected.has(e.id)}
+              onToggleSelected={() => toggleSelected(e.id)}
+              onEdit={() => setEditingId(e.id)}
               onValueClick={onValueClick}
               onDelete={() => {
                 if (confirm(t('entry.deleteConfirm'))) deleteEntry(e.id);
@@ -231,6 +328,13 @@ export default function EntriesView() {
           )}
         </ul>
       </div>
+
+      {editingEntry && (
+        <EditEntryModal
+          entry={editingEntry}
+          onClose={() => setEditingId(null)}
+        />
+      )}
 
       {/* Backup: Export immer aller eigenen Einträge — IGNORIERT die
           aktiven Filter, weil ein Backup vollständig sein soll. */}
@@ -335,16 +439,24 @@ function FilterChip({
   );
 }
 
-/** Eine einzelne Zeile — alle 4 Dimensionen + Notiz sind klickbar. */
+/** Eine einzelne Zeile — alle 4 Dimensionen + Notiz sind klickbar.
+ *  Zusätzlich: Select-Checkbox vorne (für Batch-Edit) und Edit-Icon
+ *  hinten (öffnet EditEntryModal). */
 function EntryRow({
   entry,
   filter,
+  selected,
+  onToggleSelected,
+  onEdit,
   onValueClick,
   onDelete,
   t,
 }: {
   entry: TimeEntry;
   filter: EntriesFilter;
+  selected: boolean;
+  onToggleSelected: () => void;
+  onEdit: () => void;
   onValueClick: (dim: EntriesFilterDim, value: string) => void;
   onDelete: () => void;
   t: (k: string) => string;
@@ -356,7 +468,31 @@ function EntryRow({
       : [];
 
   return (
-    <li className="flex items-center justify-between gap-2 py-0.5">
+    <li
+      className="flex items-center justify-between gap-2 py-0.5"
+      style={
+        selected
+          ? {
+              background: 'rgba(201,169,98,0.10)',
+              borderLeft: '2px solid #C9A962',
+              paddingLeft: 4,
+            }
+          : { borderLeft: '2px solid transparent', paddingLeft: 4 }
+      }
+    >
+      <button
+        type="button"
+        onClick={onToggleSelected}
+        className="flex-shrink-0 text-neutral-500 hover:text-neutral-300"
+        aria-label={selected ? t('batch.deselect') : t('batch.select')}
+        title={selected ? t('batch.deselect') : t('batch.select')}
+      >
+        {selected ? (
+          <CheckSquare size={12} style={{ color: '#C9A962' }} />
+        ) : (
+          <Square size={12} />
+        )}
+      </button>
       <span className="truncate flex-1 min-w-0">
         <span className="font-mono text-xs">{entry.date}</span>{' '}
         <span style={{ color: 'var(--text-muted)' }}>
@@ -415,6 +551,15 @@ function EntryRow({
           <span style={{ color: 'var(--text-muted)' }}> · {entry.notiz}</span>
         )}
       </span>
+      <button
+        type="button"
+        onClick={onEdit}
+        className="flex-shrink-0 text-neutral-500 hover:text-amber-500 px-1 leading-none"
+        aria-label={t('edit.title')}
+        title={t('edit.title')}
+      >
+        <Pencil size={11} />
+      </button>
       <button
         type="button"
         onClick={onDelete}
