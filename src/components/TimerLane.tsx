@@ -33,7 +33,7 @@ import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
 import { useIsAdmin } from '@/hooks/useRole';
 import { useI18n } from '@/i18n';
-import { formatDateISO } from '@/lib/utils';
+import { splitTimerSpanAtMidnight } from '@/lib/timerSegments';
 import Picker from './Picker';
 
 interface TimerLaneProps {
@@ -51,6 +51,7 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
   useTimerStore((s) => s.tick);
 
   const addEntry = useEntriesStore((s) => s.addEntry);
+  const addEntries = useEntriesStore((s) => s.addEntries);
 
   const stakeholders = useMasterStore((s) => s.stakeholders);
   const projects = useMasterStore((s) => s.projects);
@@ -100,23 +101,28 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
     setIsStopping(slot.id, true);
     try {
       const now = new Date();
-      const endTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
       const startDate = new Date(now.getTime() - elapsedMs);
-      const startTime = `${pad(startDate.getHours())}:${pad(
-        startDate.getMinutes()
-      )}`;
-
-      await addEntry({
-        date: formatDateISO(now),
+      // Über Mitternacht: pro berührtem Kalendertag ein Eintrag, damit
+      // Wallclock/Filter/KPIs jeden Tag korrekt zählen. Same-Day-Span
+      // ergibt ein einzelnes Segment.
+      const segments = splitTimerSpanAtMidnight(startDate, now);
+      const inputs = segments.map((seg) => ({
+        date: seg.date,
         stakeholder: slot.stakeholder,
         projekt: slot.projekt,
         taetigkeit: slot.taetigkeit,
         format: slot.format,
-        start_time: startTime,
-        end_time: endTime,
-        duration_ms: elapsedMs,
+        start_time: seg.start_time,
+        end_time: seg.end_time,
+        duration_ms: seg.duration_ms,
         notiz: notizDraft || slot.notiz,
-      });
+      }));
+
+      if (inputs.length === 1) {
+        await addEntry(inputs[0]);
+      } else {
+        await addEntries(inputs);
+      }
 
       removeSlot(slot.id);
     } catch (e: any) {
