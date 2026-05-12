@@ -1,18 +1,33 @@
 /**
  * TimerLane — eine einzelne Timer-Zeile.
  *
- * Layout: Color-Bar links + Elapsed-Zeit + 5 inline Picker (Stakeholder
- * multi, Projekt single, Tätigkeit single, Format single, Notiz freitext)
- * + Pause/Resume + Stop + Remove.
+ * Layout (Refinement nach Test-Feedback):
+ *   - Reihe 1 = Header. Klick-Bereich für Pause/Resume. Zeigt:
+ *     - Color-Dot + Elapsed-Zeit
+ *     - Eindeutige Slot-Bezeichnung (Stakeholder · Projekt · Tätigkeit · Format)
+ *     - Buttons (Pause/Resume / Stop / Remove / Expand-Chevron)
+ *   - Reihe 2 = Pickers + Notiz. Standardmäßig kollabiert, per Chevron
+ *     ausklappbar. Wenn ein Slot frisch ohne Werte angelegt wurde, ist er
+ *     auto-expanded damit der User direkt die Picker bedienen kann.
+ *
+ * Klick auf den Header (außerhalb der Buttons) togglet Pause/Resume.
+ * Buttons stoppen die Propagation. Pickers und Notiz-Input absorbieren
+ * ihre Klicks ohnehin selbst.
  *
  * Stop-Pfad ist Server-First synchron: setIsStopping → addEntry await →
  * bei Erfolg removeSlot, bei Fehler Toast und Slot bleibt. Click-
- * Debounce über `slot.isStopping` plus zusätzlicher Re-Entrancy-Guard,
- * damit Doppelklick keinen zweiten Stop triggern kann (Lehre aus v2).
+ * Debounce über `slot.isStopping` plus zusätzlicher Re-Entrancy-Guard.
  */
 
-import { useEffect, useState } from 'react';
-import { Pause, Play, Square, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Pause,
+  Play,
+  Square,
+  X,
+} from 'lucide-react';
 import { useTimerStore, type TimerSlot } from '@/stores/timerStore';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
@@ -23,9 +38,6 @@ import Picker from './Picker';
 
 interface TimerLaneProps {
   slot: TimerSlot;
-  /** Toast-Callback vom TimerView. Eigenes Toast-System gibt's noch nicht
-   *  — kommt mit M4 (uiStore + Toast-Komponente). M3b nutzt einfach
-   *  alert() im Fehlerfall, was ausreichend laut ist. */
   onError?: (msg: string) => void;
 }
 
@@ -36,7 +48,6 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
   const resumeSlot = useTimerStore((s) => s.resumeSlot);
   const removeSlot = useTimerStore((s) => s.removeSlot);
   const setIsStopping = useTimerStore((s) => s.setIsStopping);
-  // tick-Counter binden, damit die Komponente jede Sekunde re-rendert wenn etwas läuft
   useTimerStore((s) => s.tick);
 
   const addEntry = useEntriesStore((s) => s.addEntry);
@@ -50,21 +61,36 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
   const addActivity = useMasterStore((s) => s.addActivity);
   const addFormat = useMasterStore((s) => s.addFormat);
 
-  // Mitarbeiter dürfen Format/Tätigkeit nicht selbst erweitern — nur
-  // Admins (oder Single-User ohne Team).
   const isAdmin = useIsAdmin();
 
-  // Lokale Notiz-State, damit der User tippen kann ohne dass jeder
-  // Tastenanschlag den Store updatet (würde bei multipler-slots
-  // eventuell anderen Tasks-Re-Render erzeugen).
   const [notizDraft, setNotizDraft] = useState(slot.notiz);
   useEffect(() => setNotizDraft(slot.notiz), [slot.notiz]);
+
+  // Default expanded wenn Slot noch keine Stakeholder UND kein Projekt hat
+  // — frisch über „Neuer Timer" angelegt, User soll direkt sehen wo
+  // konfiguriert wird. Sonst collapsed.
+  const isUnconfigured =
+    (slot.stakeholder?.length || 0) === 0 && !slot.projekt;
+  const [expanded, setExpanded] = useState(isUnconfigured);
 
   const elapsedMs = useTimerStore.getState().getElapsedMs(slot.id);
   const elapsed = formatElapsed(elapsedMs);
 
+  // Slot-Bezeichnung als „Stakeholder · Projekt · Tätigkeit · Format".
+  // Leere Felder werden weggelassen. Wenn nichts konfiguriert ist:
+  // Placeholder „Nicht konfiguriert".
+  const label = useMemo(() => {
+    const parts: string[] = [];
+    if (slot.stakeholder && slot.stakeholder.length > 0) {
+      parts.push(slot.stakeholder.join(', '));
+    }
+    if (slot.projekt) parts.push(slot.projekt);
+    if (slot.taetigkeit) parts.push(slot.taetigkeit);
+    if (slot.format) parts.push(slot.format);
+    return parts.join(' · ');
+  }, [slot.stakeholder, slot.projekt, slot.taetigkeit, slot.format]);
+
   const handleStop = async () => {
-    // Re-Entrancy-Guard: zweiter Klick während async-Stop läuft → ignore
     if (slot.isStopping) return;
     if (elapsedMs < 1000) {
       onError?.(t('timer.tooShort'));
@@ -92,13 +118,18 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
         notiz: notizDraft || slot.notiz,
       });
 
-      // Bei Erfolg: Slot ist erledigt, raus damit
       removeSlot(slot.id);
     } catch (e: any) {
-      // Bei Fehler: Slot bleibt — User kann später nochmal stoppen
       onError?.(e?.message || t('toast.saveFailed'));
       setIsStopping(slot.id, false);
     }
+  };
+
+  /** Pause/Resume-Toggle — auf Header-Klick. */
+  const togglePause = () => {
+    if (slot.isStopping) return;
+    if (slot.isPaused) resumeSlot(slot.id);
+    else pauseSlot(slot.id);
   };
 
   return (
@@ -111,32 +142,51 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
         border: `1px solid ${slot.color}40`,
       }}
     >
-      {/* Reihe 1: Color-Dot + Elapsed-Zeit links, Buttons rechts */}
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2">
-          <span
-            className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
-            style={{
-              background: slot.color,
-              opacity: slot.isPaused ? 0.4 : 1,
-              animation: slot.isPaused
-                ? 'none'
-                : 'timer-pulse 2s ease-in-out infinite',
-            }}
-          />
-          <span
-            className="font-mono text-base tabular-nums"
-            style={{
-              color: slot.isPaused ? 'var(--text-muted)' : slot.color,
-              fontWeight: 700,
-              letterSpacing: '-0.01em',
-            }}
-          >
-            {elapsed}
-          </span>
-        </div>
+      {/* Header: klickbar für Pause/Resume. Buttons stoppen Propagation. */}
+      <div
+        className="flex items-center gap-2 cursor-pointer select-none"
+        onClick={togglePause}
+        title={slot.isPaused ? t('timer.resume') : t('timer.pause')}
+      >
+        <span
+          className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+          style={{
+            background: slot.color,
+            opacity: slot.isPaused ? 0.4 : 1,
+            animation: slot.isPaused
+              ? 'none'
+              : 'timer-pulse 2s ease-in-out infinite',
+          }}
+        />
+        <span
+          className="font-mono text-base tabular-nums flex-shrink-0"
+          style={{
+            color: slot.isPaused ? 'var(--text-muted)' : slot.color,
+            fontWeight: 700,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {elapsed}
+        </span>
 
-        <div className="flex items-center gap-1">
+        {/* Slot-Bezeichnung — die Identität. Ellipsis bei Überlauf. */}
+        <span
+          className="text-xs truncate flex-1 min-w-0"
+          style={{
+            color: label ? 'var(--text)' : 'var(--text-muted)',
+            fontStyle: label ? 'normal' : 'italic',
+          }}
+          title={label || t('timer.unconfigured')}
+        >
+          {label || t('timer.unconfigured')}
+        </span>
+
+        {/* Aktions-Buttons — alle stoppen Propagation, damit Header-Klick
+            sie nicht als Pause/Resume interpretiert. */}
+        <div
+          className="flex items-center gap-1 flex-shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
           {slot.isPaused ? (
             <button
               type="button"
@@ -190,74 +240,91 @@ export default function TimerLane({ slot, onError }: TimerLaneProps) {
           >
             <X size={14} />
           </button>
+          {/* Expand/Collapse-Chevron — toggelt Pickers. */}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="p-1.5 rounded hover:bg-neutral-800"
+            title={
+              expanded ? t('timer.collapse') : t('timer.expand')
+            }
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
         </div>
       </div>
 
-      {/* Reihe 2: Picker-Grid — auf schmalen Screens 1 Spalte, ab sm 2,
-          ab lg alle 5 nebeneinander. Notiz spannt auf 1 Spalte mit. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-1.5">
-        <Picker
-          mode="multi"
-          options={stakeholders.map((s) => ({ id: s.id, name: s.name }))}
-          value={slot.stakeholder}
-          onChange={(v) => updateSlot(slot.id, { stakeholder: v })}
-          placeholder={t('entry.stakeholder')}
-          onAdd={async (name) => {
-            const item = await addStakeholder(name);
-            return { id: item.id, name: item.name };
-          }}
-        />
-        <Picker
-          options={projects.map((p) => ({ id: p.id, name: p.name }))}
-          value={slot.projekt}
-          onChange={(v) => updateSlot(slot.id, { projekt: v })}
-          placeholder={t('entry.projekt')}
-          onAdd={async (name) => {
-            const item = await addProject(name);
-            return { id: item.id, name: item.name };
-          }}
-        />
-        <Picker
-          options={activities.map((a) => ({ id: a.id, name: a.name }))}
-          value={slot.taetigkeit}
-          onChange={(v) => updateSlot(slot.id, { taetigkeit: v })}
-          placeholder={t('entry.taetigkeit')}
-          onAdd={
-            isAdmin
-              ? async (name) => {
-                  const item = await addActivity(name);
-                  return { id: item.id, name: item.name };
-                }
-              : undefined
-          }
-        />
-        <Picker
-          options={formats.map((f) => ({ id: f.id, name: f.name }))}
-          value={slot.format}
-          onChange={(v) => updateSlot(slot.id, { format: v })}
-          placeholder={t('entry.format')}
-          onAdd={
-            isAdmin
-              ? async (name) => {
-                  const item = await addFormat(name);
-                  return { id: item.id, name: item.name };
-                }
-              : undefined
-          }
-        />
-        <input
-          type="text"
-          value={notizDraft}
-          onChange={(e) => setNotizDraft(e.target.value)}
-          onBlur={() => {
-            if (notizDraft !== slot.notiz) {
-              updateSlot(slot.id, { notiz: notizDraft });
+      {/* Picker-Grid — kollabierbar. onClick stopPropagation damit
+          versehentliche Klicks zwischen Pickern nicht Pause triggern. */}
+      {expanded && (
+        <div
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-1.5 mt-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Picker
+            mode="multi"
+            options={stakeholders.map((s) => ({ id: s.id, name: s.name }))}
+            value={slot.stakeholder}
+            onChange={(v) => updateSlot(slot.id, { stakeholder: v })}
+            placeholder={t('entry.stakeholder')}
+            onAdd={async (name) => {
+              const item = await addStakeholder(name);
+              return { id: item.id, name: item.name };
+            }}
+          />
+          <Picker
+            options={projects.map((p) => ({ id: p.id, name: p.name }))}
+            value={slot.projekt}
+            onChange={(v) => updateSlot(slot.id, { projekt: v })}
+            placeholder={t('entry.projekt')}
+            onAdd={async (name) => {
+              const item = await addProject(name);
+              return { id: item.id, name: item.name };
+            }}
+          />
+          <Picker
+            options={activities.map((a) => ({ id: a.id, name: a.name }))}
+            value={slot.taetigkeit}
+            onChange={(v) => updateSlot(slot.id, { taetigkeit: v })}
+            placeholder={t('entry.taetigkeit')}
+            onAdd={
+              isAdmin
+                ? async (name) => {
+                    const item = await addActivity(name);
+                    return { id: item.id, name: item.name };
+                  }
+                : undefined
             }
-          }}
-          placeholder={t('entry.notiz')}
-          className="px-2 py-1 rounded bg-neutral-800 border border-neutral-700 focus:border-amber-600 focus:outline-none text-xs"
-        />
-      </div>
+          />
+          <Picker
+            options={formats.map((f) => ({ id: f.id, name: f.name }))}
+            value={slot.format}
+            onChange={(v) => updateSlot(slot.id, { format: v })}
+            placeholder={t('entry.format')}
+            onAdd={
+              isAdmin
+                ? async (name) => {
+                    const item = await addFormat(name);
+                    return { id: item.id, name: item.name };
+                  }
+                : undefined
+            }
+          />
+          <input
+            type="text"
+            value={notizDraft}
+            onChange={(e) => setNotizDraft(e.target.value)}
+            onBlur={() => {
+              if (notizDraft !== slot.notiz) {
+                updateSlot(slot.id, { notiz: notizDraft });
+              }
+            }}
+            placeholder={t('entry.notiz')}
+            className="px-2 py-1 rounded bg-neutral-800 border border-neutral-700 focus:border-amber-600 focus:outline-none text-xs"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -274,9 +341,6 @@ function formatElapsed(ms: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
-// Pulse-Animation einmal injecten (kein global CSS — Tailwind reicht
-// nicht für Custom-@keyframes). Dieser Trick wird beim ersten Mount
-// ausgeführt; idempotent durch ID-Check.
 if (typeof document !== 'undefined') {
   const STYLE_ID = 'v3-timer-lane-pulse';
   if (!document.getElementById(STYLE_ID)) {

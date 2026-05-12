@@ -123,6 +123,7 @@ export const fr = {
     placeholder: 'Tapez pour une suggestion…',
     noMatch: "Aucun résultat dans l'historique",
     clear: 'Effacer la recherche',
+    newCombo: 'Nouveau',
   },
 
   shortcuts: {
@@ -144,6 +145,9 @@ export const fr = {
     endingDay: 'Fin de journée…',
     tooShort: 'Chrono trop court — minimum 1 seconde.',
     goalReached: 'Objectif atteint',
+    unconfigured: 'Non configuré',
+    expand: 'Afficher les détails',
+    collapse: 'Masquer les détails',
   },
 
   tabs: {
@@ -152,6 +156,32 @@ export const fr = {
     entries: 'Entrées',
     team: 'Équipe',
     manage: 'Gestion',
+  },
+
+  edit: {
+    title: "Modifier l'entrée",
+  },
+
+  batch: {
+    selected: 'Sélectionné',
+    selectAll: 'Tout sélectionner',
+    selectNone: 'Tout désélectionner',
+    select: 'Sélectionner',
+    deselect: 'Désélectionner',
+    clearSelection: 'Vider la sélection',
+    setCategory: 'Définir catégorie',
+    setNotiz: 'Définir la note',
+    shift: 'Décaler le temps',
+    delete: 'Supprimer',
+    dimension: 'Dimension',
+    newValue: 'Nouvelle valeur',
+    applyTo: 'Appliquer à {n}',
+    shiftMinutes: 'Décalage (min.)',
+    shiftZero: 'Veuillez entrer une valeur différente de 0.',
+    shiftHint:
+      "Les heures de début et de fin de toutes les entrées sélectionnées seront décalées. Négatif = vers l'arrière, positif = vers l'avant. La date et la durée restent.",
+    deleteConfirm:
+      "{n} entrées seront supprimées (récupérables depuis la gestion).",
   },
 
   manage: {

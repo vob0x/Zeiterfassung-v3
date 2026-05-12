@@ -11,12 +11,15 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, Sparkles, X } from 'lucide-react';
 import { useEntriesStore } from '@/stores/entriesStore';
+import { useMasterStore } from '@/stores/masterStore';
 import { useTimerStore } from '@/stores/timerStore';
 import { useI18n } from '@/i18n';
 import {
   buildCombinationStats,
+  buildCompositeFromTokens,
+  combinationKey,
   filterCombinations,
   describeCombination,
   type Combination,
@@ -24,10 +27,20 @@ import {
 
 const MAX_SUGGESTIONS = 8;
 
+/** Suggestion-Wrapper: history-Combos + virtuelle Composite. */
+interface Suggestion {
+  combo: Combination;
+  isComposite: boolean;
+}
+
 export default function FuzzySearch() {
   const { t } = useI18n();
   const entries = useEntriesStore((s) => s.entries);
   const addSlot = useTimerStore((s) => s.addSlot);
+  const stakeholders = useMasterStore((s) => s.stakeholders);
+  const projects = useMasterStore((s) => s.projects);
+  const activities = useMasterStore((s) => s.activities);
+  const formats = useMasterStore((s) => s.formats);
 
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -38,11 +51,44 @@ export default function FuzzySearch() {
   // Memo: alle Combinations einmal pro entries-Wechsel berechnen.
   const allCombos = useMemo(() => buildCombinationStats(entries), [entries]);
 
-  // Memo: gefilterte Combos nach query.
-  const suggestions = useMemo(
-    () => filterCombinations(allCombos, query).slice(0, MAX_SUGGESTIONS),
-    [allCombos, query]
+  // Master-Pools (name-Arrays) für Composite-Matcher.
+  const masterPools = useMemo(
+    () => ({
+      stakeholders: stakeholders.map((s) => s.name),
+      projects: projects.map((p) => p.name),
+      activities: activities.map((a) => a.name),
+      formats: formats.map((f) => f.name),
+    }),
+    [stakeholders, projects, activities, formats]
   );
+
+  // Memo: gefilterte Combos nach query, dazu ggf. ein Composite-Vorschlag
+  // wenn der User mehrere Tokens eingibt, die sich greedy auf die 4
+  // Master-Dimensionen verteilen lassen — auch wenn diese Combo so noch
+  // nie existiert hat.
+  const suggestions: Suggestion[] = useMemo(() => {
+    const history = filterCombinations(allCombos, query).map((combo) => ({
+      combo,
+      isComposite: false,
+    }));
+
+    const composite = buildCompositeFromTokens(query, masterPools);
+    if (!composite) return history.slice(0, MAX_SUGGESTIONS);
+
+    // Wenn die composite-Combo bereits in der History existiert, nicht
+    // als „Neu" oben prependen — der bestehende Eintrag enthält den
+    // Count und führt zum gleichen Ergebnis.
+    const compositeKey = combinationKey(composite);
+    const dupHistory = history.find(
+      (h) => combinationKey(h.combo) === compositeKey
+    );
+    if (dupHistory) return history.slice(0, MAX_SUGGESTIONS);
+
+    return [
+      { combo: composite, isComposite: true },
+      ...history,
+    ].slice(0, MAX_SUGGESTIONS);
+  }, [allCombos, query, masterPools]);
 
   // Highlight zurücksetzen bei query-Wechsel
   useEffect(() => {
@@ -102,7 +148,8 @@ export default function FuzzySearch() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const apply = (c: Combination) => {
+  const apply = (s: Suggestion) => {
+    const c = s.combo;
     addSlot({
       stakeholder: c.stakeholder,
       projekt: c.projekt,
@@ -196,14 +243,15 @@ export default function FuzzySearch() {
             </div>
           ) : (
             <ul style={{ overflow: 'auto', maxHeight: 320 }}>
-              {suggestions.map((c, i) => {
+              {suggestions.map((s, i) => {
                 const active = i === highlight;
+                const c = s.combo;
                 return (
                   <li key={i}>
                     <button
                       type="button"
                       onMouseEnter={() => setHighlight(i)}
-                      onClick={() => apply(c)}
+                      onClick={() => apply(s)}
                       className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2"
                       style={{
                         background: active
@@ -212,6 +260,23 @@ export default function FuzzySearch() {
                         color: '#f5f1e8',
                       }}
                     >
+                      {s.isComposite && (
+                        <span
+                          className="flex items-center gap-1 px-1.5 py-0.5 rounded"
+                          style={{
+                            background: 'rgba(201,169,98,0.22)',
+                            color: '#C9A962',
+                            fontSize: 9,
+                            fontWeight: 600,
+                            letterSpacing: '0.05em',
+                            textTransform: 'uppercase',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Sparkles size={10} />
+                          {t('fuzzy.newCombo')}
+                        </span>
+                      )}
                       <span
                         style={{
                           flex: 1,
@@ -223,16 +288,18 @@ export default function FuzzySearch() {
                       >
                         {describeCombination(c)}
                       </span>
-                      <span
-                        className="font-mono"
-                        style={{
-                          fontSize: 10,
-                          color: 'var(--text-muted)',
-                          flexShrink: 0,
-                        }}
-                      >
-                        ×{c.count}
-                      </span>
+                      {!s.isComposite && (
+                        <span
+                          className="font-mono"
+                          style={{
+                            fontSize: 10,
+                            color: 'var(--text-muted)',
+                            flexShrink: 0,
+                          }}
+                        >
+                          ×{c.count}
+                        </span>
+                      )}
                     </button>
                   </li>
                 );

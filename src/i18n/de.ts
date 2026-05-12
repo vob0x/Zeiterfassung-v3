@@ -123,6 +123,7 @@ export const de = {
     placeholder: 'Lostippen für Vorschlag…',
     noMatch: 'Kein Treffer in der Eintrags-Historie',
     clear: 'Suche leeren',
+    newCombo: 'Neu',
   },
 
   shortcuts: {
@@ -144,6 +145,9 @@ export const de = {
     endingDay: 'Beende Tag…',
     tooShort: 'Timer zu kurz — mind. 1 Sekunde nötig.',
     goalReached: 'Ziel erreicht',
+    unconfigured: 'Nicht konfiguriert',
+    expand: 'Details einblenden',
+    collapse: 'Details ausblenden',
   },
 
   tabs: {
@@ -152,6 +156,32 @@ export const de = {
     entries: 'Einträge',
     team: 'Team',
     manage: 'Verwaltung',
+  },
+
+  edit: {
+    title: 'Eintrag bearbeiten',
+  },
+
+  batch: {
+    selected: 'Ausgewählt',
+    selectAll: 'Alle auswählen',
+    selectNone: 'Auswahl aufheben',
+    select: 'Auswählen',
+    deselect: 'Abwählen',
+    clearSelection: 'Auswahl leeren',
+    setCategory: 'Kategorie setzen',
+    setNotiz: 'Notiz setzen',
+    shift: 'Zeit verschieben',
+    delete: 'Löschen',
+    dimension: 'Dimension',
+    newValue: 'Neuer Wert',
+    applyTo: 'Auf {n} anwenden',
+    shiftMinutes: 'Verschiebung (Min.)',
+    shiftZero: 'Bitte einen Wert ungleich 0 eingeben.',
+    shiftHint:
+      'Start- und End-Zeit aller ausgewählten Einträge werden um diesen Betrag verschoben. Negativ = nach hinten, positiv = nach vorn. Datum und Dauer bleiben.',
+    deleteConfirm:
+      '{n} Einträge werden soft-gelöscht und sind aus der Verwaltung wiederherstellbar.',
   },
 
   manage: {
