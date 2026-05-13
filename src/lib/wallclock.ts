@@ -74,21 +74,48 @@ export function buildSplitTailDates(entries: EntryLike[]): Set<string> {
 }
 
 /**
- * Ist `entry` ein Mitternachts-Spillover? Bedingung: start_time '00:00'
- * UND der Vortag taucht in `splitTails` auf (= hat einen '23:59'-Tail).
+ * Hat dieser Eintrag eine Overnight-Wrap-Signatur — also start_time
+ * nach end_time? Eindeutiger Marker für Legacy-Mitternachts-Einträge
+ * aus der Zeit vor dem Splitter (ein normaler Eintrag hat das nie,
+ * weil Form-Validation in ManualEntry/EditEntryModal end>start fordert).
+ */
+export function isOvernightWrap(entry: EntryLike): boolean {
+  const s = toMin(entry.start_time);
+  const en = toMin(entry.end_time);
+  return s != null && en != null && en < s;
+}
+
+/**
+ * Ist `entry` ein Mitternachts-Spillover? Zwei Pfade — beide werden
+ * für die Präsenz-Berechnung wie der Vortag behandelt.
  *
- * Bewusst NICHT auf Dimensions-Match geprüft — der Helper soll auch dann
- * funktionieren, wenn der User unmittelbar nach Mitternacht den Slot
- * gewechselt hat. Falscher-Positiv-Fall (Nachtschicht, die genau 00:00
- * startet und deren Vortag zufällig 23:59 endete) ist in der Praxis
- * vernachlässigbar.
+ *   1. **Neuer Split** (post-Fix): start_time '00:00' UND der Vortag
+ *      taucht in `splitTails` auf (= hat einen '23:59'-Tail).
+ *
+ *   2. **Legacy-Overnight** (pre-Fix): start_time > end_time. Vor dem
+ *      Split-Fix wurde ein Über-Mitternacht-Timer als einzelner Eintrag
+ *      mit date=Stop-Tag, start=23:37, end=00:09 gespeichert. Solche
+ *      Einträge gehören semantisch zum Vortag.
+ *
+ * Falscher-Positiv-Fall (Nachtschicht, die genau 00:00 startet und
+ * deren Vortag zufällig 23:59 endete) ist in der Praxis vernachlässigbar.
  */
 export function isMidnightSpillover(
   entry: EntryLike,
   splitTails: Set<string>
 ): boolean {
-  if (entry.start_time !== '00:00' || !entry.date) return false;
-  return splitTails.has(previousISODate(entry.date));
+  if (!entry.date || !entry.start_time || !entry.end_time) return false;
+
+  // Pfad 1: neuer, sauberer Split.
+  if (
+    entry.start_time === '00:00' &&
+    splitTails.has(previousISODate(entry.date))
+  ) {
+    return true;
+  }
+
+  // Pfad 2: Legacy-Daten mit overnight-wrap-Signatur.
+  return isOvernightWrap(entry);
 }
 
 /**
@@ -300,12 +327,13 @@ export function computeLivePresenceMs(
   let latest: number | null = null;
   for (const e of savedEntriesToday) {
     if (isAbsenceEntry(e)) continue;
-    // Spillover vom Vortags-Stop: zählt nicht als Präsenz-Anker.
+    // Spillover-Pfad 1: neuer Split — heute '00:00' + Vortag hatte Tail.
     if (previousDayHadSplitTail && e.start_time === '00:00') continue;
+    // Spillover-Pfad 2: Legacy-Eintrag mit overnight-wrap-Signatur.
+    if (isOvernightWrap(e)) continue;
     const s = toMin(e.start_time);
-    let en = toMin(e.end_time);
+    const en = toMin(e.end_time);
     if (s == null || en == null) continue;
-    if (en < s) en += 24 * 60;
     if (earliest == null || s < earliest) earliest = s;
     if (latest == null || en > latest) latest = en;
   }
