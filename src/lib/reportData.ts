@@ -639,22 +639,21 @@ export function generateNarrativeHtml(o: NarrativeOpts): string {
     return '<p>Keine Daten im Zeitraum.</p>';
   }
 
-  // Para 1: Charakter
-  const others = o.breakdowns.stakeholders
-    .slice(1, 4)
-    .map((s) => htmlEsc(s.name))
-    .join(', ');
-  paras.push(
-    `Im Zeitraum <b>${htmlEsc(o.range.label)}</b> (${o.workingDays} aktive Tage, ${o.weeksCount} Wochen) zeigt sich ein konzentriertes Arbeitsprofil. <b>${htmlEsc(topSh.name)}</b> bindet allein ${topSh.pct.toFixed(0)}% der erfassten Zeit — die nächsten drei (${others}) folgen mit deutlichem Abstand. Operativ: starker Schwerpunkt, wenig Streuung.`
-  );
+  // Para 1: Stakeholder-Charakter — datengetrieben nach Konzentration.
+  //   pct ≥ 50%: klar konzentriert
+  //   30–50%:    Schwerpunkt + Breite
+  //   <30%:      breit verteilt
+  paras.push(buildStakeholderPara(o, topSh));
 
-  // Para 2: Projekt-Charakter
+  // Para 2: Projekt-Verteilung — basiert auf Top-2-Anteil UND Anzahl
+  // Projekte. Verhindert den vorherigen Pseudo-Insight, dass eine "scheinbare
+  // Breite" immer "klare Kraftbündelung" wäre.
   if (o.breakdowns.projekte.length >= 2) {
-    const tp1 = o.breakdowns.projekte[0];
-    const tp2 = o.breakdowns.projekte[1];
-    const top2sum = tp1.pct + tp2.pct;
+    paras.push(buildProjektPara(o));
+  } else if (o.breakdowns.projekte.length === 1) {
+    const only = o.breakdowns.projekte[0];
     paras.push(
-      `<b>Wo die Stunden hingehen.</b> &laquo;${htmlEsc(tp1.name)}&raquo; (${tp1.pct.toFixed(0)}%) und &laquo;${htmlEsc(tp2.name)}&raquo; (${tp2.pct.toFixed(0)}%) binden zusammen ${top2sum.toFixed(0)}% der Zeit. Die scheinbare Breite (${o.breakdowns.projekte.length} Projekte) täuscht — klare Kraftbündelung. Operativ effizient, aber bei Projekt-Abschluss verschiebt sich das Bild rasch.`
+      `<b>Wo die Stunden hingehen.</b> Einziges Projekt im Zeitraum: &laquo;${htmlEsc(only.name)}&raquo; — keine Verteilung zu analysieren.`
     );
   }
 
@@ -726,6 +725,86 @@ export function generateNarrativeHtml(o: NarrativeOpts): string {
   );
 
   return paras.map((p) => `<p>${p}</p>`).join('\n');
+}
+
+/**
+ * Para 1 — Stakeholder-Charakter. Die Tonalität (konzentriert / Schwerpunkt
+ * + Breite / breit verteilt) hängt am Top-1-Anteil. Der Kontext-Halbsatz
+ * (folgen mit Abstand / dahinter erkennbar / substanzielle Breite) hängt
+ * am Top-3-Anteil. Bewusst zwei orthogonale Achsen, damit der Text die
+ * Form der Verteilung trifft, nicht nur die Spitze.
+ */
+function buildStakeholderPara(
+  o: NarrativeOpts,
+  topSh: BreakdownRow
+): string {
+  const shCount = o.breakdowns.stakeholders.length;
+  const header = `Im Zeitraum <b>${htmlEsc(o.range.label)}</b> (${o.workingDays} aktive Tage, ${o.weeksCount} Wochen)`;
+
+  if (shCount === 1) {
+    return `${header} zeigt sich ein Single-Stakeholder-Profil: <b>${htmlEsc(topSh.name)}</b> bindet 100% der erfassten Zeit.`;
+  }
+
+  // Lead-Satz: Charakter nach Top-1-Anteil.
+  let lead: string;
+  if (topSh.pct >= 50) {
+    lead = `zeigt sich ein klar konzentriertes Arbeitsprofil. <b>${htmlEsc(topSh.name)}</b> bindet ${topSh.pct.toFixed(0)}% der erfassten Zeit`;
+  } else if (topSh.pct >= 30) {
+    lead = `zeigt sich ein Schwerpunkt-getragenes Profil. <b>${htmlEsc(topSh.name)}</b> führt mit ${topSh.pct.toFixed(0)}%`;
+  } else {
+    lead = `zeigt sich ein breit verteiltes Profil. <b>${htmlEsc(topSh.name)}</b> hält die Spitze mit nur ${topSh.pct.toFixed(0)}%`;
+  }
+
+  // Kontext-Halbsatz: Form der Verteilung nach Top-3-Anteil.
+  const others = o.breakdowns.stakeholders
+    .slice(1, 4)
+    .map((s) => htmlEsc(s.name))
+    .join(', ');
+  const top3 = o.breakdowns.stakeholders
+    .slice(0, 3)
+    .reduce((sum, s) => sum + s.pct, 0);
+
+  let context: string;
+  if (top3 >= 80) {
+    context = `, dahinter ${others} mit deutlichem Abstand. Top-3 bündeln ${top3.toFixed(0)}% — wenig Streuung`;
+  } else if (top3 >= 60) {
+    context = `, dahinter ${others} mit erkennbaren Anteilen. Top-3 ${top3.toFixed(0)}% — Mischlage`;
+  } else {
+    context = `, dahinter ${others} und weitere mit substanziellen Anteilen. Top-3 nur ${top3.toFixed(0)}% — echte Breite`;
+  }
+
+  return `${header} ${lead}${context}.`;
+}
+
+/**
+ * Para 2 — Projekt-Verteilung. Zwei Achsen: Top-2-Anteil (Konzentration)
+ * und Projekt-Anzahl (Portfolio-Breite). Aus der Kombination ergeben sich
+ * vier qualitative Klassen — schmales Portfolio, Kraftbündelung trotz
+ * Portfolio, Mischlage, echte Breite.
+ */
+function buildProjektPara(o: NarrativeOpts): string {
+  const tp1 = o.breakdowns.projekte[0];
+  const tp2 = o.breakdowns.projekte[1];
+  const projCount = o.breakdowns.projekte.length;
+  const top2 = tp1.pct + tp2.pct;
+  const lead = `&laquo;${htmlEsc(tp1.name)}&raquo; (${tp1.pct.toFixed(0)}%) und &laquo;${htmlEsc(tp2.name)}&raquo; (${tp2.pct.toFixed(0)}%)`;
+
+  if (projCount <= 3) {
+    // Schmales Portfolio: Konzentration ist hier Folge der Anzahl, nicht
+    // der Auswahl — entsprechend einordnen.
+    return `<b>Wo die Stunden hingehen.</b> Schmales Projekt-Portfolio (${projCount}): ${lead} sind die Hauptlast (zusammen ${top2.toFixed(0)}%). Konzentration durch geringe Anzahl, nicht durch Schwerpunktsetzung — Projektwechsel würden das Bild stark verschieben.`;
+  }
+
+  if (top2 >= 70) {
+    return `<b>Wo die Stunden hingehen.</b> ${lead} binden zusammen ${top2.toFixed(0)}% der Zeit. Die scheinbare Breite (${projCount} Projekte) täuscht — klare Kraftbündelung. Operativ effizient, aber bei Top-Abschluss verschiebt sich das Bild rasch.`;
+  }
+
+  if (top2 >= 40) {
+    return `<b>Wo die Stunden hingehen.</b> ${lead} führen mit zusammen ${top2.toFixed(0)}%, dahinter ein erkennbares Portfolio aus ${projCount - 2} weiteren Projekten. Mischlage — parallele Steuerung sichtbar, Kontextwechsel-Kosten nennenswert.`;
+  }
+
+  // top2 < 40 % bei ≥4 Projekten: echte Breite.
+  return `<b>Wo die Stunden hingehen.</b> Breit verteiltes Portfolio aus ${projCount} Projekten: ${lead} an der Spitze, aber zusammen nur ${top2.toFixed(0)}%. Hohe Diversifikation, Kontextwechsel-Kosten substanziell — kein dominanter Schwerpunkt.`;
 }
 
 function isoWeek(dateStr: string): string {
