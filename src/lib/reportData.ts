@@ -90,6 +90,34 @@ export interface StakeholderProfile {
   topTaetigkeit: BreakdownRow | null;
   topFormat: BreakdownRow | null;
   meetingHeavyPct: number; // % Meetings/Telefon (Formate)
+  /** % der Meeting-Zeit dieses Stakeholders, die als 'Nicht produktiv'
+   *  verbucht ist. Hoch = Meetings binden Zeit ohne Output. */
+  meetingNonprodPct: number;
+  /** Anzahl distinkter Formate. >=4 = format-zersplittert. */
+  formatSpread: number;
+}
+
+/**
+ * Konzentrations- und Coverage-Drift zwischen erster und zweiter
+ * Periodenhälfte. Beantwortet: verstärkt oder lockert sich der
+ * Schwerpunkt, öffnet oder schließt sich das Portfolio, wird die
+ * Tracking-Qualität besser oder schlechter?
+ */
+export interface ConcentrationDrift {
+  top1ShareFirst: number;     // % Stakeholder
+  top1ShareSecond: number;
+  topShNameFirst: string;
+  topShNameSecond: string;
+  distinctShFirst: number;    // Anzahl aktiver Stakeholder
+  distinctShSecond: number;
+  top1ProjShareFirst: number; // % Projekt
+  top1ProjShareSecond: number;
+  topProjNameFirst: string;
+  topProjNameSecond: string;
+  distinctProjFirst: number;
+  distinctProjSecond: number;
+  coverageFirst: number;      // 0..1
+  coverageSecond: number;
 }
 
 export interface WeekdayProfile {
@@ -163,6 +191,8 @@ export interface ReportData {
   /** Mandanten-Steckbriefe für alle Stakeholder mit >= 10% Gesamtanteil. */
   stakeholderProfiles: StakeholderProfile[];
   weekday: WeekdayProfile;
+  /** Konzentrations-Drift 1. vs 2. Periodenhälfte. */
+  drift: ConcentrationDrift | null;
   absences: AbsenceCount[];
   findings: Finding[];
   /** Qualitatives Management-Summary als HTML (mehrere Paragraphen).
@@ -319,13 +349,24 @@ function buildStakeholderProfiles(
     let microCount = 0;
     let notizCount = 0;
     let meetingMs = 0;
+    let meetingNonprodMs = 0;
     let totalShMs = 0;
+    const formatSet = new Set<string>();
     for (const e of shEntries) {
       const ms = e.duration_ms || 0;
       totalShMs += ms;
       if (ms > 0 && ms < MICRO_TASK_MS) microCount += 1;
       if ((e.notiz || '').trim().length > 0) notizCount += 1;
-      if ((e.format || '').trim() && isMeetingFormat(e.format)) meetingMs += ms;
+      const fmt = (e.format || '').trim();
+      if (fmt) {
+        formatSet.add(fmt);
+        if (isMeetingFormat(fmt)) {
+          meetingMs += ms;
+          if (normalizeTaetigkeit(e.taetigkeit) === 'Nicht produktiv') {
+            meetingNonprodMs += ms;
+          }
+        }
+      }
     }
 
     // Top-Breakdowns pro Dimension nur über diese Stakeholder-Einträge
@@ -354,6 +395,9 @@ function buildStakeholderProfiles(
       topTaetigkeit,
       topFormat,
       meetingHeavyPct: totalShMs > 0 ? (meetingMs / totalShMs) * 100 : 0,
+      meetingNonprodPct:
+        meetingMs > 0 ? (meetingNonprodMs / meetingMs) * 100 : 0,
+      formatSpread: formatSet.size,
     });
   }
 
@@ -613,6 +657,21 @@ export function buildReportData(
     decline: trendChanges.filter((t) => t.deltaPct < 0).slice(0, 5),
   };
 
+  // Konzentrations-Drift: vergleicht Top-1-Anteil und Portfolio-Breite
+  // zwischen den beiden Halbzeiten. Null bei sehr kleinem Sample
+  // (< 2 Tage pro Hälfte) — zu volatil für sinnvolle Aussagen.
+  const drift: ConcentrationDrift | null =
+    firstDates.size >= 2 && secondDates.size >= 2
+      ? buildConcentrationDrift(
+          firstEntries,
+          secondEntries,
+          dayWallMs,
+          dayPresMs,
+          firstDates,
+          secondDates
+        )
+      : null;
+
   const absences = countAbsences(entries);
 
   // Detail-Profile pro Top-Stakeholder + Wochentag-Verteilung
@@ -756,6 +815,23 @@ export function buildReportData(
     }
   }
 
+  // Meetings ohne Output: Cross-Indikator. Wenn ein Stakeholder
+  // viele Meetings macht UND diese überwiegend als 'Nicht produktiv'
+  // verbucht sind, ist das ein konkreterer Verdacht als nur „viel
+  // Meeting" oder nur „viel Nicht-produktiv".
+  for (const sp of stakeholderProfiles) {
+    if (
+      sp.meetingHeavyPct >= 30 &&
+      sp.meetingNonprodPct >= 50 &&
+      sp.ms >= 2 * 60 * 60_000
+    ) {
+      findings.push({
+        level: 'warn',
+        htmlMessage: `<b>Meetings ohne Output ${htmlEsc(sp.name)}:</b> ${sp.meetingHeavyPct.toFixed(0)}% Meeting-Anteil, davon ${sp.meetingNonprodPct.toFixed(0)}% als Nicht-produktiv markiert. Klare Empfehlung: pro Termin eine Output-Frage (Was ist das Ergebnis? Welche Entscheidung? Welche Aktion?) — andernfalls Format-Wechsel auf Mail/Update.`,
+      });
+    }
+  }
+
   // Doku-Disziplin: Stakeholder mit substanziellem Anteil aber kaum
   // Notizen — Nachvollziehbarkeit leidet, gerade für Coach/Chef-Reports.
   for (const sp of stakeholderProfiles) {
@@ -829,6 +905,7 @@ export function buildReportData(
     stakeholderProfiles,
     weekday,
     totalWallMs,
+    drift,
   });
 
   const data: ReportData = {
@@ -864,11 +941,64 @@ export function buildReportData(
     trend,
     stakeholderProfiles,
     weekday,
+    drift,
     absences,
     findings,
     narrativeHtml,
   };
   return data;
+}
+
+/**
+ * Berechnet den Konzentrations-Drift zwischen erster und zweiter
+ * Periodenhälfte: wie hat sich der Top-1-Anteil (Stakeholder + Projekt),
+ * die Anzahl aktiver Stakeholder/Projekte und die Tracking-Coverage
+ * verschoben?
+ */
+function buildConcentrationDrift(
+  firstEntries: TimeEntry[],
+  secondEntries: TimeEntry[],
+  dayWallMs: Map<string, number>,
+  dayPresMs: Map<string, number>,
+  firstDates: Set<string>,
+  secondDates: Set<string>
+): ConcentrationDrift {
+  const firstSh = buildBreakdown(firstEntries, 'stakeholder');
+  const secondSh = buildBreakdown(secondEntries, 'stakeholder');
+  const firstProj = buildBreakdown(firstEntries, 'projekt');
+  const secondProj = buildBreakdown(secondEntries, 'projekt');
+
+  const sumOver = (
+    pool: Set<string>,
+    map: Map<string, number>
+  ): number => {
+    let sum = 0;
+    pool.forEach((d) => {
+      sum += map.get(d) || 0;
+    });
+    return sum;
+  };
+  const firstWall = sumOver(firstDates, dayWallMs);
+  const secondWall = sumOver(secondDates, dayWallMs);
+  const firstPres = sumOver(firstDates, dayPresMs);
+  const secondPres = sumOver(secondDates, dayPresMs);
+
+  return {
+    top1ShareFirst: firstSh[0]?.pct ?? 0,
+    top1ShareSecond: secondSh[0]?.pct ?? 0,
+    topShNameFirst: firstSh[0]?.name ?? '—',
+    topShNameSecond: secondSh[0]?.name ?? '—',
+    distinctShFirst: firstSh.filter((r) => r.pct >= 1).length,
+    distinctShSecond: secondSh.filter((r) => r.pct >= 1).length,
+    top1ProjShareFirst: firstProj[0]?.pct ?? 0,
+    top1ProjShareSecond: secondProj[0]?.pct ?? 0,
+    topProjNameFirst: firstProj[0]?.name ?? '—',
+    topProjNameSecond: secondProj[0]?.name ?? '—',
+    distinctProjFirst: firstProj.filter((r) => r.pct >= 1).length,
+    distinctProjSecond: secondProj.filter((r) => r.pct >= 1).length,
+    coverageFirst: firstPres > 0 ? firstWall / firstPres : 1,
+    coverageSecond: secondPres > 0 ? secondWall / secondPres : 1,
+  };
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -898,6 +1028,7 @@ interface NarrativeOpts {
   stakeholderProfiles: StakeholderProfile[];
   weekday: WeekdayProfile;
   totalWallMs: number;
+  drift: ConcentrationDrift | null;
 }
 
 export function generateNarrativeHtml(o: NarrativeOpts): string {
@@ -989,6 +1120,13 @@ export function generateNarrativeHtml(o: NarrativeOpts): string {
     );
   }
 
+  // Para 4a: Konzentrations-Drift — verstärkt oder lockert sich der
+  // Schwerpunkt, öffnet oder schließt sich das Portfolio?
+  if (o.drift) {
+    const driftPara = buildDriftPara(o.drift);
+    if (driftPara) paras.push(driftPara);
+  }
+
   // Para 4b: Out-of-Scope-Aufmerksamkeit — datengetrieben aus
   // stakeholderProfiles. Wird nur eingefügt, wenn mind. ein Profil
   // ein auffälliges Muster zeigt.
@@ -1031,15 +1169,22 @@ function buildStakeholderPara(
     return `${header} zeigt sich ein Single-Stakeholder-Profil: <b>${htmlEsc(topSh.name)}</b> bindet 100% der erfassten Zeit.`;
   }
 
-  // Lead-Satz: Charakter nach Top-1-Anteil.
-  let lead: string;
+  // Lead-Satz: Charakter nach Top-1-Anteil — Sprach-Varianz aus Pool.
+  // Seed = Subject + Range + Top-Anteil → derselbe Report stabil, andere
+  // Daten ergeben andere Wortwahl.
+  const variantSeed = `${o.subjectName}|${o.range.label}|${topSh.name}|${topSh.pct.toFixed(0)}`;
+  let leadCore: string;
   if (topSh.pct >= 50) {
-    lead = `zeigt sich ein klar konzentriertes Arbeitsprofil. <b>${htmlEsc(topSh.name)}</b> bindet ${topSh.pct.toFixed(0)}% der erfassten Zeit`;
+    leadCore = pickVariant(STAKEHOLDER_LEAD_VARIANTS.concentrated, variantSeed);
+    leadCore += `. <b>${htmlEsc(topSh.name)}</b> bindet ${topSh.pct.toFixed(0)}% der erfassten Zeit`;
   } else if (topSh.pct >= 30) {
-    lead = `zeigt sich ein Schwerpunkt-getragenes Profil. <b>${htmlEsc(topSh.name)}</b> führt mit ${topSh.pct.toFixed(0)}%`;
+    leadCore = pickVariant(STAKEHOLDER_LEAD_VARIANTS.schwerpunkt, variantSeed);
+    leadCore += `. <b>${htmlEsc(topSh.name)}</b> führt mit ${topSh.pct.toFixed(0)}%`;
   } else {
-    lead = `zeigt sich ein breit verteiltes Profil. <b>${htmlEsc(topSh.name)}</b> hält die Spitze mit nur ${topSh.pct.toFixed(0)}%`;
+    leadCore = pickVariant(STAKEHOLDER_LEAD_VARIANTS.breit, variantSeed);
+    leadCore += `. <b>${htmlEsc(topSh.name)}</b> hält die Spitze mit nur ${topSh.pct.toFixed(0)}%`;
   }
+  const lead = leadCore;
 
   // Kontext-Halbsatz: Form der Verteilung nach Top-3-Anteil.
   const others = o.breakdowns.stakeholders
@@ -1074,23 +1219,25 @@ function buildProjektPara(o: NarrativeOpts): string {
   const projCount = o.breakdowns.projekte.length;
   const top2 = tp1.pct + tp2.pct;
   const lead = `&laquo;${htmlEsc(tp1.name)}&raquo; (${tp1.pct.toFixed(0)}%) und &laquo;${htmlEsc(tp2.name)}&raquo; (${tp2.pct.toFixed(0)}%)`;
+  const seed = `${o.subjectName}|${o.range.label}|${tp1.name}|${projCount}`;
+  const intro = `<b>${pickVariant(PROJEKT_INTRO_VARIANTS, seed)}</b>`;
 
   if (projCount <= 3) {
     // Schmales Portfolio: Konzentration ist hier Folge der Anzahl, nicht
     // der Auswahl — entsprechend einordnen.
-    return `<b>Wo die Stunden hingehen.</b> Schmales Projekt-Portfolio (${projCount}): ${lead} sind die Hauptlast (zusammen ${top2.toFixed(0)}%). Konzentration durch geringe Anzahl, nicht durch Schwerpunktsetzung — Projektwechsel würden das Bild stark verschieben.`;
+    return `${intro} Schmales Projekt-Portfolio (${projCount}): ${lead} sind die Hauptlast (zusammen ${top2.toFixed(0)}%). Konzentration durch geringe Anzahl, nicht durch Schwerpunktsetzung — Projektwechsel würden das Bild stark verschieben.`;
   }
 
   if (top2 >= 70) {
-    return `<b>Wo die Stunden hingehen.</b> ${lead} binden zusammen ${top2.toFixed(0)}% der Zeit. Die scheinbare Breite (${projCount} Projekte) täuscht — klare Kraftbündelung. Operativ effizient, aber bei Top-Abschluss verschiebt sich das Bild rasch.`;
+    return `${intro} ${lead} binden zusammen ${top2.toFixed(0)}% der Zeit. Die scheinbare Breite (${projCount} Projekte) täuscht — klare Kraftbündelung. Operativ effizient, aber bei Top-Abschluss verschiebt sich das Bild rasch.`;
   }
 
   if (top2 >= 40) {
-    return `<b>Wo die Stunden hingehen.</b> ${lead} führen mit zusammen ${top2.toFixed(0)}%, dahinter ein erkennbares Portfolio aus ${projCount - 2} weiteren Projekten. Mischlage — parallele Steuerung sichtbar, Kontextwechsel-Kosten nennenswert.`;
+    return `${intro} ${lead} führen mit zusammen ${top2.toFixed(0)}%, dahinter ein erkennbares Portfolio aus ${projCount - 2} weiteren Projekten. Mischlage — parallele Steuerung sichtbar, Kontextwechsel-Kosten nennenswert.`;
   }
 
   // top2 < 40 % bei ≥4 Projekten: echte Breite.
-  return `<b>Wo die Stunden hingehen.</b> Breit verteiltes Portfolio aus ${projCount} Projekten: ${lead} an der Spitze, aber zusammen nur ${top2.toFixed(0)}%. Hohe Diversifikation, Kontextwechsel-Kosten substanziell — kein dominanter Schwerpunkt.`;
+  return `${intro} Breit verteiltes Portfolio aus ${projCount} Projekten: ${lead} an der Spitze, aber zusammen nur ${top2.toFixed(0)}%. Hohe Diversifikation, Kontextwechsel-Kosten substanziell — kein dominanter Schwerpunkt.`;
 }
 
 /**
@@ -1196,7 +1343,9 @@ function buildRhythmusPara(o: NarrativeOpts): string | null {
     }
   }
 
-  return `<b>Wochenrhythmus.</b> ${parts.join('; ')}.`;
+  const seed = `${o.subjectName}|${o.range.label}|rhythmus|${wd.heaviestDow}`;
+  const intro = pickVariant(RHYTHMUS_INTRO_VARIANTS, seed);
+  return `${intro} ${parts.join('; ')}.`;
 }
 
 /**
@@ -1255,8 +1404,167 @@ function buildOutOfScopePara(o: NarrativeOpts): string | null {
     );
   }
 
-  return `<b>Was die Aufmerksamkeit kostet.</b> ${lines.join(' ')}`;
+  const seed = `${o.subjectName}|${o.range.label}|oos|${reactive.length}|${oos.length}|${meeting.length}`;
+  const intro = pickVariant(OOS_INTRO_VARIANTS, seed);
+  return `${intro} ${lines.join(' ')}`;
 }
+
+/**
+ * Para 4a — Konzentrations-Drift. Vergleicht Top-1-Anteil und Portfolio-
+ * Breite zwischen den beiden Hälften. Liefert `null`, wenn keine
+ * substanzielle Verschiebung erkennbar ist (alle Δ unter Schwelle).
+ */
+function buildDriftPara(drift: ConcentrationDrift): string | null {
+  const dTopSh = drift.top1ShareSecond - drift.top1ShareFirst;
+  const dTopProj = drift.top1ProjShareSecond - drift.top1ProjShareFirst;
+  const dDistinctSh = drift.distinctShSecond - drift.distinctShFirst;
+  const dDistinctProj = drift.distinctProjSecond - drift.distinctProjFirst;
+  const dCov = (drift.coverageSecond - drift.coverageFirst) * 100;
+
+  const SIGN = 5;       // 5 Prozentpunkte = signifikant für Anteil
+  const SIGN_COV = 8;   // 8 Prozentpunkte für Coverage
+  const SIGN_COUNT = 2; // 2 mehr/weniger aktive Entitäten
+
+  const parts: string[] = [];
+
+  // Konzentration Stakeholder
+  if (Math.abs(dTopSh) >= SIGN) {
+    if (dTopSh > 0) {
+      parts.push(
+        `<b>${htmlEsc(drift.topShNameSecond)}</b> bindet in der zweiten Hälfte ${drift.top1ShareSecond.toFixed(0)}% (vorher ${drift.top1ShareFirst.toFixed(0)}%) — Schwerpunkt verstärkt sich`
+      );
+    } else {
+      parts.push(
+        `der Spitzen-Anteil sinkt von ${drift.top1ShareFirst.toFixed(0)}% auf ${drift.top1ShareSecond.toFixed(0)}% — Aufmerksamkeit streut sich`
+      );
+    }
+  }
+
+  // Portfolio-Breite (Stakeholder)
+  if (Math.abs(dDistinctSh) >= SIGN_COUNT) {
+    if (dDistinctSh > 0) {
+      parts.push(
+        `Portfolio öffnet sich (${drift.distinctShFirst} → ${drift.distinctShSecond} aktive Stakeholder)`
+      );
+    } else {
+      parts.push(
+        `Portfolio verschmälert sich (${drift.distinctShFirst} → ${drift.distinctShSecond} aktive Stakeholder)`
+      );
+    }
+  }
+
+  // Projekt-Drift
+  if (Math.abs(dTopProj) >= SIGN || Math.abs(dDistinctProj) >= SIGN_COUNT) {
+    const projParts: string[] = [];
+    if (Math.abs(dTopProj) >= SIGN) {
+      if (dTopProj > 0) {
+        projParts.push(
+          `Top-Projekt &laquo;${htmlEsc(drift.topProjNameSecond)}&raquo; gewinnt (${drift.top1ProjShareFirst.toFixed(0)}% → ${drift.top1ProjShareSecond.toFixed(0)}%)`
+        );
+      } else {
+        projParts.push(
+          `Top-Projekt-Anteil sinkt (${drift.top1ProjShareFirst.toFixed(0)}% → ${drift.top1ProjShareSecond.toFixed(0)}%)`
+        );
+      }
+    }
+    if (Math.abs(dDistinctProj) >= SIGN_COUNT) {
+      projParts.push(
+        `${drift.distinctProjFirst} → ${drift.distinctProjSecond} aktive Projekte`
+      );
+    }
+    if (projParts.length > 0) parts.push(projParts.join(', '));
+  }
+
+  // Coverage-Drift
+  if (Math.abs(dCov) >= SIGN_COV) {
+    if (dCov > 0) {
+      parts.push(
+        `Tracking-Qualität verbessert sich (Coverage ${(drift.coverageFirst * 100).toFixed(0)}% → ${(drift.coverageSecond * 100).toFixed(0)}%)`
+      );
+    } else {
+      parts.push(
+        `Tracking-Qualität fällt ab (Coverage ${(drift.coverageFirst * 100).toFixed(0)}% → ${(drift.coverageSecond * 100).toFixed(0)}%)`
+      );
+    }
+  }
+
+  if (parts.length === 0) return null;
+  const seed = `${drift.topShNameFirst}|${drift.topShNameSecond}|${drift.top1ShareFirst.toFixed(0)}|${drift.top1ShareSecond.toFixed(0)}`;
+  const intro = pickVariant(DRIFT_INTRO_VARIANTS, seed);
+  return `${intro} ${parts.join('; ')}.`;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Sprach-Varianz — deterministische Wahl aus Synonyme-Pools
+   ───────────────────────────────────────────────────────────────────── */
+
+/** Stabiler Integer-Hash über einen String — gleicher Seed → gleicher
+ *  Wert über Reload-Grenzen hinweg. djb2-Variante. */
+function dataHash(seed: string): number {
+  let h = 5381;
+  for (let i = 0; i < seed.length; i++) {
+    h = ((h << 5) + h + seed.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+/** Pickt eine Variante deterministisch aus einem Pool, anhand eines
+ *  Seed. So bleibt derselbe Report bei Re-Render stabil, aber zwei
+ *  verschiedene Reports (anderer Subject/Range) klingen verschieden. */
+function pickVariant<T>(pool: T[], seed: string): T {
+  if (pool.length === 0) throw new Error('pickVariant: empty pool');
+  return pool[dataHash(seed) % pool.length];
+}
+
+const STAKEHOLDER_LEAD_VARIANTS = {
+  concentrated: [
+    'zeigt sich ein klar konzentriertes Arbeitsprofil',
+    'ein fokussiertes Profil mit klarem Schwerpunkt',
+    'die Aufmerksamkeit ist deutlich konzentriert',
+    'ein verdichtetes Bild — die Energie fließt gebündelt',
+    'ein Schwerpunkt-Profil, das nicht maskiert sein will',
+  ],
+  schwerpunkt: [
+    'zeigt sich ein Schwerpunkt-getragenes Profil',
+    'ein Profil mit erkennbarem, aber nicht erdrückendem Schwerpunkt',
+    'die Verteilung trägt einen Schwerpunkt, ohne davon dominiert zu werden',
+    'eine getragene Mischlage mit eindeutiger Spitze',
+    'erkennbarer Hauptzug, daneben spürbares Portfolio',
+  ],
+  breit: [
+    'zeigt sich ein breit verteiltes Profil',
+    'ein Portfolio-Profil ohne klare Hauptlast',
+    'die Aufmerksamkeit streut sich über mehrere Mandanten',
+    'ein fächeriges Bild — viele Mandanten, kein dominanter',
+    'breit aufgestellt, mit aktiv betreutem Portfolio',
+  ],
+};
+
+const PROJEKT_INTRO_VARIANTS = [
+  'Wo die Stunden hingehen.',
+  'Wohin die Aufmerksamkeit fließt.',
+  'Was die Zeit bindet.',
+  'Wo das Gewicht liegt.',
+  'Wofür die Stunden anfallen.',
+];
+
+const RHYTHMUS_INTRO_VARIANTS = [
+  '<b>Wochenrhythmus.</b>',
+  '<b>Rhythmus der Tage.</b>',
+  '<b>Wie die Woche getragen wird.</b>',
+];
+
+const OOS_INTRO_VARIANTS = [
+  '<b>Was die Aufmerksamkeit kostet.</b>',
+  '<b>Wo die Reibung sitzt.</b>',
+  '<b>Stunden-Senken im Blick.</b>',
+];
+
+const DRIFT_INTRO_VARIANTS = [
+  '<b>Wie sich das Bild verschiebt.</b>',
+  '<b>Bewegung im Zeitraum.</b>',
+  '<b>Was sich gerade verändert.</b>',
+];
 
 function isoWeek(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);
