@@ -72,6 +72,37 @@ export interface TrendChange {
   secondMs: number;
 }
 
+/**
+ * Detail-Profil pro Top-Stakeholder. Wird für die Mandanten-Steckbriefe
+ * im Narrative und die Out-of-Scope-Findings benutzt.
+ */
+export interface StakeholderProfile {
+  name: string;
+  pct: number;             // Anteil an Gesamt-Naive
+  ms: number;              // absolute Zeit
+  entriesCount: number;
+  daysActive: number;      // Anzahl Kalendertage mit Einträgen
+  avgEntryMs: number;
+  microTaskPct: number;    // % Einträge unter 15 min — Reaktiv-Indikator
+  nonprodPct: number;      // % Zeit auf 'Nicht produktiv' — Scope-Indikator
+  notizPct: number;        // % Einträge mit Notiz — Doku-Disziplin
+  topProjekt: BreakdownRow | null;
+  topTaetigkeit: BreakdownRow | null;
+  topFormat: BreakdownRow | null;
+  meetingHeavyPct: number; // % Meetings/Telefon (Formate)
+}
+
+export interface WeekdayProfile {
+  /** ISO Mo=1..So=7, sortiert nach Wochentag. */
+  byDay: Array<{ dow: number; label: string; ms: number; pct: number }>;
+  heaviestDow: string;
+  lightestDow: string;
+  weekendMs: number;       // Sa + So
+  longestDay: { date: string; ms: number } | null;
+  shortestDay: { date: string; ms: number } | null;
+  highLoadDaysCount: number; // Tage mit >= 10h Präsenz
+}
+
 export interface Finding {
   level: 'warn' | 'info' | 'ok';
   htmlMessage: string;
@@ -129,6 +160,9 @@ export interface ReportData {
     growth: TrendChange[];
     decline: TrendChange[];
   };
+  /** Mandanten-Steckbriefe für alle Stakeholder mit >= 10% Gesamtanteil. */
+  stakeholderProfiles: StakeholderProfile[];
+  weekday: WeekdayProfile;
   absences: AbsenceCount[];
   findings: Finding[];
   /** Qualitatives Management-Summary als HTML (mehrere Paragraphen).
@@ -230,6 +264,158 @@ function countAbsences(entries: TimeEntry[]): AbsenceCount[] {
   return Array.from(buckets.entries())
     .map(([type, v]) => ({ type, ...v }))
     .sort((a, b) => b.count - a.count);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Stakeholder-Profile (Mini-Dossiers) + Wochentag-Profil
+   ───────────────────────────────────────────────────────────────────── */
+
+const MICRO_TASK_MS = 15 * 60_000; // < 15min = Mini-Task
+const HIGH_LOAD_DAY_MS = 10 * 60 * 60_000; // >= 10h Präsenz
+const MEETING_FORMAT_HINTS = ['meeting', 'sitzung', 'telefon', 'call', 'workshop'];
+const STAKEHOLDER_PROFILE_THRESHOLD_PCT = 10; // Mini-Dossier ab 10% Anteil
+
+function isMeetingFormat(fmt: string): boolean {
+  const f = fmt.toLowerCase();
+  return MEETING_FORMAT_HINTS.some((h) => f.includes(h));
+}
+
+/**
+ * Baut die Detail-Profile für alle Stakeholder mit Anteil >= Threshold.
+ * Pro Stakeholder werden die top Projekt/Tätigkeit/Format ermittelt
+ * sowie ein paar Verhaltens-Indikatoren (Mini-Task-Quote als
+ * Reaktiv-Marker, Nicht-produktiv-Quote als Scope-Marker, Notiz-Quote
+ * als Doku-Marker, Meeting-Heavy-Quote als Format-Marker).
+ */
+function buildStakeholderProfiles(
+  entries: TimeEntry[],
+  totalNaiveMs: number,
+  topStakeholders: BreakdownRow[]
+): StakeholderProfile[] {
+  if (totalNaiveMs <= 0) return [];
+  const profiles: StakeholderProfile[] = [];
+
+  for (const sh of topStakeholders) {
+    if (sh.pct < STAKEHOLDER_PROFILE_THRESHOLD_PCT) continue;
+    if (sh.name === '—') continue;
+
+    // Filter Einträge dieses Stakeholders (auch Mehrfach-Listen)
+    const shEntries = entries.filter((e) => {
+      if (isAbsenceEntry(e)) return false;
+      const list = Array.isArray(e.stakeholder)
+        ? e.stakeholder
+        : e.stakeholder
+          ? [e.stakeholder]
+          : [];
+      return list.includes(sh.name);
+    });
+    if (shEntries.length === 0) continue;
+
+    // Aktive Tage (unique dates)
+    const days = new Set<string>();
+    for (const e of shEntries) if (e.date) days.add(e.date);
+
+    // Micro-Tasks, Notiz, Format-Anomalien
+    let microCount = 0;
+    let notizCount = 0;
+    let meetingMs = 0;
+    let totalShMs = 0;
+    for (const e of shEntries) {
+      const ms = e.duration_ms || 0;
+      totalShMs += ms;
+      if (ms > 0 && ms < MICRO_TASK_MS) microCount += 1;
+      if ((e.notiz || '').trim().length > 0) notizCount += 1;
+      if ((e.format || '').trim() && isMeetingFormat(e.format)) meetingMs += ms;
+    }
+
+    // Top-Breakdowns pro Dimension nur über diese Stakeholder-Einträge
+    const topProjekt = buildBreakdown(shEntries, 'projekt')[0] || null;
+    const topTaetigkeit = buildBreakdown(shEntries, 'taetigkeit')[0] || null;
+    const topFormat = buildBreakdown(shEntries, 'format')[0] || null;
+
+    // Nicht-produktiv-Anteil dieses Stakeholders
+    let nonprodMs = 0;
+    for (const e of shEntries) {
+      const tk = normalizeTaetigkeit(e.taetigkeit);
+      if (tk === 'Nicht produktiv') nonprodMs += e.duration_ms || 0;
+    }
+
+    profiles.push({
+      name: sh.name,
+      pct: sh.pct,
+      ms: sh.ms,
+      entriesCount: shEntries.length,
+      daysActive: days.size,
+      avgEntryMs: shEntries.length > 0 ? totalShMs / shEntries.length : 0,
+      microTaskPct: (microCount / shEntries.length) * 100,
+      nonprodPct: totalShMs > 0 ? (nonprodMs / totalShMs) * 100 : 0,
+      notizPct: (notizCount / shEntries.length) * 100,
+      topProjekt,
+      topTaetigkeit,
+      topFormat,
+      meetingHeavyPct: totalShMs > 0 ? (meetingMs / totalShMs) * 100 : 0,
+    });
+  }
+
+  return profiles;
+}
+
+const DOW_LABELS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+
+/**
+ * Wochentag-Verteilung + Tagesextremwerte. dayWallMs ist die per-Day
+ * Wallclock-Map aus dem Haupt-Loop (vermeidet Re-Compute).
+ */
+function buildWeekdayProfile(
+  dayWallMs: Map<string, number>,
+  dayPresMs: Map<string, number>
+): WeekdayProfile {
+  const byDowMs = [0, 0, 0, 0, 0, 0, 0]; // index = ISO-Wochentag (0=So..6=Sa)
+  dayWallMs.forEach((ms, dateISO) => {
+    const [y, m, d] = dateISO.split('-').map(Number);
+    if (!y || !m || !d) return;
+    const dow = new Date(y, m - 1, d).getDay();
+    byDowMs[dow] += ms;
+  });
+  const totalMs = byDowMs.reduce((a, b) => a + b, 0);
+
+  const byDay = byDowMs.map((ms, dow) => ({
+    dow,
+    label: DOW_LABELS[dow],
+    ms,
+    pct: totalMs > 0 ? (ms / totalMs) * 100 : 0,
+  }));
+
+  // Heaviest/lightest unter den Tagen, die überhaupt Stunden haben
+  const nonZero = byDay.filter((d) => d.ms > 0);
+  const heaviest = nonZero.length > 0
+    ? nonZero.reduce((a, b) => (a.ms > b.ms ? a : b))
+    : { label: '—', ms: 0 };
+  const lightest = nonZero.length > 1
+    ? nonZero.reduce((a, b) => (a.ms < b.ms ? a : b))
+    : { label: '—', ms: 0 };
+
+  // Längster / kürzester Tag (nach Präsenz, weil Präsenz die "Brutto"-
+  // Tageslänge ist).
+  let longestDay: { date: string; ms: number } | null = null;
+  let shortestDay: { date: string; ms: number } | null = null;
+  let highLoadCount = 0;
+  dayPresMs.forEach((ms, date) => {
+    if (ms <= 0) return;
+    if (!longestDay || ms > longestDay.ms) longestDay = { date, ms };
+    if (!shortestDay || ms < shortestDay.ms) shortestDay = { date, ms };
+    if (ms >= HIGH_LOAD_DAY_MS) highLoadCount += 1;
+  });
+
+  return {
+    byDay,
+    heaviestDow: heaviest.label,
+    lightestDow: lightest.label,
+    weekendMs: byDowMs[0] + byDowMs[6], // So + Sa
+    longestDay,
+    shortestDay,
+    highLoadDaysCount: highLoadCount,
+  };
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -429,6 +615,14 @@ export function buildReportData(
 
   const absences = countAbsences(entries);
 
+  // Detail-Profile pro Top-Stakeholder + Wochentag-Verteilung
+  const stakeholderProfiles = buildStakeholderProfiles(
+    nonAbsence,
+    totalNaiveMs,
+    breakdowns.stakeholders
+  );
+  const weekday = buildWeekdayProfile(dayWallMs, dayPresMs);
+
   // ─── Findings (Data-Hygiene + Beobachtungen) ─────────────────────
   const findings: Finding[] = [];
 
@@ -526,6 +720,73 @@ export function buildReportData(
     });
   }
 
+  // ── Out-of-Scope-Triage pro Top-Stakeholder ──────────────────────
+  // Reaktiv-Verdacht: ein Stakeholder mit substanziellem Anteil, der
+  // überdurchschnittlich viele Mini-Einträge (<15min) bindet. Klassisches
+  // Muster für „ad-hoc-Anfragen außerhalb des Mandats".
+  for (const sp of stakeholderProfiles) {
+    if (sp.microTaskPct >= 40 && sp.entriesCount >= 5) {
+      findings.push({
+        level: 'warn',
+        htmlMessage: `<b>Reaktiv-Verdacht ${htmlEsc(sp.name)}:</b> ${sp.microTaskPct.toFixed(0)}% der Einträge sind unter 15 Minuten (Ø ${fmtHours(sp.avgEntryMs)}). Bei ${sp.pct.toFixed(0)}% Gesamtanteil deutet das auf ad-hoc-Aufträge hin. Empfehlung: Triage-Layer einziehen (Mailbox / fixe Sprechzeiten), damit kleine Anfragen gebündelt statt im Strom abgefangen werden.`,
+      });
+    }
+  }
+
+  // Out-of-Scope-Verdacht: hoher Nicht-produktiv-Anteil bei einem
+  // Stakeholder. Heißt: viel Zeit wird gebunden, aber kein Output entsteht.
+  for (const sp of stakeholderProfiles) {
+    if (sp.nonprodPct >= 40 && sp.ms >= 2 * 60 * 60_000) {
+      findings.push({
+        level: 'warn',
+        htmlMessage: `<b>Out-of-Scope-Verdacht ${htmlEsc(sp.name)}:</b> ${sp.nonprodPct.toFixed(0)}% der gebundenen Zeit (${fmtHours(sp.ms)}) ist als „Nicht produktiv" verbucht. Frage als Teamleader: ist das Beziehungspflege, die später Output erzeugt — oder fließt hier Steuerung in einen Stakeholder, der eigentlich nicht zum Kernauftrag gehört?`,
+      });
+    }
+  }
+
+  // Format-Anomalie: hoher Meeting-Anteil bei einem Stakeholder, der
+  // eigentlich asynchron läuft. Wichtig für eine Kommunikationsfunktion,
+  // die Output liefern soll statt nur abzustimmen.
+  for (const sp of stakeholderProfiles) {
+    if (sp.meetingHeavyPct >= 50 && sp.ms >= 2 * 60 * 60_000) {
+      findings.push({
+        level: 'info',
+        htmlMessage: `<b>Meeting-lastiges Format ${htmlEsc(sp.name)}:</b> ${sp.meetingHeavyPct.toFixed(0)}% der Zeit in synchronen Formaten (Meeting/Telefon/Workshop). Lohnt der Check: welche dieser Termine könnten zu einer Mail oder einem 1-Pager komprimiert werden? Bei einer Output-Funktion ist Async-First meist die Effizienz-Reserve.`,
+      });
+    }
+  }
+
+  // Doku-Disziplin: Stakeholder mit substanziellem Anteil aber kaum
+  // Notizen — Nachvollziehbarkeit leidet, gerade für Coach/Chef-Reports.
+  for (const sp of stakeholderProfiles) {
+    if (sp.notizPct <= 20 && sp.pct >= 15 && sp.entriesCount >= 8) {
+      findings.push({
+        level: 'info',
+        htmlMessage: `<b>Doku-Lücke ${htmlEsc(sp.name)}:</b> Nur ${sp.notizPct.toFixed(0)}% der Einträge haben eine Notiz, bei ${sp.pct.toFixed(0)}% Gesamtanteil. Im Coaching-/Review-Gespräch fehlt der Kontext, was inhaltlich passiert ist. Eine 1-Wort-Notiz pro Slot ist meist genug.`,
+      });
+    }
+  }
+
+  // Hochlast: mehrere Tage über 10h Präsenz hintereinander. Coach- und
+  // Teamleader-Signal — Burnout-Vorstufe, falls keine Erholung dazwischen.
+  if (weekday.highLoadDaysCount >= 3) {
+    findings.push({
+      level: 'warn',
+      htmlMessage: `<b>${weekday.highLoadDaysCount} Tage mit ≥10h Präsenz</b> im Zeitraum. Kein Drama bei vereinzelten Spitzen — wenn das aber ein Muster wird, lohnt der Blick auf Belastungssteuerung. Frage: was würde es brauchen, damit diese Tage planbar einkürzbar sind?`,
+    });
+  }
+
+  // Wochenend-Anteil
+  if (weekday.weekendMs > 0 && totalWallMs > 0) {
+    const weekendShare = (weekday.weekendMs / totalWallMs) * 100;
+    if (weekendShare >= 8) {
+      findings.push({
+        level: 'info',
+        htmlMessage: `<b>Wochenend-Anteil ${weekendShare.toFixed(0)}%</b> (${fmtHours(weekday.weekendMs)}). Falls bewusst geplant (Deadlines, Reisetage): okay. Falls regelmäßig: Indikator dass die Wochentag-Kapazität nicht reicht — strukturelle statt akute Frage.`,
+      });
+    }
+  }
+
   if (findings.length === 0) {
     findings.push({
       level: 'ok',
@@ -565,6 +826,9 @@ export function buildReportData(
     daysGood,
     daysOk,
     daysThin,
+    stakeholderProfiles,
+    weekday,
+    totalWallMs,
   });
 
   const data: ReportData = {
@@ -598,6 +862,8 @@ export function buildReportData(
       lowCoverageDays: lowCovDays.slice(0, 8),
     },
     trend,
+    stakeholderProfiles,
+    weekday,
     absences,
     findings,
     narrativeHtml,
@@ -629,6 +895,9 @@ interface NarrativeOpts {
   daysGood: number;
   daysOk: number;
   daysThin: number;
+  stakeholderProfiles: StakeholderProfile[];
+  weekday: WeekdayProfile;
+  totalWallMs: number;
 }
 
 export function generateNarrativeHtml(o: NarrativeOpts): string {
@@ -657,6 +926,13 @@ export function generateNarrativeHtml(o: NarrativeOpts): string {
     );
   }
 
+  // Para 2b: Mandanten-Steckbriefe — ein Mini-Dossier pro Stakeholder
+  // mit substanziellem Anteil. Liefert dem Coach/Teamleader/Chef einen
+  // schnellen, datengetriebenen Eindruck pro wichtigem Stakeholder ohne
+  // dass er die Breakdown-Tabellen durchgehen muss.
+  const steckbriefe = buildSteckbriefePara(o);
+  if (steckbriefe) paras.push(steckbriefe);
+
   // Para 3: Modus
   const prodJudge =
     o.productivePct >= 50
@@ -680,6 +956,10 @@ export function generateNarrativeHtml(o: NarrativeOpts): string {
   paras.push(
     `<b>Wie gearbeitet wird.</b> ${prodJudge}: ${o.productivePct.toFixed(0)}% Produktiv, ${o.nonprodPct.toFixed(0)}% Nicht-produktiv${o.konzeptMs > 0 ? `, ${o.konzeptPct.toFixed(0)}% Konzeption` : ''}${asynJudge}${mtJudge}.`
   );
+
+  // Para 3b: Wochenrhythmus + Tagesextremwerte
+  const rhythmus = buildRhythmusPara(o);
+  if (rhythmus) paras.push(rhythmus);
 
   // Para 4: Trend
   if (o.trend.growth.length > 0 || o.trend.decline.length > 0) {
@@ -708,6 +988,12 @@ export function generateNarrativeHtml(o: NarrativeOpts): string {
       `<b>Verschiebung im Zeitraum.</b> Vergleicht man die erste mit der zweiten Periodenhälfte: ${parts.join('. ')}.`
     );
   }
+
+  // Para 4b: Out-of-Scope-Aufmerksamkeit — datengetrieben aus
+  // stakeholderProfiles. Wird nur eingefügt, wenn mind. ein Profil
+  // ein auffälliges Muster zeigt.
+  const oos = buildOutOfScopePara(o);
+  if (oos) paras.push(oos);
 
   // Para 5: Datenqualität
   const covPct = o.coverage * 100;
@@ -805,6 +1091,171 @@ function buildProjektPara(o: NarrativeOpts): string {
 
   // top2 < 40 % bei ≥4 Projekten: echte Breite.
   return `<b>Wo die Stunden hingehen.</b> Breit verteiltes Portfolio aus ${projCount} Projekten: ${lead} an der Spitze, aber zusammen nur ${top2.toFixed(0)}%. Hohe Diversifikation, Kontextwechsel-Kosten substanziell — kein dominanter Schwerpunkt.`;
+}
+
+/**
+ * Para 2b — Mandanten-Steckbriefe. Pro Top-Stakeholder ein bis zwei
+ * Sätze mit Top-Projekt, Hauptaktivität, Format-Schwerpunkt und Doku-
+ * Disziplin. Hört bei drei Profilen auf, damit der Report nicht zur
+ * Aufzählung wird.
+ *
+ * Liefert `null` wenn keine Stakeholder-Profile vorliegen (Edge-Case
+ * Kleinzeitraum oder Single-Stakeholder).
+ */
+function buildSteckbriefePara(o: NarrativeOpts): string | null {
+  const profiles = o.stakeholderProfiles.slice(0, 3);
+  if (profiles.length === 0) return null;
+
+  const lines = profiles.map((p) => {
+    const parts: string[] = [];
+    parts.push(
+      `<b>${htmlEsc(p.name)}</b> &middot; ${p.pct.toFixed(0)}% &middot; ${fmtHours(p.ms)} an ${p.daysActive} Tagen`
+    );
+    const inhalt: string[] = [];
+    if (p.topProjekt && p.topProjekt.name !== '—') {
+      inhalt.push(
+        `vor allem &laquo;${htmlEsc(p.topProjekt.name)}&raquo; (${p.topProjekt.pct.toFixed(0)}%)`
+      );
+    }
+    if (p.topTaetigkeit && p.topTaetigkeit.name !== '—') {
+      inhalt.push(
+        `${htmlEsc(p.topTaetigkeit.name)} (${p.topTaetigkeit.pct.toFixed(0)}%)`
+      );
+    }
+    if (p.topFormat && p.topFormat.name !== '—') {
+      inhalt.push(
+        `Format ${htmlEsc(p.topFormat.name)} (${p.topFormat.pct.toFixed(0)}%)`
+      );
+    }
+    if (inhalt.length > 0) parts.push(inhalt.join(', '));
+
+    const marker: string[] = [];
+    if (p.microTaskPct >= 40) {
+      marker.push(`${p.microTaskPct.toFixed(0)}% Mini-Slots`);
+    }
+    if (p.nonprodPct >= 30) {
+      marker.push(`${p.nonprodPct.toFixed(0)}% nicht-produktiv`);
+    }
+    if (p.notizPct <= 25 && p.entriesCount >= 8) {
+      marker.push(`nur ${p.notizPct.toFixed(0)}% mit Notiz`);
+    }
+    if (marker.length > 0) {
+      parts.push(`auffällig: ${marker.join(', ')}`);
+    }
+
+    // &mdash; macht im Druck saubere Trenner zwischen den Teilsätzen.
+    return `&bull;&nbsp; ${parts.join(' &mdash; ')}`;
+  });
+
+  // <br/> statt <ul>/<li>: bleibt innerhalb des <p>-Wrappers gültig,
+  // den der Aufrufer um jeden Paragrafen legt.
+  return `<b>Mandanten im Detail.</b><br/>${lines.join('<br/>')}`;
+}
+
+/**
+ * Para 3b — Wochenrhythmus + Tagesextremwerte. Liefert auch dann etwas,
+ * wenn die Verteilung gleichmäßig ist (dann „gleichmäßiges Profil").
+ */
+function buildRhythmusPara(o: NarrativeOpts): string | null {
+  const wd = o.weekday;
+  if (!wd.byDay.some((d) => d.ms > 0)) return null;
+
+  // Variations-Indikator: höchster vs niedrigster Wochentag (nur unter
+  // den nicht-leeren Tagen).
+  const nonZero = wd.byDay.filter((d) => d.ms > 0);
+  const hi = nonZero.reduce((a, b) => (a.ms > b.ms ? a : b));
+  const lo = nonZero.reduce((a, b) => (a.ms < b.ms ? a : b));
+  const spread = hi.ms > 0 ? (hi.ms - lo.ms) / hi.ms : 0; // 0..1
+
+  let pattern: string;
+  if (spread < 0.3) {
+    pattern = `gleichmäßiges Wochenprofil — alle aktiven Wochentage tragen ähnlich bei`;
+  } else if (spread < 0.6) {
+    pattern = `<b>${hi.label}</b> ist der stärkste Wochentag (${hi.pct.toFixed(0)}% der Zeit), <b>${lo.label}</b> der ruhigste`;
+  } else {
+    pattern = `stark schwankendes Wochenprofil — <b>${hi.label}</b> trägt ${hi.pct.toFixed(0)}%, <b>${lo.label}</b> nur ${lo.pct.toFixed(0)}%`;
+  }
+
+  const parts: string[] = [pattern];
+
+  // Tageextremwerte
+  if (o.weekday.longestDay && o.weekday.longestDay.ms > 0) {
+    parts.push(
+      `längster Tag ${o.weekday.longestDay.date} mit ${fmtHours(o.weekday.longestDay.ms)} Präsenz`
+    );
+  }
+  if (wd.highLoadDaysCount > 0) {
+    parts.push(`${wd.highLoadDaysCount} Tage über 10h Präsenz`);
+  }
+
+  // Wochenend-Anteil
+  if (wd.weekendMs > 0 && o.totalWallMs > 0) {
+    const wePct = (wd.weekendMs / o.totalWallMs) * 100;
+    if (wePct >= 5) {
+      parts.push(`Wochenend-Anteil ${wePct.toFixed(0)}% (${fmtHours(wd.weekendMs)})`);
+    }
+  }
+
+  return `<b>Wochenrhythmus.</b> ${parts.join('; ')}.`;
+}
+
+/**
+ * Para 4b — Out-of-Scope-Aufmerksamkeit. Aggregiert die Profil-
+ * Indikatoren (Reaktiv, Out-of-Scope, Meeting-lastig) zu einem
+ * konkreten Handlungs-Absatz. Wird nur eingefügt, wenn mind. ein
+ * Profil eine markante Auffälligkeit zeigt.
+ */
+function buildOutOfScopePara(o: NarrativeOpts): string | null {
+  interface Hit {
+    name: string;
+    label: string;
+    pct: number;
+  }
+  const reactive: Hit[] = [];
+  const oos: Hit[] = [];
+  const meeting: Hit[] = [];
+
+  for (const p of o.stakeholderProfiles) {
+    if (p.microTaskPct >= 40 && p.entriesCount >= 5) {
+      reactive.push({ name: p.name, label: 'Reaktiv', pct: p.microTaskPct });
+    }
+    if (p.nonprodPct >= 40 && p.ms >= 2 * 60 * 60_000) {
+      oos.push({ name: p.name, label: 'Out-of-Scope', pct: p.nonprodPct });
+    }
+    if (p.meetingHeavyPct >= 50 && p.ms >= 2 * 60 * 60_000) {
+      meeting.push({ name: p.name, label: 'Meeting-lastig', pct: p.meetingHeavyPct });
+    }
+  }
+
+  if (reactive.length + oos.length + meeting.length === 0) return null;
+
+  const lines: string[] = [];
+  if (reactive.length > 0) {
+    const list = reactive
+      .map((h) => `${htmlEsc(h.name)} (${h.pct.toFixed(0)}% Mini-Slots)`)
+      .join(', ');
+    lines.push(
+      `<b>Reaktiv-Druck</b> bei ${list} — viele kleine Slots deuten auf ad-hoc-Anfragen außerhalb planbaren Mandats. Triage-Layer (fixe Sprechzeiten, Mailbox-First) gibt Stunden zurück.`
+    );
+  }
+  if (oos.length > 0) {
+    const list = oos
+      .map((h) => `${htmlEsc(h.name)} (${h.pct.toFixed(0)}% nicht-produktiv)`)
+      .join(', ');
+    lines.push(
+      `<b>Scope-Frage</b> bei ${list} — hohe Beziehungsarbeit oder Steuerung ohne sichtbaren Output. Ist diese Bindung strategisch gewollt, oder ein historisches Erbe das geprüft gehört?`
+    );
+  }
+  if (meeting.length > 0) {
+    const list = meeting
+      .map((h) => `${htmlEsc(h.name)} (${h.pct.toFixed(0)}% Meetings)`)
+      .join(', ');
+    lines.push(
+      `<b>Async-Reserve</b> bei ${list} — synchron-lastig für eine Kommunikationsfunktion. Welche dieser Termine könnten als Brief/1-Pager/Mail komprimiert werden?`
+    );
+  }
+
+  return `<b>Was die Aufmerksamkeit kostet.</b> ${lines.join(' ')}`;
 }
 
 function isoWeek(dateStr: string): string {
