@@ -277,6 +277,17 @@ export const de = {
     kpiDaysSub: 'mit Einträgen',
     download: 'Download',
     print: 'Drucken',
+    lens: {
+      label: 'Brille für das Schluss-Wort',
+      coach: 'Coach',
+      coachHint: 'Reflexionsfragen zur eigenen Arbeitsweise',
+      lead: 'Teamleader',
+      leadHint: 'Steuerungs-Hebel fürs 1:1',
+      chef: 'Chef',
+      chefHint: 'Operative Headlines',
+      board: 'Geschäftsleitung',
+      boardHint: 'Auf einen Blick',
+    },
   },
 
   kpi: {

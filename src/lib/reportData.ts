@@ -27,6 +27,21 @@ import { isAbsenceEntry } from './absences';
 
 export type ReportScope = 'self' | 'member' | 'team';
 
+/**
+ * Perspektive, aus der das Narrative gelesen werden soll. Beeinflusst
+ * NICHT die berechneten Daten — nur die Closing-Para mit gerichteten
+ * Fragen und Empfehlungen.
+ *
+ *   - **coach**: Selbst-Reflexion, persönliche Anrede, Rhythmus &
+ *     Energie & Doku.
+ *   - **lead**: Teamleader-Steuerung, Belastung & Mandat &
+ *     Konzentrations-Risiko.
+ *   - **chef**: Operative Effizienz, Output-Quote & Trends &
+ *     Datenbasis.
+ *   - **board**: Geschäftsleitung, knappe strategische Headlines.
+ */
+export type ReportLens = 'coach' | 'lead' | 'chef' | 'board';
+
 export interface ReportRange {
   from: string;
   to: string;
@@ -209,6 +224,8 @@ interface BuildOptions {
     codename: string;
     role: 'admin' | 'mitarbeiter';
   }>;
+  /** Lens für die Closing-Para. Default 'coach'. */
+  lens?: ReportLens;
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -470,7 +487,7 @@ export function buildReportData(
   entries: TimeEntry[],
   opts: BuildOptions
 ): ReportData {
-  const { scope, range, subjectName, members = [] } = opts;
+  const { scope, range, subjectName, members = [], lens = 'coach' } = opts;
 
   const nonAbsence = entries.filter((e) => !isAbsenceEntry(e));
 
@@ -906,6 +923,7 @@ export function buildReportData(
     weekday,
     totalWallMs,
     drift,
+    lens,
   });
 
   const data: ReportData = {
@@ -1029,6 +1047,7 @@ interface NarrativeOpts {
   weekday: WeekdayProfile;
   totalWallMs: number;
   drift: ConcentrationDrift | null;
+  lens: ReportLens;
 }
 
 export function generateNarrativeHtml(o: NarrativeOpts): string {
@@ -1147,6 +1166,12 @@ export function generateNarrativeHtml(o: NarrativeOpts): string {
   paras.push(
     `<b>Wie sicher die Zahlen sind.</b> Ø ${fmtHours(o.avgPres)} Präsenz / ${fmtHours(o.avgWall)} Wallclock pro aktivem Tag — Period-Coverage <b>${covPct.toFixed(0)}%</b> (${covMeaning}). Verteilung: ${o.daysGood} Tage ≥80%, ${o.daysOk} Tage 60–80%${o.daysThin > 0 ? `, ${o.daysThin} Tage unter 60% (Detail-Aussagen dort wackelig)` : ', keine Tage unter 60%'}.`
   );
+
+  // Lens-spezifische Closing-Para. Die Daten sind über alle Lenses
+  // gleich; nur die Brille (welche Fragen man stellt, was als
+  // Headline taugt) wechselt.
+  const closing = LENS_CLOSING_BUILDERS[o.lens](o);
+  if (closing) paras.push(closing);
 
   return paras.map((p) => `<p>${p}</p>`).join('\n');
 }
@@ -1565,6 +1590,227 @@ const DRIFT_INTRO_VARIANTS = [
   '<b>Bewegung im Zeitraum.</b>',
   '<b>Was sich gerade verändert.</b>',
 ];
+
+/* ─────────────────────────────────────────────────────────────────────
+   Lens-Closing-Builders — eine pro Lens, lose gekoppelt via Map.
+   Daten kommen aus NarrativeOpts (alle Lenses sehen denselben Datenpool);
+   die Lens entscheidet nur, welche Fragen gestellt werden.
+   ───────────────────────────────────────────────────────────────────── */
+
+/** Findet das markanteste OOS-Profil — für Lead/Chef-Closings. */
+function pickWorstOosProfile(
+  profiles: StakeholderProfile[]
+): StakeholderProfile | null {
+  return (
+    profiles
+      .filter(
+        (p) =>
+          p.nonprodPct >= 30 || p.microTaskPct >= 30 || p.meetingHeavyPct >= 50
+      )
+      .sort((a, b) => b.pct - a.pct)[0] || null
+  );
+}
+
+/**
+ * Coach-Lens — Selbst-Reflexion, persönliche Anrede, Energie und
+ * Doku-Disziplin im Fokus. Liefert maximal drei Reflexions-Fragen,
+ * datengetrieben aus dem, was im Zeitraum auffällig war.
+ */
+function buildCoachClosing(o: NarrativeOpts): string | null {
+  const fragen: string[] = [];
+
+  // Hochlast → Energie-Frage
+  if (o.weekday.highLoadDaysCount >= 2) {
+    fragen.push(
+      `${o.weekday.highLoadDaysCount} Tage über 10h Präsenz — was hat dich an diesen Tagen so lange gehalten, und war's der erwartete Output?`
+    );
+  } else if (o.weekday.longestDay && o.weekday.longestDay.ms >= 11 * 3600_000) {
+    fragen.push(
+      `Längster Tag ${o.weekday.longestDay.date} mit ${fmtHours(o.weekday.longestDay.ms)} — bewusst oder unbeabsichtigt?`
+    );
+  }
+
+  // Doku-Disziplin (nimmt den Stakeholder mit der schlechtesten Notiz-Quote)
+  const lowestNotizSh = o.stakeholderProfiles
+    .filter((p) => p.entriesCount >= 8 && p.notizPct <= 30)
+    .sort((a, b) => a.notizPct - b.notizPct)[0];
+  if (lowestNotizSh) {
+    fragen.push(
+      `Bei ${htmlEsc(lowestNotizSh.name)} nur ${lowestNotizSh.notizPct.toFixed(0)}% mit Notiz — welche Slots wären rückblickend mit einer 1-Wort-Notiz greifbarer gewesen?`
+    );
+  }
+
+  // Wochenend-Anteil → Grenzen-Frage
+  if (o.weekday.weekendMs > 0 && o.totalWallMs > 0) {
+    const wePct = (o.weekday.weekendMs / o.totalWallMs) * 100;
+    if (wePct >= 8) {
+      fragen.push(
+        `${wePct.toFixed(0)}% deiner Zeit fiel auf Wochenenden — was würde es brauchen, damit du das in der Woche unterbringen könntest?`
+      );
+    }
+  }
+
+  if (fragen.length === 0) {
+    // Trotzdem ein freundlicher Closing wenn nichts auffällig war.
+    return `<b>Was sich aus den Daten lesen lässt.</b> Wenig Auffälliges in diesem Zeitraum — Rhythmus tragend, Doku ausreichend. Frage zum Mitnehmen: gibt es einen Bereich, in dem du dir mehr Tiefe als Breite wünschst?`;
+  }
+
+  const items = fragen
+    .slice(0, 3)
+    .map((q) => `&bull;&nbsp; ${q}`)
+    .join('<br/>');
+  return `<b>Was zur Reflexion ansteht.</b><br/>${items}`;
+}
+
+/**
+ * Teamleader-Lens — Steuerungs-Hebel, Belastung, Mandat, Konzentrations-
+ * Risiko. Tonalität: betrieblich, klare Fragen für ein 1:1.
+ */
+function buildLeadClosing(o: NarrativeOpts): string | null {
+  const hebel: string[] = [];
+
+  // Konzentrations-Risiko
+  const topSh = o.breakdowns.stakeholders[0];
+  if (topSh && topSh.pct >= 50) {
+    hebel.push(
+      `<b>${htmlEsc(topSh.name)}-Klumpen</b> bei ${topSh.pct.toFixed(0)}% — ist die Fokussierung strategisch gewollt, oder gehört eine bewusste Diversifikation auf den Plan?`
+    );
+  }
+
+  // Out-of-Scope: nimm das auffälligste Profil
+  const oosSh = pickWorstOosProfile(o.stakeholderProfiles);
+  if (oosSh) {
+    const marker: string[] = [];
+    if (oosSh.microTaskPct >= 30) marker.push(`${oosSh.microTaskPct.toFixed(0)}% Mini-Slots`);
+    if (oosSh.nonprodPct >= 30) marker.push(`${oosSh.nonprodPct.toFixed(0)}% nicht-produktiv`);
+    if (oosSh.meetingHeavyPct >= 50) marker.push(`${oosSh.meetingHeavyPct.toFixed(0)}% Meetings`);
+    hebel.push(
+      `<b>Mandat ${htmlEsc(oosSh.name)}</b> (${marker.join(', ')}): Triage-Layer oder Scope-Klärung?`
+    );
+  }
+
+  // Hochlast
+  if (o.weekday.highLoadDaysCount >= 3) {
+    hebel.push(
+      `<b>Belastungsmuster</b>: ${o.weekday.highLoadDaysCount} Tage über 10h — was ist der Engpass, der diese Spitzen erzwingt?`
+    );
+  }
+
+  // Coverage-Drift falls vorhanden
+  if (o.drift) {
+    const dCov = (o.drift.coverageSecond - o.drift.coverageFirst) * 100;
+    if (Math.abs(dCov) >= 10) {
+      hebel.push(
+        dCov < 0
+          ? `<b>Datenqualität</b> verschlechtert sich — Tracking-Disziplin in der zweiten Hälfte abgesunken (Coverage ${(o.drift.coverageFirst * 100).toFixed(0)}% → ${(o.drift.coverageSecond * 100).toFixed(0)}%).`
+          : `<b>Datenqualität</b> verbessert sich (Coverage ${(o.drift.coverageFirst * 100).toFixed(0)}% → ${(o.drift.coverageSecond * 100).toFixed(0)}%) — gut, die Reports werden tragfähiger.`
+      );
+    }
+  }
+
+  if (hebel.length === 0) {
+    return `<b>Steuerungs-Hebel.</b> Keine roten Flaggen in diesem Zeitraum — gutes Signal. Nächste Frage zur Vorlage: welche zwei Stakeholder bekommen in der nächsten Periode bewusst mehr/weniger Anteil?`;
+  }
+
+  const items = hebel
+    .slice(0, 3)
+    .map((h) => `&bull;&nbsp; ${h}`)
+    .join('<br/>');
+  return `<b>Steuerungs-Hebel für das 1:1.</b><br/>${items}`;
+}
+
+/**
+ * Chef-Lens — Operative Effizienz, Output-Quote, Trend. Datenheadline-
+ * Stil, weniger Fragen, mehr direkte Aussagen.
+ */
+function buildChefClosing(o: NarrativeOpts): string | null {
+  const headlines: string[] = [];
+
+  // Output-Quote
+  const prodLabel =
+    o.productivePct >= 50
+      ? 'Output-Modus dominant'
+      : o.productivePct >= 40
+        ? 'ausgeglichen zwischen Output und Steuerung'
+        : 'steuerungslastig — Output unter 40%';
+  headlines.push(`<b>${prodLabel}</b> (${o.productivePct.toFixed(0)}% Produktiv-Quote).`);
+
+  // Multi-Tasking
+  if (o.mtFactor > 1.4) {
+    headlines.push(
+      `<b>Hoher Parallelitäts-Faktor</b> (${o.mtFactor.toFixed(2)}x) — entweder bewusste Multi-Spur-Steuerung oder Hinweis auf vergessene Tracker.`
+    );
+  } else if (o.mtFactor > 1.15) {
+    headlines.push(`<b>Moderates Parallelitäts-Niveau</b> (${o.mtFactor.toFixed(2)}x).`);
+  }
+
+  // Top-Schwerpunkt
+  const topSh = o.breakdowns.stakeholders[0];
+  if (topSh) {
+    headlines.push(
+      `<b>Schwerpunkt</b> ${htmlEsc(topSh.name)} (${topSh.pct.toFixed(0)}%), Top-Projekt ${o.breakdowns.projekte[0] ? `&laquo;${htmlEsc(o.breakdowns.projekte[0].name)}&raquo; (${o.breakdowns.projekte[0].pct.toFixed(0)}%)` : '—'}.`
+    );
+  }
+
+  // Drift-Headline
+  if (o.drift) {
+    const dShare = o.drift.top1ShareSecond - o.drift.top1ShareFirst;
+    if (Math.abs(dShare) >= 8) {
+      headlines.push(
+        dShare > 0
+          ? `<b>Konzentration verstärkt sich</b> (${o.drift.top1ShareFirst.toFixed(0)}% → ${o.drift.top1ShareSecond.toFixed(0)}% beim Top-Stakeholder).`
+          : `<b>Konzentration lockert sich</b> (${o.drift.top1ShareFirst.toFixed(0)}% → ${o.drift.top1ShareSecond.toFixed(0)}%).`
+      );
+    }
+  }
+
+  // Datenbasis-Disclaimer kurz
+  const covPct = o.coverage * 100;
+  if (covPct < 70) {
+    headlines.push(
+      `<b>Datenbasis mit Vorbehalt</b> (Coverage ${covPct.toFixed(0)}%) — Aussagen tendenziell konservativ.`
+    );
+  }
+
+  if (headlines.length === 0) return null;
+  return `<b>Was die Zahlen sagen.</b> ${headlines.join(' ')}`;
+}
+
+/**
+ * Board-Lens — Geschäftsleitung. Knapp, drei Headlines, keine Fragen.
+ * Ein Reader-Modus für Leute mit 30 Sekunden Aufmerksamkeit.
+ */
+function buildBoardClosing(o: NarrativeOpts): string | null {
+  const topSh = o.breakdowns.stakeholders[0];
+  const topProj = o.breakdowns.projekte[0];
+  const headlines: string[] = [];
+
+  headlines.push(
+    `<b>Auslastung:</b> Ø ${fmtHours(o.avgPres)} Präsenz / ${fmtHours(o.avgWall)} Wallclock pro Arbeitstag.`
+  );
+
+  if (topSh && topProj) {
+    headlines.push(
+      `<b>Schwerpunkte:</b> ${htmlEsc(topSh.name)} ${topSh.pct.toFixed(0)}%, ${htmlEsc(topProj.name)} ${topProj.pct.toFixed(0)}%. ${o.breakdowns.stakeholders.length} Stakeholder, ${o.breakdowns.projekte.length} Projekte aktiv.`
+    );
+  }
+
+  headlines.push(
+    `<b>Profil:</b> ${o.productivePct.toFixed(0)}% Produktiv${o.mtFactor > 1.3 ? `, Parallelitäts-Faktor ${o.mtFactor.toFixed(1)}x` : ''}. Datenbasis ${(o.coverage * 100).toFixed(0)}%.`
+  );
+
+  return `<b>Auf einen Blick.</b><br/>${headlines.map((h) => `&bull;&nbsp; ${h}`).join('<br/>')}`;
+}
+
+const LENS_CLOSING_BUILDERS: Record<
+  ReportLens,
+  (o: NarrativeOpts) => string | null
+> = {
+  coach: buildCoachClosing,
+  lead: buildLeadClosing,
+  chef: buildChefClosing,
+  board: buildBoardClosing,
+};
 
 function isoWeek(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);

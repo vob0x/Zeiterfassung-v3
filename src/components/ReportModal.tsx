@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Download, Printer, X } from 'lucide-react';
 import {
   buildReportData,
+  type ReportLens,
   type ReportRange,
   type ReportScope,
 } from '@/lib/reportData';
@@ -60,19 +61,25 @@ export default function ReportModal({
 }: ReportModalProps) {
   const { t } = useI18n();
 
+  // Lens-Auswahl — beeinflusst nur die Closing-Para, nicht die KPIs.
+  // Default 'coach' = Selbst-Reflexion, typischste Brille für einen
+  // persönlichen Wochen-/Monatsreport.
+  const [lens, setLens] = useState<ReportLens>('coach');
+
   const baseData = useMemo(
     () =>
       buildReportData(entries, {
         scope,
         range,
         subjectName,
+        lens,
         members: members.map((m) => ({
           user_id: m.user_id,
           codename: m.codename,
           role: m.role,
         })),
       }),
-    [entries, range, scope, subjectName, members]
+    [entries, range, scope, subjectName, members, lens]
   );
 
   // Lokales Narrative-State (editierbar)
@@ -169,6 +176,9 @@ export default function ReportModal({
 
         {/* Body */}
         <div className="px-4 py-3 space-y-3" style={{ overflowY: 'auto', flex: 1 }}>
+          {/* Lens-Picker — wechselt die Brille des Closing-Paragrafen */}
+          <LensPicker lens={lens} onChange={setLens} t={t} />
+
           {/* KPI-Tiles */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <KpiTile label={t('report.kpiWallclock')} value={fmt(k.totalWallclockMs)} />
@@ -340,6 +350,75 @@ export default function ReportModal({
             {t('report.print')}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * LensPicker — vier Brillen für die Closing-Para des Narratives.
+ * Aktive Brille ist gold gerahmt, Inaktive in mutem Beige. Bewusst kein
+ * Dropdown — die vier Optionen sollen sichtbar bleiben, damit der User
+ * weiß, was die Alternativen sind.
+ */
+function LensPicker({
+  lens,
+  onChange,
+  t,
+}: {
+  lens: ReportLens;
+  onChange: (l: ReportLens) => void;
+  t: (k: string) => string;
+}) {
+  const options: Array<{ key: ReportLens; label: string; hint: string }> = [
+    { key: 'coach', label: t('report.lens.coach'), hint: t('report.lens.coachHint') },
+    { key: 'lead', label: t('report.lens.lead'), hint: t('report.lens.leadHint') },
+    { key: 'chef', label: t('report.lens.chef'), hint: t('report.lens.chefHint') },
+    { key: 'board', label: t('report.lens.board'), hint: t('report.lens.boardHint') },
+  ];
+  return (
+    <div>
+      <div
+        className="text-[10px] uppercase tracking-widest mb-1"
+        style={{ color: 'var(--text-muted)' }}
+      >
+        {t('report.lens.label')}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+        {options.map((o) => {
+          const active = o.key === lens;
+          return (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => onChange(o.key)}
+              title={o.hint}
+              className="text-left rounded p-2 transition-colors"
+              style={{
+                background: active
+                  ? 'rgba(201,169,98,0.18)'
+                  : 'rgba(255,255,255,0.02)',
+                border: active
+                  ? '1px solid #C9A962'
+                  : '1px solid var(--border)',
+                color: active ? '#C9A962' : 'var(--text)',
+              }}
+            >
+              <div
+                className="text-xs"
+                style={{ fontWeight: active ? 600 : 500 }}
+              >
+                {o.label}
+              </div>
+              <div
+                className="text-[10px] mt-0.5"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {o.hint}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

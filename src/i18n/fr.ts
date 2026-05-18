@@ -277,6 +277,17 @@ export const fr = {
     kpiDaysSub: 'avec entrées',
     download: 'Télécharger',
     print: 'Imprimer',
+    lens: {
+      label: 'Perspective du mot de la fin',
+      coach: 'Coach',
+      coachHint: 'Questions de réflexion personnelle',
+      lead: 'Chef d\'équipe',
+      leadHint: 'Leviers de pilotage pour le 1:1',
+      chef: 'Direction',
+      chefHint: 'Repères opérationnels',
+      board: 'Direction générale',
+      boardHint: "En un coup d'œil",
+    },
   },
 
   kpi: {
