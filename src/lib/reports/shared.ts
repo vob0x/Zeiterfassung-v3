@@ -305,11 +305,19 @@ export function renderStakeholderDossier(
 ): string {
   const tags: string[] = [];
   let leadQuestion = '';
-  if (profile.microTaskPct >= 40) {
+  // Welle 6 — bei reaktiv-dominanten Stakeholdern keine Fragmentierungs-
+  // Warnung, sondern Triage-Anerkennung.
+  const isReactiveDominant = profile.reactiveCategoryShare >= 50;
+  if (profile.microTaskPct >= 40 && !isReactiveDominant) {
     tags.push(
       `<span class="tag tag-warn">${profile.microTaskPct.toFixed(0)}% kurze Einträge (&lt;15min)</span>`
     );
     leadQuestion = `Frage fürs Gespräch: dieser Mandant löst viele kleine Anfragen aus. Gibt es einen Sammel-Termin (z.B. feste Sprechzeit) — oder reagiert die Person auf jede einzelne sofort?`;
+  } else if (profile.microTaskPct >= 40 && isReactiveDominant) {
+    tags.push(
+      `<span class="tag tag-info">${profile.microTaskPct.toFixed(0)}% Triage-Slots</span>`
+    );
+    leadQuestion = `Frage fürs Gespräch: dieser Mandant ist Auftrags-Triage (${profile.reactiveCategoryShare.toFixed(0)}% reaktive Arbeit). Die vielen kurzen Slots sind der Job, nicht ein Problem. Statt zu sammeln: läuft die Triage selbst rund, oder gibt es einen Stau (Anfragen, die zu lang liegen bleiben)?`;
   }
   if (profile.nonprodPct >= 30) {
     tags.push(

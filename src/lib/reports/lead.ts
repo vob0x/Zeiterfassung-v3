@@ -232,7 +232,10 @@ function buildHebel(data: ReportData): string {
     );
   }
 
-  // Auffälligster Mandant — Sammelhebel über mehrere Auffälligkeiten
+  // Auffälligster Mandant — Sammelhebel über mehrere Auffälligkeiten.
+  // Welle 6: bei reaktiv-dominanten Mandanten ist „Sammel-Termin" der
+  // falsche Hebel — die Person macht ihren Job. Frage wird umgedeutet
+  // auf Triage-Qualität.
   const oosSh = data.stakeholderProfiles
     .filter(
       (p) =>
@@ -247,8 +250,11 @@ function buildHebel(data: ReportData): string {
       marker.push(`${oosSh.nonprodPct.toFixed(0)}% nicht-produktiv`);
     if (oosSh.meetingHeavyPct >= 50)
       marker.push(`${oosSh.meetingHeavyPct.toFixed(0)}% in Terminen`);
+    const isReactiveDominant = oosSh.reactiveCategoryShare >= 50;
     let frage = '';
-    if (oosSh.microTaskPct >= 30) {
+    if (oosSh.microTaskPct >= 30 && isReactiveDominant) {
+      frage = `Triage-Mandant — kurze Slots sind hier der Job. Frag im Gespräch nicht „kannst du sammeln", sondern: läuft die Triage rund? Gibt es Anfragen, die zu lange liegen oder zwischen Zuständigkeiten verloren gehen?`;
+    } else if (oosSh.microTaskPct >= 30) {
       frage = `Lässt sich ein Sammel-Termin etablieren (feste Sprechzeit), damit nicht jede Anfrage einzeln den Tag bricht?`;
     } else if (oosSh.meetingHeavyPct >= 50) {
       frage = `Welche dieser Termine wären als Mail / kurzes 1-Pager schneller — und für beide Seiten besser?`;

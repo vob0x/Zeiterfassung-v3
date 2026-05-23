@@ -111,6 +111,15 @@ export interface StakeholderProfile {
   meetingNonprodPct: number;
   /** Anzahl distinkter Formate. >=4 = format-zersplittert. */
   formatSpread: number;
+  /**
+   * Welle 6 — dominante Projekt-Kategorie dieses Stakeholders (gewichtet
+   * nach Wallclock-Zeit). `reactiveCategoryShare` ist der Anteil der
+   * Stakeholder-Zeit, der in reaktiven Projekten liegt. Wird genutzt,
+   * um Mikro-Slot-Warnungen zu unterdrücken / umzudeuten: bei reaktiv-
+   * dominanten Stakeholdern sind 15-Minuten-Slots normale Auftrags-Triage,
+   * keine Fragmentierung.
+   */
+  reactiveCategoryShare: number;
 }
 
 /**
@@ -686,7 +695,8 @@ function isMeetingFormat(fmt: string): boolean {
 function buildStakeholderProfiles(
   entries: TimeEntry[],
   totalNaiveMs: number,
-  topStakeholders: BreakdownRow[]
+  topStakeholders: BreakdownRow[],
+  projectCategories: Map<string, ProjectCategory> = new Map()
 ): StakeholderProfile[] {
   if (totalNaiveMs <= 0) return [];
   const profiles: StakeholderProfile[] = [];
@@ -747,6 +757,24 @@ function buildStakeholderProfiles(
       if (tk === 'Nicht produktiv') nonprodMs += e.duration_ms || 0;
     }
 
+    // Welle 6 — Reaktiv-Kategorie-Anteil dieses Stakeholders. Erlaubt
+    // den Brillen-Findings, Mikro-Slot-Warnungen bei Stakeholdern mit
+    // reaktiv-dominanter Arbeit zu unterdrücken (das sind dann keine
+    // Fragmentierungs-Signale, sondern Auftrags-Triage).
+    let reactiveShMs = 0;
+    let categorizedShMs = 0;
+    for (const e of shEntries) {
+      const ms = e.duration_ms || 0;
+      if (!e.projekt) continue;
+      const cat = effectiveCategoryWithDefault(
+        projectCategories.get(e.projekt) ?? null,
+        e.projekt
+      );
+      if (cat === 'abwesenheit') continue;
+      categorizedShMs += ms;
+      if (cat === 'reaktiv') reactiveShMs += ms;
+    }
+
     profiles.push({
       name: sh.name,
       pct: sh.pct,
@@ -764,6 +792,8 @@ function buildStakeholderProfiles(
       meetingNonprodPct:
         meetingMs > 0 ? (meetingNonprodMs / meetingMs) * 100 : 0,
       formatSpread: formatSet.size,
+      reactiveCategoryShare:
+        categorizedShMs > 0 ? (reactiveShMs / categorizedShMs) * 100 : 0,
     });
   }
 
@@ -2128,11 +2158,15 @@ export function buildReportData(
 
   const absences = countAbsences(entries);
 
-  // Detail-Profile pro Top-Stakeholder + Wochentag-Verteilung
+  // Detail-Profile pro Top-Stakeholder + Wochentag-Verteilung. Welle 6:
+  // wir geben die Projekt-Kategorie-Map mit, damit die Profile pro
+  // Stakeholder auch ihren Reaktiv-Anteil ausweisen — Grundlage für die
+  // Mikro-Slot-Re-Interpretation in den Findings.
   const stakeholderProfiles = buildStakeholderProfiles(
     nonAbsence,
     totalNaiveMs,
-    breakdowns.stakeholders
+    breakdowns.stakeholders,
+    projCatMap
   );
 
   // Phase-A-Datenpunkte: alle vor den Findings, damit die Findings sie
@@ -2250,14 +2284,28 @@ export function buildReportData(
 
   // ── Pro-Stakeholder-Auffälligkeiten ──────────────────────────────
   // Reaktiv-Muster: viele kleine Einträge deuten auf ad-hoc-Strom.
+  // Welle 6 — Re-Interpretation: bei Stakeholdern, deren Arbeit
+  // überwiegend in reaktiven Projekten liegt (>=50% reactiveCategoryShare),
+  // sind Mikro-Slots keine Fragmentierung, sondern Auftrags-Triage.
+  // Die Warnung wird dann zur Anerkennung umformuliert (info statt warn).
   for (const sp of stakeholderProfiles) {
     if (sp.microTaskPct >= 40 && sp.entriesCount >= 5) {
-      findings.push({
-        level: 'warn',
-        kind: 'reactive-stakeholder',
-        audiences: ['coach', 'lead'],
-        htmlMessage: `<b>${htmlEsc(sp.name)} ist ein Ad-hoc-Mandant:</b> ${sp.microTaskPct.toFixed(0)}% der Einträge sind unter 15 Minuten lang (Schnitt ${fmtHours(sp.avgEntryMs)} pro Eintrag), bei ${sp.pct.toFixed(0)}% Gesamtanteil. Konkret heißt das: dieser Mandant löst viele kleine, kurze Aktionen aus, die deine Konzentration unterbrechen. Ein Sammel-Termin (z.B. feste Stunde am Tag, in der man die Anfragen bündelt) gibt typischerweise mehrere Stunden Tiefenarbeit pro Woche zurück.`,
-      });
+      const isReactiveDominant = sp.reactiveCategoryShare >= 50;
+      if (isReactiveDominant) {
+        findings.push({
+          level: 'info',
+          kind: 'reactive-stakeholder',
+          audiences: ['coach', 'lead'],
+          htmlMessage: `<b>${htmlEsc(sp.name)} ist Auftrags-Triage:</b> ${sp.microTaskPct.toFixed(0)}% der Einträge unter 15 Minuten, ${sp.reactiveCategoryShare.toFixed(0)}% der Arbeit in reaktiven Projekten (Anfragen, BGÖ, Krise). Konkret heißt das: kurze Slots sind hier nicht Fragmentierung, sondern dein Job — Anfragen schnell durchsetzen, eine nach der anderen. Eine Triage-Leistung, die unsichtbar bleibt, weil sie sich nicht in „2 Stunden konzentrierte Arbeit" ablesen lässt.`,
+        });
+      } else {
+        findings.push({
+          level: 'warn',
+          kind: 'reactive-stakeholder',
+          audiences: ['coach', 'lead'],
+          htmlMessage: `<b>${htmlEsc(sp.name)} ist ein Ad-hoc-Mandant:</b> ${sp.microTaskPct.toFixed(0)}% der Einträge sind unter 15 Minuten lang (Schnitt ${fmtHours(sp.avgEntryMs)} pro Eintrag), bei ${sp.pct.toFixed(0)}% Gesamtanteil. Konkret heißt das: dieser Mandant löst viele kleine, kurze Aktionen aus, die deine Konzentration unterbrechen. Ein Sammel-Termin (z.B. feste Stunde am Tag, in der man die Anfragen bündelt) gibt typischerweise mehrere Stunden Tiefenarbeit pro Woche zurück.`,
+        });
+      }
     }
   }
 

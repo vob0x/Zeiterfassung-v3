@@ -352,6 +352,16 @@ function buildStrengthsBlock(data: ReportData): string {
     );
   }
 
+  // Welle 6 — Triage-Leistung. Bei Teams mit hohem Reaktivitäts-Anteil
+  // (>=30%) ist das Bewältigen vieler kurzer Anfragen eine eigene
+  // Qualität, die in normalen Reports unsichtbar bleibt.
+  if (k.reactivePct >= 30 && !k.hasCrisisSlots) {
+    const reactiveHours = Math.round(k.reactiveMs / 3_600_000);
+    items.push(
+      `<b>Triage trägt:</b> ${k.reactivePct.toFixed(0)}% deiner Zeit (rund ${reactiveHours}h) lief in reaktiven Projekten — Anfragen, BGÖ, politische Vorstöße. Das ist Auftrags-Bewältigung, die im klassischen Produktivitäts-Maß nicht auftaucht, aber dein eigentliches Stellenprofil ausmacht.`
+    );
+  }
+
   if (items.length === 0) return '';
 
   // Maximal drei — sonst wird der Block zur Streichelseite
@@ -403,14 +413,22 @@ function buildReflectionQuestions(data: ReportData): string {
     );
   }
 
-  // Ad-hoc-Strom an einem konkreten Mandanten
+  // Ad-hoc-Strom an einem konkreten Mandanten. Welle 6: bei reaktiv-
+  // dominanten Stakeholdern wird die Frage umgedeutet — Triage-Qualität
+  // statt Sammel-Forderung.
   const reactiveSh = data.stakeholderProfiles
     .filter((p) => p.microTaskPct >= 40 && p.entriesCount >= 5)
     .sort((a, b) => b.microTaskPct - a.microTaskPct)[0];
   if (reactiveSh) {
-    fragen.push(
-      `Bei ${esc(reactiveSh.name)} waren ${reactiveSh.microTaskPct.toFixed(0)}% deiner Einträge kürzer als 15 Minuten — viele kleine Aktionen statt zusammenhängender Arbeit. Was würde dir helfen, diese Anfragen zu sammeln, statt jede einzeln zu beantworten?`
-    );
+    if (reactiveSh.reactiveCategoryShare >= 50) {
+      fragen.push(
+        `Bei ${esc(reactiveSh.name)} liefen ${reactiveSh.microTaskPct.toFixed(0)}% deiner Einträge in kurzen Slots — das ist Auftrags-Triage, kein Stückwerk. Frag dich nicht „wie sammle ich das", sondern: läuft die Triage rund? Gibt es Anfragen, die zu lange liegen blieben oder zwischen Stühlen fielen?`
+      );
+    } else {
+      fragen.push(
+        `Bei ${esc(reactiveSh.name)} waren ${reactiveSh.microTaskPct.toFixed(0)}% deiner Einträge kürzer als 15 Minuten — viele kleine Aktionen statt zusammenhängender Arbeit. Was würde dir helfen, diese Anfragen zu sammeln, statt jede einzeln zu beantworten?`
+      );
+    }
   }
 
   // Wenig konzentrierte Arbeit
