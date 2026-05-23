@@ -342,7 +342,8 @@ export type ChangePointMetric =
   | 'deepFocus'
   | 'multiTasking'
   | 'topStakeholder'
-  | 'coverage';
+  | 'coverage'
+  | 'reactiveShare'; // Welle 6 — Flowstopper-Spitze
 
 /**
  * Welle 5a / Klartext+Kontext-Pass — zusätzlicher Kontext pro Change-
@@ -491,6 +492,12 @@ export interface ReportData {
     topStakeholderShare: number;
     /** Name des Top-Stakeholders — für Change-Point-Texte. */
     topStakeholderName: string;
+    /**
+     * Welle 6 — Anteil der naiv getrackten Zeit in Projekten der
+     * Kategorie `reaktiv` (Flowstopper) in dieser Woche. Wird für den
+     * Flowstopper-ChangePoint-Detektor benötigt.
+     */
+    reactiveShare: number;
   }>;
   coverage: {
     daysGood: number; // >=80%
@@ -1211,6 +1218,14 @@ const CP_METRIC_SPECS: CPMetricSpec[] = [
     getValue: (w) => w.coverage * 100,
     minDelta: 15,
   },
+  // Welle 6 — Flowstopper-Spitze (Anteil reaktiver Arbeit). Schwelle
+  // 15pp ist konservativ: Reaktivität schwankt natürlich von Woche zu
+  // Woche, nur deutliche Sprünge sind eine echte Aussage.
+  {
+    metric: 'reactiveShare',
+    getValue: (w) => w.reactiveShare * 100,
+    minDelta: 15,
+  },
 ];
 
 /**
@@ -1481,6 +1496,8 @@ function metricLabelDe(m: ChangePointMetric): string {
       return 'der Anteil des Hauptmandanten';
     case 'coverage':
       return 'die Tracking-Genauigkeit';
+    case 'reactiveShare':
+      return 'der Anteil reaktiver Arbeit';
   }
 }
 
@@ -1575,6 +1592,12 @@ export function describeChangePointContext(
         cp.deltaSign === 'down'
           ? `Was du tun könntest: eine fixe Uhrzeit am Tagesende für Nacherfassung etablieren (z.B. 17:30, 5 Minuten) — verhindert, dass das Tracking weiter wegbröckelt.`
           : `Was du tun könntest: festhalten, was den Anstoß für die bessere Disziplin gegeben hat — eine neue Routine, weniger hektische Woche, andere Aufgabenart? Damit lässt sich die Disziplin verteidigen.`;
+      break;
+    case 'reactiveShare':
+      actionHint =
+        cp.deltaSign === 'up'
+          ? `Was du tun könntest: in dieser Woche schauen, welche reaktiven Projekte den Sprung getrieben haben (Medienanfragen, BGÖ, Krise, politischer Vorstoß?). War es ein einzelnes Ereignis oder mehrere parallel? Wenn anhaltend: Backup-Kapazität für Eigen-Arbeit reservieren, bevor sie ganz wegbricht.`
+          : `Was du tun könntest: notieren, was den ruhigeren Reaktiv-Anteil ermöglicht hat (Ferienzeit der Anfragenden? Saure-Gurken-Phase im Medienzyklus? Politische Pause?). Solche Phasen sind die Gelegenheit für eigene Konzepte und Strategie-Arbeit.`;
       break;
   }
 
@@ -1973,12 +1996,23 @@ export function buildReportData(
       let meetingDurMs = 0;
       let deepFocusDurMs = 0;
       let naiveDurMs = 0;
+      // Welle 6 — Reaktiv-Anteil pro Woche (für Flowstopper-ChangePoint).
+      let reactiveDurMs = 0;
+      let categorizedDurMs = 0;
       const shMap = new Map<string, number>();
       for (const e of v.entries) {
         const d = e.duration_ms || 0;
         naiveDurMs += d;
         if (isMeetingFormat(e.format || '')) meetingDurMs += d;
         if (d >= 120 * 60_000) deepFocusDurMs += d;
+        if (e.projekt) {
+          const cat = effectiveCategoryWithDefault(
+            projCatMap.get(e.projekt) ?? null,
+            e.projekt
+          );
+          if (cat !== 'abwesenheit') categorizedDurMs += d;
+          if (cat === 'reaktiv') reactiveDurMs += d;
+        }
         // Stakeholder-Verteilung (Multi-Stakeholder: voll auf jedem)
         const list = Array.isArray(e.stakeholder)
           ? e.stakeholder
@@ -2013,6 +2047,9 @@ export function buildReportData(
         topStakeholderShare:
           shStakeholderTotal > 0 ? topShMs / shStakeholderTotal : 0,
         topStakeholderName: topShName,
+        // Welle 6 — Anteil reaktiver Arbeit dieser Woche
+        reactiveShare:
+          categorizedDurMs > 0 ? reactiveDurMs / categorizedDurMs : 0,
       };
     });
 
@@ -2413,6 +2450,10 @@ export function buildReportData(
           return cp.deltaSign === 'down'
             ? ['coach', 'lead']
             : ['coach'];
+        case 'reactiveShare':
+          // Strategisch relevant für alle vier Brillen — der Sprung
+          // erzählt vom Phasenwechsel.
+          return ['coach', 'lead', 'chef', 'board'];
         default:
           return ['lead'];
       }
@@ -2485,6 +2526,17 @@ export function buildReportData(
         } else {
           headline = `<b>${wkLabel}: Tracking-Genauigkeit verbessert</b> auf ${cp.currentValue.toFixed(0)}% (Schnitt ${cp.baselineValue.toFixed(0)}%).`;
           erklaerung = `Du erfasst lückenloser als sonst — gute Disziplin in einer wahrscheinlich gut planbaren Woche.`;
+        }
+        break;
+      }
+      case 'reactiveShare': {
+        // Welle 6 — Flowstopper-Spitze
+        if (cp.deltaSign === 'up') {
+          headline = `<b>${wkLabel}: Anfragen-Spitze</b> — Anteil reaktiver Arbeit auf ${cp.currentValue.toFixed(0)}% gestiegen, vorher Schnitt ${cp.baselineValue.toFixed(0)}% in den ${ago}.`;
+          erklaerung = `Konkret heißt das: in dieser Woche hat fremdgetriebene Arbeit deutlich mehr Raum eingenommen — Medienanfragen, BGÖ, Krise, politische Vorstöße. Was war der Trigger?`;
+        } else {
+          headline = `<b>${wkLabel}: Reaktiv-Last sinkt</b> — Anfragen-Anteil fällt auf ${cp.currentValue.toFixed(0)}%, vorher Schnitt ${cp.baselineValue.toFixed(0)}%.`;
+          erklaerung = `Konkret heißt das: weniger Fremdsteuerung in dieser Woche. Entweder Ferienzeit/Pause im Medienzyklus, oder du hast mehr Eigen-Arbeit gegenpriorisiert.`;
         }
         break;
       }

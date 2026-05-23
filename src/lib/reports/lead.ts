@@ -20,6 +20,7 @@ import {
   interpretParallelFactor,
   interpretReactiveShare,
   renderChangePointSection,
+  renderCrisisBanner,
   renderDriftArrow,
   renderFindingsBlock,
   renderStakeholderDossier,
@@ -27,6 +28,7 @@ import {
 
 export function renderLeadBody(data: ReportData): string {
   return `
+    ${renderCrisisBanner(data)}
     ${buildCockpit(data)}
     ${renderChangePointSection(data, 4)}
     <h2>Mandanten-Dossiers</h2>

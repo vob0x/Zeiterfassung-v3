@@ -17,12 +17,14 @@ import {
   fmtHours,
   interpretReactiveShare,
   renderBars,
+  renderCrisisBanner,
   renderDriftArrow,
   renderFindingsBlock,
 } from './shared';
 
 export function renderChefBody(data: ReportData): string {
   return `
+    ${renderCrisisBanner(data)}
     ${buildHeadlines(data)}
     <h2>Schwerpunkt-Matrix</h2>
     ${buildSchwerpunkt(data)}
@@ -277,6 +279,7 @@ function buildDriftSection(data: ReportData): string {
           multiTasking: 'Parallel-Last',
           topStakeholder: 'Anteil Hauptmandant',
           coverage: 'Tracking-Genauigkeit',
+          reactiveShare: 'Reaktiv-Anteil',
         };
         const persistMark =
           cp.context.persistence === 'haelt-an'

@@ -16,6 +16,7 @@ import {
   fmtHoursShort,
   dayPartLabel,
   rhythmLabel,
+  renderCrisisBanner,
 } from './shared';
 
 export function renderCoachBody(data: ReportData): string {
@@ -35,6 +36,7 @@ export function renderCoachBody(data: ReportData): string {
   // 2-Minuten-Modus erschlagen. Die operativ-strategische Schicht
   // bleibt Lead / Chef / Board vorbehalten.
   return `
+    ${renderCrisisBanner(data)}
     <div class="coach-tagline">${tagline}</div>
     ${minikpi}
     ${weekstrip}
@@ -229,6 +231,10 @@ function buildCoachParagraphs(data: ReportData): string {
           return cp.deltaSign === 'down';
         case 'meeting':
           return cp.deltaSign === 'up';
+        case 'reactiveShare':
+          // Welle 6 — beide Richtungen sind coach-relevant: Spitze =
+          // fremdgetriebene Woche; Einbruch = unerwartete Eigen-Phase
+          return true;
         default:
           return false;
       }
@@ -252,6 +258,12 @@ function buildCoachParagraphs(data: ReportData): string {
         break;
       case 'coverage':
         sentence = `Die Tracking-Disziplin hat in ${wk} nachgelassen — nur ${cp.currentValue.toFixed(0)}% des Tages waren lückenlos erfasst, sonst ${cp.baselineValue.toFixed(0)}%. Eine vergessliche Woche, eine besonders dichte Woche ohne Tracking-Pause, oder fehlt der Tag-Anfang/das Tag-Ende?`;
+        break;
+      case 'reactiveShare':
+        sentence =
+          cp.deltaSign === 'up'
+            ? `In ${wk} stand fremdgetriebene Arbeit besonders im Vordergrund — ${cp.currentValue.toFixed(0)}% der Woche in reaktiven Projekten (Anfragen, BGÖ, Krise), sonst ${cp.baselineValue.toFixed(0)}%. Was war der Auslöser — ein Vorfall, eine Anhörung, eine mediale Welle? Wie hast du das Eigene daneben aufrecht erhalten?`
+            : `In ${wk} hattest du ungewöhnlich viel Raum für Eigen-Arbeit — nur ${cp.currentValue.toFixed(0)}% reaktive Projekte (sonst ${cp.baselineValue.toFixed(0)}%). Wofür hast du den Raum konkret genutzt — Strategie-Arbeit, Konzept, Aufholen?`;
         break;
     }
     if (sentence) {

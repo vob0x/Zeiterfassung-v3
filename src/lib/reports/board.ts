@@ -17,6 +17,7 @@ import {
   interpretLeakPct,
   interpretReactiveShare,
   renderBars,
+  renderCrisisBanner,
   renderFindingsBlock,
 } from './shared';
 
@@ -109,7 +110,8 @@ export function renderBoardBody(data: ReportData): string {
     Tracking-Genauigkeit ${covPct.toFixed(0)}% · Zeitraum ${esc(data.meta.range.label)} · Erstellt aus ${data.kpis.entriesCount} Einträgen
   </div>`;
 
-  return heroHtml + pies + `<div class="board-trend">${trendSentence}</div>` +
+  return renderCrisisBanner(data) +
+    heroHtml + pies + `<div class="board-trend">${trendSentence}</div>` +
     (findings ? `<h2>Strategischer Hinweis</h2>${findings}` : '') +
     disclaimer;
 }

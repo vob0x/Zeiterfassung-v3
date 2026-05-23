@@ -429,6 +429,14 @@ const CP_METRIC_INFO: Record<
     downMeaning:
       'Mehr Lücken zwischen erstem und letztem Eintrag des Tages — entweder eine besonders dichte Woche, oder das Tracken ist hinten runtergefallen.',
   },
+  reactiveShare: {
+    label: 'Anteil reaktiver Arbeit (Anfragen, BGÖ, Krise)',
+    format: (v) => `${v.toFixed(0)}%`,
+    upMeaning:
+      'Eine Woche mit hohem Anfragen-Aufkommen — Vorfall, parlamentarische Anhörung, mediale Welle? Eigen-Arbeit hatte weniger Raum.',
+    downMeaning:
+      'Reaktiv-Last sinkt deutlich — entweder eine Eigen-Arbeits-Phase oder das Ende einer Eskalations-Welle.',
+  },
 };
 
 /** Sparkline über eine wöchentliche Metrik mit Markierung der Bruch-Woche. */
@@ -490,6 +498,8 @@ export function renderChangePointCard(
         return w.topStakeholderShare * 100;
       case 'coverage':
         return w.coverage * 100;
+      case 'reactiveShare':
+        return w.reactiveShare * 100;
       default:
         return 0;
     }
@@ -583,6 +593,20 @@ export function renderChangePointCard(
     <div class="cp-card-meaning">${meaning}</div>
     ${contextBlocks.join('')}
     <div class="cp-card-meta">${deltaText}</div>
+  </div>`;
+}
+
+/**
+ * Welle 6 — Krisen-Banner. Wird oben in jeder Brille gerendert, wenn
+ * in der Periode mindestens ein Slot in einem Krisen-Projekt getrackt
+ * wurde (data.kpis.hasCrisisSlots). Fungiert als Bewertungs-Dämpfer:
+ * andere Warnungen werden mit Vorbehalt zu lesen sein.
+ */
+export function renderCrisisBanner(data: ReportData): string {
+  if (!data.kpis.hasCrisisSlots) return '';
+  return `<div class="crisis-banner">
+    <div class="crisis-banner-h">Krisen-Phase im Berichtszeitraum</div>
+    <div class="crisis-banner-b">In dieser Periode wurden Slots in Krisen-Projekten getrackt — Krisenmanagement, Eskalations-Arbeit, akute Lageverfolgung. Solche Phasen haben naturgemäß weniger Konzentrations-Anteil, schwankendere Tracking-Disziplin und mehr lange Tage. Die KPIs in diesem Bericht sind deshalb mit Vorbehalt zu lesen — sie spiegeln die Phase, nicht die Person.</div>
   </div>`;
 }
 
@@ -769,6 +793,11 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .muted{color:#888} .small{font-size:11px;margin:4px 0 0}
 .footer{margin-top:40px;padding-top:14px;border-top:1px solid #d8cfb6;color:#888;font-size:11px}
 
+/* Welle 6 — Krisen-Banner: Bewertungs-Dämpfer ganz oben in jeder Brille */
+.crisis-banner{margin:14px 0 20px;padding:14px 18px;border-radius:6px;background:linear-gradient(180deg,#fff0e8 0%,#fff8eb 100%);border:1px solid #D4706E;border-left:5px solid #D4706E}
+.crisis-banner-h{font-size:13px;font-weight:700;color:#a04848;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px}
+.crisis-banner-b{font-size:13px;color:#1c1a17;line-height:1.55}
+
 /* Findings-Block — neutral, kompakt */
 .findings-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .finding{padding:10px 14px;border-radius:4px;font-size:13.5px;line-height:1.55}
@@ -927,7 +956,7 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 }
 @media print{
   body{background:white;max-width:none;padding:12mm;margin:0}
-  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.coach-strengths,.lead-hebel,.chef-closing,.lead-card-tags .tag,.lead-kpi-tile,.coach-minikpi-tile,.board-trend,.cp-card,.cp-card-meaning,.cp-card-cooccur,.cp-card-persist,.cp-card-snapshot,.cp-card-action,.cp-persist-tag,.composite,.composite-warn,.composite-info,.composite-tag,.composite-hebel,.scale-badge,.scale-low,.scale-normal,.scale-elevated,.scale-high{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.coach-strengths,.lead-hebel,.chef-closing,.lead-card-tags .tag,.lead-kpi-tile,.coach-minikpi-tile,.board-trend,.cp-card,.cp-card-meaning,.cp-card-cooccur,.cp-card-persist,.cp-card-snapshot,.cp-card-action,.cp-persist-tag,.composite,.composite-warn,.composite-info,.composite-tag,.composite-hebel,.scale-badge,.scale-low,.scale-normal,.scale-elevated,.scale-high,.crisis-banner{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   h2{break-after:avoid}
   section{break-inside:avoid-page}
   .cp-card,.composite{break-inside:avoid}
