@@ -17,7 +17,7 @@ import {
   fmtHoursShort,
   renderChangePointSection,
   renderDriftArrow,
-  renderFindings,
+  renderFindingsBlock,
   renderStakeholderDossier,
 } from './shared';
 
@@ -179,7 +179,7 @@ function buildDriftSection(data: ReportData): string {
 }
 
 function buildFindingsSection(data: ReportData): string {
-  const f = renderFindings(data.findings, 'lead');
+  const f = renderFindingsBlock(data, 'lead');
   if (!f) return '';
   return `<h2>Was Aufmerksamkeit verdient</h2>${f}`;
 }

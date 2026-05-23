@@ -17,7 +17,7 @@ import {
   fmtHours,
   renderBars,
   renderDriftArrow,
-  renderFindings,
+  renderFindingsBlock,
 } from './shared';
 
 export function renderChefBody(data: ReportData): string {
@@ -259,7 +259,7 @@ function buildDriftSection(data: ReportData): string {
 }
 
 function buildFindingsSection(data: ReportData): string {
-  const f = renderFindings(data.findings, 'chef');
+  const f = renderFindingsBlock(data, 'chef');
   if (!f) return '';
   return `<h2>Operative Hinweise</h2>${f}`;
 }

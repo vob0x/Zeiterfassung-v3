@@ -15,7 +15,7 @@ import {
   esc,
   fmtHoursShort,
   renderBars,
-  renderFindings,
+  renderFindingsBlock,
 } from './shared';
 
 /**
@@ -86,8 +86,8 @@ export function renderBoardBody(data: ReportData): string {
   // ── Trend-Satz aus Drift ─────────────────────────────────────────
   const trendSentence = buildTrendSentence(data);
 
-  // ── Board-Findings (nur die explizit für Board klassifizierten) ──
-  const findings = renderFindings(data.findings, 'board');
+  // ── Board-Findings + Composites (REPLACE-Strategy) ──────────────
+  const findings = renderFindingsBlock(data, 'board');
 
   // ── Disclaimer ───────────────────────────────────────────────────
   const disclaimer = `<div class="board-disclaimer">

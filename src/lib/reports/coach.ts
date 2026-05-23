@@ -16,6 +16,7 @@ import {
   fmtHoursShort,
   dayPartLabel,
   rhythmLabel,
+  renderCompositesOnly,
 } from './shared';
 
 export function renderCoachBody(data: ReportData): string {
@@ -23,6 +24,13 @@ export function renderCoachBody(data: ReportData): string {
   const minikpi = buildMiniKpi(data);
   const weekstrip = buildWeekstrip(data);
   const paragraphs = buildCoachParagraphs(data);
+  // Welle 5c — Composite-Karten erscheinen für Coach zusätzlich zu
+  // den narrativen Paragrafen, weil sie das große Bild benennen, das
+  // aus mehreren Einzel-Beobachtungen entsteht.
+  const compositeHtml = renderCompositesOnly(data, 'coach');
+  const compositeBlock = compositeHtml
+    ? `<h2>Was sich übergreifend zeigt</h2>${compositeHtml}`
+    : '';
   const questions = buildReflectionQuestions(data);
   const disclaimer = buildDisclaimer(data);
 
@@ -30,6 +38,7 @@ export function renderCoachBody(data: ReportData): string {
     <div class="coach-tagline">${tagline}</div>
     ${minikpi}
     ${weekstrip}
+    ${compositeBlock}
     <div class="coach-narrative">${paragraphs}</div>
     ${questions}
     ${disclaimer}

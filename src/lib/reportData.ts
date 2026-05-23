@@ -249,10 +249,63 @@ export interface DataQualityIssue {
  * Coach-Report von Compliance-Findings und einen Board-Report von
  * Detail-Hinweisen frei.
  */
+/**
+ * Welle 5c — internes Label pro Finding, damit Composite-Detektoren
+ * Evidenz finden ohne htmlMessage-Pattern-Matching. Optional, fehlt
+ * bei einzelnen Findings (z.B. OK-Fallback).
+ */
+export type FindingKind =
+  | 'very-long-day'
+  | 'klumpen-risiko'
+  | 'mt-high'
+  | 'nonprod-high'
+  | 'coverage-thin'
+  | 'reactive-stakeholder'
+  | 'oos-stakeholder'
+  | 'meeting-heavy-stakeholder'
+  | 'meetings-without-output'
+  | 'notes-gap-stakeholder'
+  | 'high-load-days'
+  | 'weekend-share'
+  | 'low-deep-focus'
+  | 'longest-burst'
+  | 'many-bursts'
+  | 'week-volatility'
+  | 'project-movement'
+  | 'change-point';
+
 export interface Finding {
   level: 'warn' | 'info' | 'ok';
   htmlMessage: string;
   audiences?: ReportLens[];
+  /** Optionales Label für Composite-Erkennung in Welle 5c. */
+  kind?: FindingKind;
+}
+
+/**
+ * Welle 5c — Composite-Finding: mehrere schwache Einzel-Findings, die
+ * dasselbe Bild zeichnen, werden zu einem starken Befund mit Diagnose
+ * + Hebel zusammengeführt. Display-Strategie pro Brille ist
+ * unterschiedlich (siehe shared.filterFindingsForLens):
+ *   Chef + Board:  Composite ersetzt seine Evidence-Findings im Display
+ *   Coach + Lead:  Composite erscheint ZUSÄTZLICH zu den Einzel-Findings
+ */
+export type CompositeFindingId =
+  | 'operative-ueberlast'
+  | 'reaktive-phase'
+  | 'konzentrations-verlust'
+  | 'fokus-erosion';
+
+export interface CompositeFinding {
+  id: CompositeFindingId;
+  level: 'warn' | 'info';
+  /** Headline-Satz: was das Bild zeigt. */
+  diagnosis: string;
+  /** Konkreter Hebel — eine zitierte Frage oder Anweisung. */
+  hebel: string;
+  /** Indices in findings[], die das Composite ausgelöst haben. */
+  evidenceFindings: number[];
+  audiences: ReportLens[];
 }
 
 /**
@@ -454,6 +507,11 @@ export interface ReportData {
    * an die Person anzupassen (Hochlast / lange Tage / Burst / MT-Faktor).
    */
   baseline: UserBaseline;
+  /**
+   * Welle 5c — Composite-Findings (mehrere schwache Signale →
+   * ein starker Befund mit Diagnose + Hebel). Sortiert nach Severity.
+   */
+  composites: CompositeFinding[];
   /** Lens, mit der dieser Report generiert wurde (für den Dispatcher). */
   lens: ReportLens;
   absences: AbsenceCount[];
@@ -1487,6 +1545,157 @@ export function describeChangePointContext(
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+   Welle 5c — Composite-Detektoren
+   ───────────────────────────────────────────────────────────────────── */
+
+/**
+ * Liefert die Indices aller Findings, die zu einer der gegebenen
+ * kind-Werte passen. Wird von den Composite-Detektoren benutzt, um
+ * evidenceFindings zu sammeln.
+ */
+function findIndicesByKind(
+  findings: Finding[],
+  kinds: FindingKind[]
+): number[] {
+  const set = new Set(kinds);
+  const result: number[] = [];
+  findings.forEach((f, i) => {
+    if (f.kind && set.has(f.kind)) result.push(i);
+  });
+  return result;
+}
+
+interface CompositeBuildInput {
+  findings: Finding[];
+  changePoints: ChangePoint[];
+  stakeholders: BreakdownRow[];
+  trend: ReportData['trend'];
+  projektLifecycle: ProjektLifecycle;
+  slotLength: SlotLengthHistogram;
+}
+
+/**
+ * Baut die Composite-Findings aus den Einzel-Findings + Roh-Daten.
+ * Vier hartkodierte Diagnosen, siehe docs/REPORT-PHASE-B-PLAN.md
+ * Sektion C.
+ */
+function buildComposites(input: CompositeBuildInput): CompositeFinding[] {
+  const composites: CompositeFinding[] = [];
+  const f = input.findings;
+
+  const mtIdx = findIndicesByKind(f, ['mt-high']);
+  const meetingIdx = findIndicesByKind(f, [
+    'meeting-heavy-stakeholder',
+    'meetings-without-output',
+  ]);
+  const coverageOrBurstIdx = findIndicesByKind(f, [
+    'coverage-thin',
+    'longest-burst',
+    'many-bursts',
+  ]);
+  const reactiveIdx = findIndicesByKind(f, ['reactive-stakeholder']);
+  const burstIdx = findIndicesByKind(f, ['longest-burst', 'many-bursts']);
+  const klumpenIdx = findIndicesByKind(f, ['klumpen-risiko']);
+  const deepFocusFindingIdx = findIndicesByKind(f, ['low-deep-focus']);
+
+  // ── operative-ueberlast ─────────────────────────────────────────
+  // mt-high UND (meeting-heavy ODER meetings-without-output) UND
+  // (coverage-thin ODER longest-burst ODER many-bursts).
+  if (
+    mtIdx.length > 0 &&
+    meetingIdx.length > 0 &&
+    coverageOrBurstIdx.length > 0
+  ) {
+    composites.push({
+      id: 'operative-ueberlast',
+      level: 'warn',
+      diagnosis:
+        'Das Bild ist operative Überlastung: viele Themen laufen parallel, die Termin-Dichte ist hoch, und die Datenqualität bzw. die Pausen-Disziplin leiden mit. Solche Wochen sind selten produktiv — sie kosten überproportional Energie für unterproportional viel Output.',
+      hebel:
+        'Welche der Termine dieser Periode endeten ohne klares Ergebnis (Entscheidung, Mail, Dokument)? Die sind die ersten Kandidaten zum Streichen — und Streichen ist meistens befreiender als Verschieben.',
+      evidenceFindings: [
+        ...mtIdx,
+        ...meetingIdx,
+        ...coverageOrBurstIdx,
+      ],
+      audiences: ['lead', 'chef'],
+    });
+  }
+
+  // ── reaktive-phase ──────────────────────────────────────────────
+  // reactive-stakeholder UND (longest-burst ODER many-bursts) UND
+  // keine projekt-newcomers (also: viel Aktivität, aber keine neuen
+  // Linien).
+  if (
+    reactiveIdx.length > 0 &&
+    burstIdx.length > 0 &&
+    input.projektLifecycle.newcomers.length === 0
+  ) {
+    composites.push({
+      id: 'reaktive-phase',
+      level: 'warn',
+      diagnosis:
+        'Hohe Aktivität, aber Aktivität ohne neue Linien: das ist ein reaktives Muster, nicht ein gestaltendes. Du arbeitest viel an dem, was reinkommt, aber nichts substanziell Neues hat in diesem Zeitraum den Boden berührt.',
+      hebel:
+        'Welcher Mandant löst am meisten Ad-hoc-Slots aus? Ein Sammel-Termin (feste Sprechzeit pro Woche, Mail-Triage am Tagesende) gibt typischerweise mehrere Stunden pro Woche zurück — Zeit, in der dann wirklich Neues angeschoben werden kann.',
+      evidenceFindings: [...reactiveIdx, ...burstIdx],
+      audiences: ['coach', 'lead'],
+    });
+  }
+
+  // ── konzentrations-verlust ──────────────────────────────────────
+  // klumpen-risiko (Top > 35%) UND topStakeholder-ChangePoint (down)
+  // UND trend.decline enthält einen Top-Stakeholder mit >= 10pp Verlust.
+  const topShDown = input.changePoints.find(
+    (c) => c.metric === 'topStakeholder' && c.deltaSign === 'down'
+  );
+  const declineSubstantial = input.trend.decline.find(
+    (t) => Math.abs(t.deltaPct) >= 10
+  );
+  if (klumpenIdx.length > 0 && topShDown && declineSubstantial) {
+    const cpIdx = findIndicesByKind(f, ['change-point']);
+    composites.push({
+      id: 'konzentrations-verlust',
+      level: 'warn',
+      diagnosis: `Schwerpunkt auf einen Mandanten, aber dieser verliert in der Periode Boden. Konkret: ${input.stakeholders[0]?.name ? `<b>${htmlEsc(input.stakeholders[0].name)}</b> bindet noch ${input.stakeholders[0].pct.toFixed(0)}%` : 'der bisherige Hauptmandant bleibt nominell vorne'}, aber das Profil ist sichtbar im Umbau. Das ist nicht zwingend schlecht — aber es ist ein strategischer Moment.`,
+      hebel:
+        'Ist dieser Verlust strategisch gewollt (Skalierung anderer Mandate, bewusster Rückzug)? Oder ungeplant (Eskalation, Kundenfrust, ein Vertrag läuft aus)? Die Antwort darauf bestimmt, ob jetzt Vertriebs-Aktivität, ein Kunden-Gespräch oder ein Abschluss-Planning gefragt ist.',
+      evidenceFindings: [...klumpenIdx, ...cpIdx],
+      audiences: ['lead', 'chef', 'board'],
+    });
+  }
+
+  // ── fokus-erosion ───────────────────────────────────────────────
+  // deepFocus-ChangePoint (down) UND multiTasking-ChangePoint (up)
+  // UND low-deep-focus-Finding (deepFocusPct < 20%).
+  const deepFocusDown = input.changePoints.find(
+    (c) => c.metric === 'deepFocus' && c.deltaSign === 'down'
+  );
+  const mtUp = input.changePoints.find(
+    (c) => c.metric === 'multiTasking' && c.deltaSign === 'up'
+  );
+  if (
+    deepFocusDown &&
+    mtUp &&
+    deepFocusFindingIdx.length > 0
+  ) {
+    const cpIdx = findIndicesByKind(f, ['change-point']);
+    composites.push({
+      id: 'fokus-erosion',
+      level: 'warn',
+      diagnosis:
+        'Der Anteil konzentrierter Arbeit fällt synchron zu steigender Parallel-Last — das ist Fokus-Erosion, nicht nur ein punktuell schlechter Tag. Konzentrierte Phasen werden seltener UND gleichzeitig laufen mehr Themen gleichzeitig: zwei Anzeichen derselben Bewegung.',
+      hebel:
+        'Welchen Wochentag könntest du als nächstes für einen 4-Stunden-Block ohne Kalendertermine blocken? Einen Tag, der nicht „leer" ist, sondern reserviert für die Arbeit, die nur in Stille entsteht.',
+      evidenceFindings: [...deepFocusFindingIdx, ...cpIdx],
+      audiences: ['coach', 'chef'],
+    });
+  }
+
+  return composites;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
    Datenqualität
    ───────────────────────────────────────────────────────────────────── */
 
@@ -1857,6 +2066,7 @@ export function buildReportData(
       : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 14 Stunden gesetzt.`;
     findings.push({
       level: 'info',
+      kind: 'very-long-day',
       audiences: ['coach', 'lead', 'chef'],
       htmlMessage: `<b>${veryLongDays.length} außergewöhnlich lange${veryLongDays.length === 1 ? 'r' : ''} Tag${veryLongDays.length === 1 ? '' : 'e'}</b> (${examples}). Konkret heißt das: an diesen Tagen wurde substanziell mehr Arbeit erfasst, als selbst deine längsten gewöhnlichen Tage haben. Häufige Ursache: mehrere Tage wurden in einem Rutsch nacherfasst — für sauberere Statistiken auf die echten Tage zurückverteilen.${baselineSentence}`,
     });
@@ -1870,6 +2080,7 @@ export function buildReportData(
     const top = breakdowns.stakeholders[0];
     findings.push({
       level: 'info',
+      kind: 'klumpen-risiko',
       audiences: ['lead', 'chef', 'board'],
       htmlMessage: `<b>Klumpen-Risiko bei ${htmlEsc(top.name)}:</b> ${top.pct.toFixed(0)}% der gesamten Arbeitszeit fließen in diesen einen Mandanten. Konkret heißt das: wenn dieser Auftrag wegfällt oder sich der Schwerpunkt verschiebt, ändert sich die Auslastung schlagartig — entweder bewusste Strategie (z.B. Großmandat) oder Hinweis, dass Diversifikation überfällig ist.`,
     });
@@ -1887,6 +2098,7 @@ export function buildReportData(
       : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 1.5 gesetzt.`;
     findings.push({
       level: 'info',
+      kind: 'mt-high',
       audiences: ['lead', 'chef'],
       htmlMessage: `<b>Auffällig viel Parallel-Arbeit:</b> pro echter Arbeitsstunde fielen ${mtFactor.toFixed(2)}h Aufgaben an. Konkret heißt das: oft liefen mehrere Themen gleichzeitig im selben Slot (z.B. mehrere Stakeholder gleichzeitig zugewiesen). Entweder bewusste Mehr-Mandanten-Steuerung — oder vergessene Tracker, die nicht gestoppt wurden. Lohnt sich, ein paar Stichproben zu prüfen.${baselineSentence}`,
     });
@@ -1898,6 +2110,7 @@ export function buildReportData(
   if (nonprodPct > 45) {
     findings.push({
       level: 'info',
+      kind: 'nonprod-high',
       audiences: ['lead', 'chef'],
       htmlMessage: `<b>Knapp die Hälfte als „nicht produktiv" verbucht:</b> ${nonprodPct.toFixed(0)}% der Zeit. Konkret heißt das: Verwaltung, Abstimmung, Beziehungspflege, Wartezeit — Dinge, die nötig sind, aber kein direktes Ergebnis liefern. Welche der Top-Projekte in dieser Kategorie sind wirklich notwendig, welche könnten asynchron (per Mail / Tool) oder kürzer laufen?`,
     });
@@ -1907,6 +2120,7 @@ export function buildReportData(
   if (daysThin >= 5) {
     findings.push({
       level: 'info',
+      kind: 'coverage-thin',
       audiences: ['coach', 'lead', 'chef', 'board'],
       htmlMessage: `<b>${daysThin} Tage mit lückenhaftem Tracking</b> (unter 60% des Anwesenheitsfensters erfasst). Konkret heißt das: zwischen erstem und letztem Eintrag dieser Tage klaffen größere Lücken — die Detail-Verteilung (Mandant, Tätigkeit) ist an diesen Tagen weniger belastbar. Tendenzaussagen über den ganzen Zeitraum bleiben gültig.`,
     });
@@ -1918,6 +2132,7 @@ export function buildReportData(
     if (sp.microTaskPct >= 40 && sp.entriesCount >= 5) {
       findings.push({
         level: 'warn',
+        kind: 'reactive-stakeholder',
         audiences: ['coach', 'lead'],
         htmlMessage: `<b>${htmlEsc(sp.name)} ist ein Ad-hoc-Mandant:</b> ${sp.microTaskPct.toFixed(0)}% der Einträge sind unter 15 Minuten lang (Schnitt ${fmtHours(sp.avgEntryMs)} pro Eintrag), bei ${sp.pct.toFixed(0)}% Gesamtanteil. Konkret heißt das: dieser Mandant löst viele kleine, kurze Aktionen aus, die deine Konzentration unterbrechen. Ein Sammel-Termin (z.B. feste Stunde am Tag, in der man die Anfragen bündelt) gibt typischerweise mehrere Stunden Tiefenarbeit pro Woche zurück.`,
       });
@@ -1929,6 +2144,7 @@ export function buildReportData(
     if (sp.nonprodPct >= 40 && sp.ms >= 2 * 60 * 60_000) {
       findings.push({
         level: 'warn',
+        kind: 'oos-stakeholder',
         audiences: ['lead'],
         htmlMessage: `<b>${htmlEsc(sp.name)}: viel Zeit außerhalb des eigentlichen Auftrags?</b> ${sp.nonprodPct.toFixed(0)}% der gebundenen Zeit (${fmtHours(sp.ms)}) ist als „nicht produktiv" verbucht — also Verwaltung, Abstimmung, Beziehungspflege. Konkret heißt das: bei diesem Mandanten gehst du nicht direkt am Ergebnis arbeiten, sondern an Drumherum. Bewusste Beziehungspflege bei einem strategischen Kunden, oder dehnt sich der Auftrag stillschweigend aus?`,
       });
@@ -1940,6 +2156,7 @@ export function buildReportData(
     if (sp.meetingHeavyPct >= 50 && sp.ms >= 2 * 60 * 60_000) {
       findings.push({
         level: 'info',
+        kind: 'meeting-heavy-stakeholder',
         audiences: ['lead', 'chef'],
         htmlMessage: `<b>${htmlEsc(sp.name)}: Mandant mit hohem Termin-Anteil.</b> ${sp.meetingHeavyPct.toFixed(0)}% der Zeit für diesen Mandanten lief in Meetings, Calls oder Workshops. Konkret heißt das: über die Hälfte der Arbeit findet in Live-Terminen statt, nicht in eigener stiller Arbeit. Welche dieser Termine wären als kurze Mail oder 1-Seiten-Notiz schneller erledigt?`,
       });
@@ -1955,6 +2172,7 @@ export function buildReportData(
     ) {
       findings.push({
         level: 'warn',
+        kind: 'meetings-without-output',
         audiences: ['lead', 'chef'],
         htmlMessage: `<b>${htmlEsc(sp.name)}: viele Termine ohne klares Ergebnis.</b> ${sp.meetingHeavyPct.toFixed(0)}% Termin-Anteil, davon ${sp.meetingNonprodPct.toFixed(0)}% als „nicht produktiv" gebucht. Konkret heißt das: die Mehrzahl dieser Termine endet nicht mit einer konkreten Lieferung (Entscheidung, Dokument, Mail). Im 1:1 ansprechen: für jeden wiederkehrenden Termin eine Output-Frage stellen — was ist die Ergebnis-Erwartung, andernfalls Format-Wechsel oder Absage.`,
       });
@@ -1966,6 +2184,7 @@ export function buildReportData(
     if (sp.notizPct <= 20 && sp.pct >= 15 && sp.entriesCount >= 8) {
       findings.push({
         level: 'info',
+        kind: 'notes-gap-stakeholder',
         audiences: ['coach', 'lead'],
         htmlMessage: `<b>Lückenhafte Notizen bei ${htmlEsc(sp.name)}:</b> nur ${sp.notizPct.toFixed(0)}% der Einträge tragen einen Kommentar, bei ${sp.pct.toFixed(0)}% Gesamtanteil. Konkret heißt das: in ein paar Monaten oder beim Review wirst du nicht mehr wissen, was du in den Slots „${htmlEsc(sp.name)}" eigentlich gemacht hast. Eine ein-Wort-Notiz pro Eintrag reicht meist schon (z.B. „Telefon Müller", „Konzept v2").`,
       });
@@ -1989,6 +2208,7 @@ export function buildReportData(
       : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 10 Stunden gesetzt.`;
     findings.push({
       level: 'warn',
+      kind: 'high-load-days',
       audiences: ['coach', 'lead', 'chef'],
       htmlMessage: `<b>${personalizedHighLoadCount} besonders lange Tage</b> mit mindestens ${highLoadHoursLabel} Stunden Anwesenheit. Konkret heißt das: zwischen erstem und letztem Eintrag dieser Tage lagen mindestens ${highLoadHoursLabel} Stunden — für diese Person überdurchschnittlich lang. Ein einzelner solcher Tag ist kein Drama; drei oder mehr deuten auf ein Belastungs-Muster, das einen Blick auf die Steuerung verdient: Deadline-Stau, Personal-Engpass, oder einfach Phase.${baselineSentence}`,
     });
@@ -2000,6 +2220,7 @@ export function buildReportData(
     if (weekendShare >= 8) {
       findings.push({
         level: 'info',
+        kind: 'weekend-share',
         audiences: ['coach', 'lead'],
         htmlMessage: `<b>${weekendShare.toFixed(0)}% der Arbeit am Wochenende</b> (${fmtHours(weekday.weekendMs)} Samstag/Sonntag). Konkret heißt das: ein knappes Zehntel der Stunden lag außerhalb der regulären Wochentage. Bewusst geplant (z.B. Großprojekt mit fixer Deadline), oder reichen die Wochentage strukturell nicht mehr aus?`,
       });
@@ -2010,6 +2231,7 @@ export function buildReportData(
   if (slotLength.totalCount >= 30 && slotLength.deepFocusPct < 20) {
     findings.push({
       level: 'info',
+      kind: 'low-deep-focus',
       audiences: ['coach', 'chef'],
       htmlMessage: `<b>Stückwerk-Muster:</b> nur ${slotLength.deepFocusPct.toFixed(0)}% der Arbeitszeit lief in zusammenhängenden Blöcken über 2 Stunden. Konkret heißt das: der größte Teil des Tages bestand aus kurzen Stücken (Termine, kleine Aufgaben, Unterbrechungen). Wo könnte ein 4-Stunden-Block ohne Kalendertermine im Wochenplan stehen — auch wenn er „leer" aussieht?`,
     });
@@ -2027,6 +2249,7 @@ export function buildReportData(
       : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 4 Stunden gesetzt.`;
     findings.push({
       level: 'info',
+      kind: 'longest-burst',
       audiences: ['coach'],
       htmlMessage: `<b>Längste Arbeitsphase am Stück: ${Math.round(rhythm.burst.longestBurstMin / 60)}h ohne erfasste Pause</b> am ${htmlEsc(rhythm.burst.longestBurstDate ?? '')}. Konkret heißt das: an diesem Tag lief mindestens ein Stück über die für dich übliche Slot-Länge hinaus ohne sichtbare Unterbrechung. Vielleicht eine bewusste Tiefen-Phase — aber was hätte eine echte 15-Minuten-Pause dazwischen verändert (Klarheit, Energie für den Nachmittag)?${baselineSentence}`,
     });
@@ -2034,6 +2257,7 @@ export function buildReportData(
   if (rhythm.burst.longBurstCount >= 3) {
     findings.push({
       level: 'info',
+      kind: 'many-bursts',
       audiences: ['lead'],
       htmlMessage: `<b>${rhythm.burst.longBurstCount} Arbeitsphasen über 3h ohne Pause</b> im Zeitraum. Konkret heißt das: das ist kein einmaliger Großprojekt-Moment, sondern ein wiederkehrendes Belastungs-Muster. Was bricht den Strom regelmäßig nicht auf — sind Pausen im Kalender, werden sie nur nicht eingehalten, oder gibt es strukturell keine Pufferzeiten?`,
     });
@@ -2046,6 +2270,7 @@ export function buildReportData(
   ) {
     findings.push({
       level: 'info',
+      kind: 'week-volatility',
       audiences: ['chef', 'board'],
       htmlMessage: `<b>Wochen mit stark schwankender Auslastung.</b> Konkret heißt das: die einzelnen Wochen im Zeitraum unterscheiden sich substantiell in den Arbeitsstunden — eine Woche mit 30h kann neben einer mit 55h stehen. Das ist nicht zwingend ein Problem (Saisonalität, Projekt-Phasen), aber wenn das Muster bleibt: ist die Planung dem nicht angepasst, oder reagieren die Ressourcen zu langsam auf das, was reinkommt?`,
     });
@@ -2069,6 +2294,7 @@ export function buildReportData(
     if (goneNames) parts.push(`in der zweiten Hälfte ausgelaufen: ${goneNames}`);
     findings.push({
       level: 'info',
+      kind: 'project-movement',
       audiences: ['chef', 'board'],
       htmlMessage: `<b>Projekt-Bewegung im Zeitraum:</b> ${parts.join(' · ')}. Konkret heißt das: die Projekt-Liste am Ende der Periode unterscheidet sich substanziell von der am Anfang — neue Initiativen sind dazugekommen oder alte ausgelaufen. Gewollte Portfolio-Bewegung, oder zeigt sich hier, dass Projekte unkontrolliert starten/sterben?`,
     });
@@ -2197,6 +2423,7 @@ export function buildReportData(
 
     findings.push({
       level: 'info',
+      kind: 'change-point',
       audiences: cpAudiences,
       htmlMessage: fullMessage,
     });
@@ -2210,6 +2437,16 @@ export function buildReportData(
         'Keine roten Flaggen — Verteilung plausibel, Datenqualität in Ordnung, Mix gesund.',
     });
   }
+
+  // Welle 5c — Composite-Findings über den jetzt fertigen findings[].
+  const composites = buildComposites({
+    findings,
+    changePoints,
+    stakeholders: breakdowns.stakeholders,
+    trend,
+    projektLifecycle,
+    slotLength,
+  });
 
   // Title je nach Scope
   const titleByScope: Record<ReportScope, string> = {
@@ -2262,6 +2499,7 @@ export function buildReportData(
     projektLifecycle,
     changePoints,
     baseline,
+    composites,
     lens,
     absences,
     findings,

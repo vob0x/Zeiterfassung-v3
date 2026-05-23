@@ -13,6 +13,7 @@ import type {
   BreakdownRow,
   ChangePoint,
   ChangePointMetric,
+  CompositeFinding,
   Finding,
   ReportData,
   ReportLens,
@@ -408,7 +409,8 @@ export function renderChangePointSection(
 
 /**
  * Findings-Block mit Audience-Filter. Findings ohne audiences gelten für
- * alle Brillen.
+ * alle Brillen. Veraltet — neue Renderer sollten renderFindingsBlock
+ * verwenden, das auch Composites kennt.
  */
 export function renderFindings(findings: Finding[], lens: ReportLens): string {
   const visible = findings.filter(
@@ -425,6 +427,135 @@ export function renderFindings(findings: Finding[], lens: ReportLens): string {
       .join('') +
     '</div>'
   );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Welle 5c — Composite-Findings: Brillen-spezifisches Rendering
+   ───────────────────────────────────────────────────────────────────── */
+
+const COMPOSITE_TITLES: Record<CompositeFinding['id'], string> = {
+  'operative-ueberlast': 'Operative Überlastung',
+  'reaktive-phase': 'Reaktive Phase',
+  'konzentrations-verlust': 'Konzentrations-Verlust',
+  'fokus-erosion': 'Fokus-Erosion',
+};
+
+/**
+ * Nur die Composite-Karten für eine Brille, ohne Einzel-Findings.
+ * Wird vom Coach-Renderer benutzt, der seine Einzel-Befunde in
+ * narrativer Prosa darstellt.
+ */
+export function renderCompositesOnly(
+  data: ReportData,
+  lens: ReportLens
+): string {
+  const composites = data.composites.filter((c) => c.audiences.includes(lens));
+  if (composites.length === 0) return '';
+  const sorted = [...composites].sort((a, b) =>
+    a.level === b.level ? 0 : a.level === 'warn' ? -1 : 1
+  );
+  return sorted
+    .map((c) => {
+      const evidence = c.evidenceFindings
+        .map((idx) => data.findings[idx])
+        .filter((f): f is Finding => f !== undefined);
+      return renderCompositeCard(c, evidence);
+    })
+    .join('');
+}
+
+/** Eine Composite-Karte: Diagnose + Hebel + ausklappbare Evidenzen. */
+function renderCompositeCard(
+  comp: CompositeFinding,
+  evidenceFindings: Finding[]
+): string {
+  const title = COMPOSITE_TITLES[comp.id];
+  const evHtml =
+    evidenceFindings.length > 0
+      ? `<details class="composite-evidence">
+           <summary>Worauf das beruht (${evidenceFindings.length} Einzelbeobachtung${evidenceFindings.length === 1 ? '' : 'en'})</summary>
+           <div class="composite-evidence-list">
+             ${evidenceFindings.map((f) => `<div class="composite-evidence-item">${f.htmlMessage}</div>`).join('')}
+           </div>
+         </details>`
+      : '';
+  return `<div class="composite composite-${comp.level}">
+    <div class="composite-h">
+      <span class="composite-tag">Befund</span>
+      <span class="composite-title">${title}</span>
+    </div>
+    <div class="composite-diagnosis">${comp.diagnosis}</div>
+    <div class="composite-hebel"><b>Was du tun könntest:</b> ${comp.hebel}</div>
+    ${evHtml}
+  </div>`;
+}
+
+/**
+ * Composite-aware Findings-Block. Strategie pro Brille:
+ *   Chef + Board: REPLACE — Composites unterdrücken ihre Evidence-Findings
+ *   Coach + Lead: APPEND  — Composites stehen oben, Einzel-Findings bleiben
+ *
+ * Rendert oben die Composites, darunter die (ggf. gefilterten) Einzel-
+ * Findings.
+ */
+export function renderFindingsBlock(
+  data: ReportData,
+  lens: ReportLens
+): string {
+  // Composites für diese Brille
+  const composites = data.composites.filter((c) => c.audiences.includes(lens));
+
+  // Strategie: REPLACE für Chef/Board, APPEND für Coach/Lead
+  const strategy: 'replace' | 'append' =
+    lens === 'chef' || lens === 'board' ? 'replace' : 'append';
+
+  // Indices, die durch Composites konsumiert werden (nur bei replace)
+  const consumed = new Set<number>();
+  if (strategy === 'replace') {
+    for (const c of composites) {
+      for (const idx of c.evidenceFindings) consumed.add(idx);
+    }
+  }
+
+  // Composites rendern
+  let compositesHtml = '';
+  if (composites.length > 0) {
+    // Sortiere warn vor info
+    const sorted = [...composites].sort((a, b) =>
+      a.level === b.level ? 0 : a.level === 'warn' ? -1 : 1
+    );
+    compositesHtml = sorted
+      .map((c) => {
+        const evidence = c.evidenceFindings
+          .map((idx) => data.findings[idx])
+          .filter((f): f is Finding => f !== undefined);
+        return renderCompositeCard(c, evidence);
+      })
+      .join('');
+  }
+
+  // Einzel-Findings rendern (Brillen-Filter + ggf. Consumed-Set)
+  const visibleFindings = data.findings.filter((f, idx) => {
+    if (consumed.has(idx)) return false;
+    if (!f.audiences) return true;
+    return f.audiences.includes(lens);
+  });
+
+  let findingsHtml = '';
+  if (visibleFindings.length > 0) {
+    findingsHtml =
+      '<div class="findings-list">' +
+      visibleFindings
+        .map(
+          (f) =>
+            `<div class="finding finding-${f.level}">${f.htmlMessage}</div>`
+        )
+        .join('') +
+      '</div>';
+  }
+
+  if (!compositesHtml && !findingsHtml) return '';
+  return compositesHtml + findingsHtml;
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -474,6 +605,22 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .cp-card-action{font-size:12.5px;color:#1c1a17;line-height:1.55;margin-top:8px;padding:8px 10px;background:#f0f8f4;border-left:3px solid #3a8d6e;border-radius:2px;font-style:italic}
 .cp-card-meta{font-size:10.5px;color:#aaa;margin-top:8px;font-style:italic}
 .cp-inline{font-size:11px;color:#888;font-style:italic}
+
+/* Composite-Findings (Welle 5c) — Befunde, die mehrere Einzelsignale zusammenfassen */
+.composite{margin:14px 0;padding:14px 18px;border-radius:6px;border:1px solid;background:white}
+.composite-warn{border-color:#D4706E;background:linear-gradient(180deg,#fff4ec 0%,#ffffff 100%);border-left:4px solid #D4706E}
+.composite-info{border-color:#C9A962;background:linear-gradient(180deg,#fff8eb 0%,#ffffff 100%);border-left:4px solid #C9A962}
+.composite-h{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.composite-tag{font-size:9.5px;padding:2px 8px;border-radius:8px;background:#1c1a17;color:#fff8eb;text-transform:uppercase;letter-spacing:0.08em;font-weight:700}
+.composite-title{font-size:16px;font-weight:700;color:#1c1a17;font-family:var(--font-display,-apple-system)}
+.composite-diagnosis{font-size:14px;color:#1c1a17;line-height:1.6;margin:8px 0}
+.composite-hebel{font-size:13.5px;color:#1c1a17;line-height:1.55;margin-top:10px;padding:10px 12px;background:rgba(255,255,255,0.6);border-radius:4px;border-left:3px solid #6c5a2c}
+.composite-hebel b{color:#6c5a2c;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:2px}
+.composite-evidence{margin-top:10px;font-size:11.5px;color:#888}
+.composite-evidence summary{cursor:pointer;padding:4px 6px;display:inline-block;font-style:italic}
+.composite-evidence summary:hover{color:#6c5a2c}
+.composite-evidence-list{margin-top:6px;display:flex;flex-direction:column;gap:6px;padding-left:8px;border-left:1px dashed #d8cfb6}
+.composite-evidence-item{font-size:12px;color:#555;line-height:1.5;padding:6px 8px;background:#fdfbf6;border-radius:3px}
 
 /* Wiederverwendete Balken-Liste */
 .prodbars{display:flex;flex-direction:column;gap:8px;margin-top:4px}
@@ -565,10 +712,10 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 }
 @media print{
   body{background:white;max-width:none;padding:12mm;margin:0}
-  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.lead-hebel,.chef-closing,.lead-card-tags .tag,.coach-minikpi-tile,.board-trend,.cp-card,.cp-card-meaning,.cp-card-cooccur,.cp-card-persist,.cp-card-snapshot,.cp-card-action,.cp-persist-tag{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.lead-hebel,.chef-closing,.lead-card-tags .tag,.coach-minikpi-tile,.board-trend,.cp-card,.cp-card-meaning,.cp-card-cooccur,.cp-card-persist,.cp-card-snapshot,.cp-card-action,.cp-persist-tag,.composite,.composite-warn,.composite-info,.composite-tag,.composite-hebel{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   h2{break-after:avoid}
   section{break-inside:avoid-page}
-  .cp-card{break-inside:avoid}
+  .cp-card,.composite{break-inside:avoid}
 }
 </style>`;
 
