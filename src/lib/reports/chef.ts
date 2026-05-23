@@ -15,6 +15,7 @@ import type { ChangePointMetric, ReportData } from '../reportData';
 import {
   esc,
   fmtHours,
+  interpretReactiveShare,
   renderBars,
   renderDriftArrow,
   renderFindingsBlock,
@@ -55,6 +56,22 @@ function buildHeadlines(data: ReportData): string {
     outputHead = `<b>Versickerung dominiert:</b> ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Über 40 % Selbsteinschätzung als verschwendet ist ein Alarmsignal — operativer Schnitt überfällig.`;
   }
   heads.push(outputHead);
+
+  // Reaktivitäts-Index (Welle 6) — bei fremdgetriebenen Teams (Team COM)
+  // ist das die wichtigste Profil-Aussage. Beschreibt die Phase, nicht
+  // die Person — niedrig = Strategie, hoch = Anfragen-Last.
+  const reactScale = interpretReactiveShare(k.reactivePct);
+  let reactHead: string;
+  if (k.reactivePct >= 60) {
+    reactHead = `<b>Reaktiv-Last dominiert die Periode:</b> ${k.reactivePct.toFixed(0)}% der Arbeitszeit (${fmtHours(k.reactiveMs)}) lief in reaktiven Projekten — Medienanfragen, BGÖ, Bürger, Krise, politische Geschäfte. Eigen-Arbeit hatte kaum Raum. Strategie-Themen sollten in der nächsten Periode bewusst geblockt werden, sonst geht das System.`;
+  } else if (k.reactivePct >= 40) {
+    reactHead = `<b>Belebte Reaktiv-Phase:</b> ${k.reactivePct.toFixed(0)}% der Arbeitszeit (${fmtHours(k.reactiveMs)}) in reaktiven Projekten. Spürbare Anfragen-Last bei noch erhaltbarer Eigen-Arbeit. Konkret prüfen: gibt es Trigger, die proaktiv geklärt werden könnten?`;
+  } else if (k.reactivePct >= 20) {
+    reactHead = `<b>Normaler Betrieb:</b> ${k.reactivePct.toFixed(0)}% reaktive Arbeit (${fmtHours(k.reactiveMs)}) — gesundes Verhältnis von eigener und fremdgetriebener Arbeit. Konkret heißt das: die Person konnte sowohl auf Anfragen reagieren als auch eigene Themen vorantreiben.`;
+  } else {
+    reactHead = `<b>Strategiephase:</b> nur ${k.reactivePct.toFixed(0)}% reaktive Arbeit (${fmtHours(k.reactiveMs)}) — die Periode hatte Raum für Eigen-Vorhaben. Konkret prüfen: ist dieser Raum produktiv genutzt worden, oder bleibt er ungefüllt? Skala-Einordnung: ${esc(reactScale.hint)}`;
+  }
+  heads.push(reactHead);
 
   // Konzentration
   const top = data.breakdowns.stakeholders[0];

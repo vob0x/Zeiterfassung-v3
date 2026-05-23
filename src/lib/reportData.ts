@@ -15,7 +15,8 @@
  * Drei Sicht-Modi: 'self' | 'member' | 'team' (team mit perMember).
  */
 
-import type { TimeEntry } from '@/types';
+import type { ProjectCategory, TimeEntry } from '@/types';
+import { effectiveCategoryWithDefault } from './projectClassifier';
 import {
   buildSplitTailDates,
   computeNaiveSumMs,
@@ -440,6 +441,26 @@ export interface ReportData {
      */
     leakMs: number;
     leakPct: number;
+    /**
+     * Welle 6 — Reaktivitäts-Index. Anteil der getrackten Wallclock-
+     * Zeit in Projekten der Kategorie `reaktiv` (Flowstopper).
+     * Beschreibend, nicht wertend — beschreibt das Profil der Periode.
+     */
+    reactiveMs: number;
+    reactivePct: number;
+    /**
+     * Welle 6 — Anteil der Wallclock-Zeit in Projekten der Kategorie
+     * `planbar`. Komplementär zur Reaktivitäts-Achse, dient für
+     * Konsistenz-Checks und Coach-Narrative.
+     */
+    plannableMs: number;
+    plannablePct: number;
+    /**
+     * Welle 6 — Krisen-Indikator. True, wenn in der Periode mindestens
+     * ein Slot in einem Krisen-Projekt getrackt wurde. Steuert den
+     * Krisen-Modus in den Brillen (gedämpfte Warnungen).
+     */
+    hasCrisisSlots: boolean;
   };
   perMember?: PerMemberRow[];
   breakdowns: {
@@ -540,6 +561,13 @@ interface BuildOptions {
   }>;
   /** Lens für die Closing-Para. Default 'coach'. */
   lens?: ReportLens;
+  /**
+   * Welle 6 — Projekt-Klassifikation. Map Projektname → Kategorie. Wird
+   * genutzt für Reaktivitäts-Index, Krisen-Modus und Mikro-Slot-Re-
+   * Interpretation. Wenn nicht übergeben, fällt die Berechnung auf die
+   * Heuristik aus dem Projektnamen zurück.
+   */
+  projectCategories?: Map<string, ProjectCategory>;
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -1814,6 +1842,47 @@ export function buildReportData(
   const leakPct =
     totalNaiveMs > 0 ? (leakMs / totalNaiveMs) * 100 : 0;
 
+  // Welle 6 — Reaktivitäts-Index. Jeder Slot wird über sein Projekt
+  // einer Kategorie zugeordnet (gespeichert oder via Heuristik). Die
+  // Reaktivitäts-Quote ist Wallclock-basiert, weil wir die echte Last
+  // an Flowstoppern messen wollen, nicht die naive Summe (in der
+  // parallele Tracker doppelt zählen).
+  const projCatMap = opts.projectCategories ?? new Map();
+  const categoryWallMs: Record<ProjectCategory | 'null', number> = {
+    reaktiv: 0,
+    planbar: 0,
+    routine: 0,
+    'fuehrung-admin': 0,
+    abwesenheit: 0,
+    null: 0,
+  };
+  let hasCrisisSlots = false;
+  for (const e of nonAbsence) {
+    if (!e.projekt) {
+      categoryWallMs.null += e.duration_ms || 0;
+      continue;
+    }
+    const cat = effectiveCategoryWithDefault(
+      projCatMap.get(e.projekt) ?? null,
+      e.projekt
+    );
+    categoryWallMs[cat] += e.duration_ms || 0;
+    if (cat === 'reaktiv' && /kris/i.test(e.projekt)) {
+      hasCrisisSlots = true;
+    }
+  }
+  const reactiveMs = categoryWallMs.reaktiv;
+  const plannableMs = categoryWallMs.planbar;
+  const categoryDenomMs =
+    categoryWallMs.reaktiv +
+    categoryWallMs.planbar +
+    categoryWallMs.routine +
+    categoryWallMs['fuehrung-admin'];
+  const reactivePct =
+    categoryDenomMs > 0 ? (reactiveMs / categoryDenomMs) * 100 : 0;
+  const plannablePct =
+    categoryDenomMs > 0 ? (plannableMs / categoryDenomMs) * 100 : 0;
+
   // Coverage-Buckets
   let daysGood = 0;
   let daysOk = 0;
@@ -2496,6 +2565,11 @@ export function buildReportData(
       productiveMs,
       leakMs,
       leakPct,
+      reactiveMs,
+      reactivePct,
+      plannableMs,
+      plannablePct,
+      hasCrisisSlots,
     },
     perMember,
     breakdowns,

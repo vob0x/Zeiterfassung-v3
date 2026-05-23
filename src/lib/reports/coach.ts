@@ -185,6 +185,20 @@ function buildCoachParagraphs(data: ReportData): string {
     );
   }
 
+  // Welle 6 — Reaktivitäts-Paragraf. Erscheint nur bei klaren
+  // Profilen: hohe Anfragen-Last (fremdgetrieben) oder umgekehrt sehr
+  // strategie-lastig (selbstgesteuert). Mittlere Bereiche bleiben
+  // unkommentiert — die Coach-Brille soll nicht alles erzählen.
+  if (data.kpis.reactivePct >= 50) {
+    paras.push(
+      `Eine fremdgetriebene Periode: ${data.kpis.reactivePct.toFixed(0)}% deiner Arbeitszeit lief in reaktiven Projekten — Medienanfragen, Bürgeranfragen, BGÖ, politische Geschäfte. Das ist Auftragsdienst, kein Mangel an Eigen-Initiative. Frage trotzdem: hat sich in der Periode auch nur eine Stunde eigene Vorausplanung untergebracht, oder war alles Reaktion?`
+    );
+  } else if (data.kpis.reactivePct < 15 && data.kpis.workingDays >= 10) {
+    paras.push(
+      `Diese Periode war eher Strategie als Reaktion: nur ${data.kpis.reactivePct.toFixed(0)}% in reaktiven Projekten. Du hattest Raum für eigene Vorhaben — was ist konkret aus diesem Raum entstanden, und ist es das, was du dir vorgenommen hattest?`
+    );
+  }
+
   // Welle 6 — Versickerungs-Block. Erscheint nur, wenn der Anteil
   // bewusst markierter „nicht produktiver" Zeit substanziell ist. Coach-
   // Ton: deine Bewertung, nicht die der Daten — also was war es?

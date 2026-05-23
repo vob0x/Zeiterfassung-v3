@@ -22,8 +22,9 @@ import {
   renderReportBody,
   REPORT_STYLES,
 } from '@/lib/reportRenderer';
-import type { TimeEntry, TeamMemberWithRole } from '@/types';
+import type { ProjectCategory, TimeEntry, TeamMemberWithRole } from '@/types';
 import { useI18n } from '@/i18n';
+import { useMasterStore } from '@/stores/masterStore';
 
 interface ReportModalProps {
   open: boolean;
@@ -50,6 +51,20 @@ export default function ReportModal({
   // Default-Brille: Coach (Selbst-Reflexion ist der typische Einstieg).
   const [lens, setLens] = useState<ReportLens>('coach');
 
+  // Welle 6 — Projekt-Klassifikationen aus dem masterStore. Wird an
+  // buildReportData übergeben, damit der Reaktivitäts-Index, Krisen-
+  // Modus und die Mikro-Slot-Re-Interpretation greifen können. Map
+  // Projektname → Kategorie. Wenn die Spalte leer ist, fällt der Code
+  // im buildReportData auf die Heuristik aus dem Namen zurück.
+  const projects = useMasterStore((s) => s.projects);
+  const projectCategories = useMemo(() => {
+    const m = new Map<string, ProjectCategory>();
+    for (const p of projects) {
+      if (p.category) m.set(p.name, p.category);
+    }
+    return m;
+  }, [projects]);
+
   const data = useMemo(
     () =>
       buildReportData(entries, {
@@ -62,8 +77,9 @@ export default function ReportModal({
           codename: m.codename,
           role: m.role,
         })),
+        projectCategories,
       }),
-    [entries, range, scope, subjectName, members, lens]
+    [entries, range, scope, subjectName, members, lens, projectCategories]
   );
 
   const bodyHtml = useMemo(() => renderReportBody(data), [data]);

@@ -18,6 +18,7 @@ import {
   interpretCoverage,
   interpretLeakPct,
   interpretParallelFactor,
+  interpretReactiveShare,
   renderChangePointSection,
   renderDriftArrow,
   renderFindingsBlock,
@@ -95,6 +96,31 @@ function buildCockpit(data: ReportData): string {
     <div class="lead-three-s">${schwerpunktSub}</div>
   </div>`);
 
+  // ── Reaktivität (Welle 6, REPORT-PHASE-C) ─────────────────────────
+  // Bei Team COM (NDB) ist das die entscheidende Profil-Achse: wie viel
+  // der Periode war fremdgetrieben (Medienanfragen, BGÖ, Bürger,
+  // Politische Geschäfte, Krise) und wie viel war Eigen-Arbeit?
+  const reactScale = interpretReactiveShare(k.reactivePct);
+  let reactClass: 'ampel-warn' | 'ampel-ok' | '' = '';
+  if (reactScale.level === 'high') reactClass = 'ampel-warn';
+  else if (reactScale.level === 'normal' && k.reactivePct < 20) reactClass = 'ampel-ok';
+  const reactValue = `${k.reactivePct.toFixed(0)}% reaktiv`;
+  let reactSub: string;
+  if (k.reactivePct >= 60) {
+    reactSub = `Über ${k.reactivePct.toFixed(0)}% der Arbeitszeit lief in reaktiven Projekten (Anfragen, BGÖ, Krise). <b>Im Gespräch fragen:</b> War das eine Eskalations-Phase oder dauerhafter Zustand? Welche Eigen-Vorhaben sind dabei liegengeblieben?`;
+  } else if (k.reactivePct >= 40) {
+    reactSub = `${k.reactivePct.toFixed(0)}% in reaktiven Projekten — belebte Phase mit spürbarer Anfragen-Last. <b>Im Gespräch fragen:</b> Welche reaktiven Themen waren die größten Treiber? Gibt es etwas, das proaktiv geklärt werden könnte?`;
+  } else if (k.reactivePct >= 20) {
+    reactSub = `${k.reactivePct.toFixed(0)}% reaktive Arbeit — gesundes Verhältnis von Eigen- und Anfragen-Arbeit. <b>Im Gespräch:</b> Routine trägt, kein Hebel akut nötig.`;
+  } else {
+    reactSub = `Nur ${k.reactivePct.toFixed(0)}% in reaktiven Projekten — die Person hatte Raum für Eigen-Vorhaben. <b>Im Gespräch fragen:</b> Was ist konkret aus diesem Raum entstanden? Wurde er für Strategie / Konzeption genutzt?`;
+  }
+  cards.push(`<div class="lead-three-card ${reactClass}">
+    <div class="lead-three-h">Reaktivität</div>
+    <div class="lead-three-v">${reactValue}</div>
+    <div class="lead-three-s">${reactSub}</div>
+  </div>`);
+
   // ── Datenqualität ────────────────────────────────────────────────
   const covPct = k.coverage * 100;
   let dqClass: 'ampel-warn' | 'ampel-ok' | '' = '';
@@ -124,7 +150,9 @@ function buildCockpit(data: ReportData): string {
     <div class="lead-three-s">${dqSub}</div>
   </div>`);
 
-  return `<div class="lead-three">${cards.join('')}</div>`;
+  // Welle 6 — vier Karten statt drei (Reaktivität als zusätzliche Achse).
+  // CSS-Klasse `lead-four` wird im Style-Block definiert.
+  return `<div class="lead-four">${cards.join('')}</div>`;
 }
 
 /**

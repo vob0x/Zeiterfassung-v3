@@ -188,6 +188,39 @@ export function interpretLeakPct(pct: number): ScaleAssessment {
   };
 }
 
+/**
+ * Reaktivitäts-Index (Welle 6, REPORT-PHASE-C). Anteil der Zeit in
+ * Projekten der Kategorie `reaktiv` (Flowstopper). Beschreibend, nicht
+ * wertend — das ist eine Profil-Aussage, nicht eine Bewertung der
+ * Person. Niedrig = Strategiephase, hoch = Reaktiv-Last (oft Krisen-
+ * Indikator zusammen mit anderen Signalen).
+ */
+export function interpretReactiveShare(pct: number): ScaleAssessment {
+  if (pct < 20)
+    return {
+      level: 'normal',
+      label: 'Strategiephase',
+      hint: 'Unter 20 % reaktive Arbeit — ruhige Periode, viel Raum für eigene Vorhaben.',
+    };
+  if (pct < 40)
+    return {
+      level: 'normal',
+      label: 'normaler Betrieb',
+      hint: '20 – 40 % reaktive Arbeit — gesundes Verhältnis von eigener und fremdgetriebener Arbeit.',
+    };
+  if (pct < 60)
+    return {
+      level: 'elevated',
+      label: 'belebte Phase',
+      hint: '40 – 60 % reaktive Arbeit — Anfragen-Last spürbar, Eigen-Arbeit unter Druck.',
+    };
+  return {
+    level: 'high',
+    label: 'Reaktiv-Last',
+    hint: 'Über 60 % reaktive Arbeit — die Periode war stark fremdgetrieben, kaum Raum für Eigen-Vorhaben.',
+  };
+}
+
 /** Tiefer Fokus (Slot ≥ 2h Anteil): <20% fragmentiert, >55% sehr fokussiert. */
 export function interpretDeepFocus(pct: number): ScaleAssessment {
   if (pct < 20)
@@ -815,6 +848,10 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 
 /* LEAD-spezifisch — Cockpit, Karten, Hebel */
 .lead-three{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0 24px}
+/* Welle 6 — Cockpit mit vier Karten (Reaktivität neu) */
+.lead-four{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0 24px}
+.lead-four .lead-three-card{padding:12px 14px}
+.lead-four .lead-three-v{font-size:18px}
 .lead-three-card{background:white;border:1px solid #e5dfc8;border-radius:6px;border-top:4px solid #C9A962;padding:14px 16px}
 .lead-three-card.ampel-warn{border-top-color:#D4706E}
 .lead-three-card.ampel-ok{border-top-color:#6EC49E}
@@ -874,8 +911,7 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 
 /* BOARD-spezifisch — Hero, One-Pager, sehr knapp */
 .board-hero{background:linear-gradient(135deg,#fff8eb 0%,#fdfbf6 100%);border:1px solid #d8cfb6;border-radius:8px;padding:32px 28px;margin:20px 0 28px}
-.board-hero-row{display:grid;grid-template-columns:1fr;gap:20px}
-.board-hero-row{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.board-hero-row{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
 .board-hero-cell{}
 .board-hero-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px}
 .board-hero-value{font-size:24px;font-weight:700;color:#6c5a2c;font-variant-numeric:tabular-nums;line-height:1.1;margin-bottom:4px}
@@ -885,7 +921,7 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .board-disclaimer{font-size:11px;color:#888;text-align:center;margin-top:24px}
 
 @media (max-width:640px){
-  .coach-minikpi,.lead-three,.chef-matrix,.board-hero-row,.board-pies{grid-template-columns:1fr}
+  .coach-minikpi,.lead-three,.lead-four,.chef-matrix,.board-hero-row,.board-pies{grid-template-columns:1fr}
   .prodbar-row{grid-template-columns:100px 1fr 60px}
   .cp-card-body{flex-direction:column;align-items:flex-start;gap:6px}
 }

@@ -15,6 +15,7 @@ import {
   esc,
   fmtHoursShort,
   interpretLeakPct,
+  interpretReactiveShare,
   renderBars,
   renderFindingsBlock,
 } from './shared';
@@ -70,6 +71,15 @@ export function renderBoardBody(data: ReportData): string {
     <div class="board-hero-label">Profil</div>
     <div class="board-hero-value">${k.leakPct.toFixed(0)}% Versickerung <span class="scale-badge scale-${leakScale.level}">${leakScale.label}</span></div>
     <div class="board-hero-sub">Anteil der Zeit, die im Tracker explizit als „nicht produktiv" markiert wurde — Selbsteinschätzung der Person, nicht algorithmische Bewertung. ${profilSubParts.join(' ')}</div>
+  </div>`);
+
+  // Reaktivitäts-Cell (Welle 6) — strategische Profil-Aussage. Bei
+  // fremdgetriebenen Behörden-Teams ist das oft die wichtigste Cell.
+  const reactScale = interpretReactiveShare(k.reactivePct);
+  heroRows.push(`<div class="board-hero-cell">
+    <div class="board-hero-label">Reaktivität</div>
+    <div class="board-hero-value">${k.reactivePct.toFixed(0)}% <span class="scale-badge scale-${reactScale.level}">${reactScale.label}</span></div>
+    <div class="board-hero-sub">Anteil der Arbeitszeit in reaktiven Projekten (Medienanfragen, BGÖ, Bürger, Krise, politische Geschäfte). Beschreibt das Profil der Periode — niedrig heißt Strategie-Raum, hoch heißt fremdgetriebener Betrieb.</div>
   </div>`);
 
   const heroHtml = `<div class="board-hero">
