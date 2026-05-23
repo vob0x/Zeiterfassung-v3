@@ -256,6 +256,27 @@ export interface Finding {
 }
 
 /**
+ * Welle 5b — UserBaseline: personalisierte Statistik aus dem aktuellen
+ * Range, mit der bestehende fixe Schwellen ersetzt werden. Ziel: für
+ * jemand mit 6h-Median-Tagen ist ein 10h-Tag bemerkenswert, für jemand
+ * mit 11h-Median ist er normal. Beide bekommen jetzt nicht mehr dasselbe
+ * Finding.
+ *
+ * isReliable === false bedeutet: zu wenig Beobachtungen (< 10 aktive
+ * Tage), Detektor fällt auf die alten fixen Schwellen zurück.
+ */
+export interface UserBaseline {
+  observations: number;
+  isReliable: boolean;
+  dayWallclockMs: { median: number; mad: number; p90: number };
+  dayPresenceMs: { median: number; mad: number; p90: number };
+  /** Slot-Längen aus allen erfassten Einträgen. */
+  slotLengthMs: { median: number; p90: number };
+  /** Pro-Tag-MT-Faktor (Naive/Wallclock je Tag), Median über die Tage. */
+  multiTaskingFactor: { median: number };
+}
+
+/**
  * Welle 5a — Change-Point: ein erkannter Bruch in einer wöchentlichen
  * Zeitreihe. Detektor läuft hybrid (Z-Score wenn >=6 Wochen, %-Schwelle
  * bei 3-5 Wochen, gar nicht bei <3). Pro Metrik wird höchstens ein
@@ -427,6 +448,12 @@ export interface ReportData {
    * Range zu kurz ist (< 3 verwertbare Wochen).
    */
   changePoints: ChangePoint[];
+  /**
+   * Welle 5b — personalisierte Statistik-Baseline aus dem aktuellen
+   * Range. Wird von den Detektoren der Findings benutzt, um Schwellen
+   * an die Person anzupassen (Hochlast / lange Tage / Burst / MT-Faktor).
+   */
+  baseline: UserBaseline;
   /** Lens, mit der dieser Report generiert wurde (für den Dispatcher). */
   lens: ReportLens;
   absences: AbsenceCount[];
@@ -1250,6 +1277,82 @@ function buildChangePoints(weeks: ReportData['weeks']): ChangePoint[] {
   return result;
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+   Welle 5b — UserBaseline (personalisierte Statistik)
+   ───────────────────────────────────────────────────────────────────── */
+
+/** P-Perzentil mit linearer Interpolation (zwischen den Stützstellen). */
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  if (sorted.length === 1) return sorted[0];
+  const rank = (p / 100) * (sorted.length - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+  const frac = rank - lo;
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * frac;
+}
+
+/**
+ * Baut die personalisierte Baseline aus dem aktuellen Range. Liefert
+ * eine Struktur, die in den Findings als Vergleichsmaßstab dient.
+ */
+function buildUserBaseline(
+  dayWallMsMap: Map<string, number>,
+  dayPresMsMap: Map<string, number>,
+  dayNaiveMsMap: Map<string, number>,
+  entries: TimeEntry[]
+): UserBaseline {
+  // Pro-Tag-Statistik aus den Map-Werten
+  const dayWallValues: number[] = [];
+  dayWallMsMap.forEach((v) => {
+    if (v > 0) dayWallValues.push(v);
+  });
+  const dayPresValues: number[] = [];
+  dayPresMsMap.forEach((v) => {
+    if (v > 0) dayPresValues.push(v);
+  });
+
+  // Pro-Tag-MT-Faktor (Naive/Wallclock je Tag). Nur Tage mit
+  // wallMs > 0 fließen ein.
+  const dayMtValues: number[] = [];
+  dayWallMsMap.forEach((wallMs, d) => {
+    if (wallMs <= 0) return;
+    const naive = dayNaiveMsMap.get(d) || 0;
+    dayMtValues.push(naive / wallMs);
+  });
+
+  // Slot-Längen aus allen Einträgen
+  const slotLengthValues: number[] = entries
+    .map((e) => e.duration_ms || 0)
+    .filter((v) => v > 0);
+
+  const observations = dayWallValues.length;
+  const isReliable = observations >= 10;
+
+  return {
+    observations,
+    isReliable,
+    dayWallclockMs: {
+      median: median(dayWallValues),
+      mad: mad(dayWallValues),
+      p90: percentile(dayWallValues, 90),
+    },
+    dayPresenceMs: {
+      median: median(dayPresValues),
+      mad: mad(dayPresValues),
+      p90: percentile(dayPresValues, 90),
+    },
+    slotLengthMs: {
+      median: median(slotLengthValues),
+      p90: percentile(slotLengthValues, 90),
+    },
+    multiTaskingFactor: {
+      median: median(dayMtValues),
+    },
+  };
+}
+
 /**
  * Welle 5a Kontext-Pass — generiert pro Change-Point vier optionale
  * Kontext-Sätze in einfacher Sprache. Wird sowohl von der Findings-
@@ -1453,14 +1556,18 @@ export function buildReportData(
   let totalPresMs = 0;
   const dayWallMs = new Map<string, number>();
   const dayPresMs = new Map<string, number>();
+  // Welle 5b — pro-Tag naive-Summe für UserBaseline (MT-Faktor je Tag).
+  const dayNaiveMs = new Map<string, number>();
   byDay.forEach((es, d) => {
     const w = computeUnionMs(es);
     const presenceEntries = es.filter(
       (e) => !isMidnightSpillover(e, splitTails)
     );
     const p = computePresenceForDayMs(presenceEntries);
+    const naiveSum = es.reduce((sum, e) => sum + (e.duration_ms || 0), 0);
     dayWallMs.set(d, w);
     dayPresMs.set(d, p);
+    dayNaiveMs.set(d, naiveSum);
     totalWallMs += w;
     totalPresMs += p;
   });
@@ -1713,6 +1820,14 @@ export function buildReportData(
   // Welle 5a — Change-Points auf der wöchentlichen Zeitreihe.
   const changePoints = buildChangePoints(weeks);
 
+  // Welle 5b — UserBaseline für personalisierte Schwellen in Findings.
+  const baseline = buildUserBaseline(
+    dayWallMs,
+    dayPresMs,
+    dayNaiveMs,
+    nonAbsence
+  );
+
   // ─── Findings (zielgruppen-klassifiziert) ──────────────────────────
   // Jedes Finding bekommt audiences[] mit. Begründung pro Klassifikation
   // im Kommentar — die Heuristik: wer kann mit der Aussage etwas tun?
@@ -1721,12 +1836,15 @@ export function buildReportData(
   // raus aus dem Report (→ dataQualityIssues für den Manage-Tab).
   const findings: Finding[] = [];
 
-  // Lange Tage (>14h Wallclock): operatives Belastungs-Signal — relevant
-  // für Coach (Energie), Lead (Steuerung), Chef (Auslastung). Nicht Board
-  // (Detail-Ebene zu fein).
+  // Sehr lange Tage: personalisiert via UserBaseline. Schwelle ist
+  // max(12h, baseline.dayWallclockMs.p90 * 1.3) — wenn baseline
+  // unreliable, Fallback auf den alten festen 14h-Wert.
+  const veryLongThresholdMs = baseline.isReliable
+    ? Math.max(12 * 60 * 60_000, baseline.dayWallclockMs.p90 * 1.3)
+    : 14 * 60 * 60_000;
   const veryLongDays: Array<{ date: string; ms: number }> = [];
   dayWallMs.forEach((ms, d) => {
-    if (ms > 14 * 60 * 60_000) veryLongDays.push({ date: d, ms });
+    if (ms > veryLongThresholdMs) veryLongDays.push({ date: d, ms });
   });
   if (veryLongDays.length > 0) {
     veryLongDays.sort((a, b) => b.ms - a.ms);
@@ -1734,10 +1852,13 @@ export function buildReportData(
       .slice(0, 3)
       .map((x) => `${x.date} (${fmtHours(x.ms)})`)
       .join(', ');
+    const baselineSentence = baseline.isReliable
+      ? ` Zur Einordnung: dein typischer Tag hat ${fmtHours(baseline.dayWallclockMs.median)} echte Arbeitszeit, deine längsten 10% liegen bei mindestens ${fmtHours(baseline.dayWallclockMs.p90)} — die obigen Tage sprengen auch diese Spitze.`
+      : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 14 Stunden gesetzt.`;
     findings.push({
       level: 'info',
       audiences: ['coach', 'lead', 'chef'],
-      htmlMessage: `<b>${veryLongDays.length} Tag(e) mit über 14h erfasster Arbeit</b> (${examples}). Konkret heißt das: an diesen Tagen wurden mehr Stunden eingebucht als ein normaler Arbeitstag faktisch lang ist — oft ein Hinweis darauf, dass mehrere Tage in einem Rutsch nacherfasst wurden. Für sauberere Statistiken die Einträge auf die echten Tage zurückverteilen.`,
+      htmlMessage: `<b>${veryLongDays.length} außergewöhnlich lange${veryLongDays.length === 1 ? 'r' : ''} Tag${veryLongDays.length === 1 ? '' : 'e'}</b> (${examples}). Konkret heißt das: an diesen Tagen wurde substanziell mehr Arbeit erfasst, als selbst deine längsten gewöhnlichen Tage haben. Häufige Ursache: mehrere Tage wurden in einem Rutsch nacherfasst — für sauberere Statistiken auf die echten Tage zurückverteilen.${baselineSentence}`,
     });
   }
 
@@ -1754,12 +1875,20 @@ export function buildReportData(
     });
   }
 
-  // Multi-Tasking (Parallel-Arbeit) sehr hoch: Lead, Chef.
-  if (mtFactor > 1.5) {
+  // Parallel-Arbeit auffällig: personalisiert. Schwelle ist
+  // max(1.4, baseline.median * 1.4) — relativ zur typischen
+  // Parallelitäts-Stärke dieser Person.
+  const mtThreshold = baseline.isReliable
+    ? Math.max(1.4, baseline.multiTaskingFactor.median * 1.4)
+    : 1.5;
+  if (mtFactor > mtThreshold) {
+    const baselineSentence = baseline.isReliable
+      ? ` Zur Einordnung: dein typischer Tag hat Parallel-Faktor ${baseline.multiTaskingFactor.median.toFixed(2)} — der aktuelle Wert liegt deutlich darüber.`
+      : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 1.5 gesetzt.`;
     findings.push({
       level: 'info',
       audiences: ['lead', 'chef'],
-      htmlMessage: `<b>Auffällig viel Parallel-Arbeit:</b> pro echter Arbeitsstunde fielen ${mtFactor.toFixed(2)}h Aufgaben an. Konkret heißt das: oft liefen mehrere Themen gleichzeitig im selben Slot (z.B. mehrere Stakeholder gleichzeitig zugewiesen). Entweder bewusste Mehr-Mandanten-Steuerung — oder vergessene Tracker, die nicht gestoppt wurden. Lohnt sich, ein paar Stichproben zu prüfen.`,
+      htmlMessage: `<b>Auffällig viel Parallel-Arbeit:</b> pro echter Arbeitsstunde fielen ${mtFactor.toFixed(2)}h Aufgaben an. Konkret heißt das: oft liefen mehrere Themen gleichzeitig im selben Slot (z.B. mehrere Stakeholder gleichzeitig zugewiesen). Entweder bewusste Mehr-Mandanten-Steuerung — oder vergessene Tracker, die nicht gestoppt wurden. Lohnt sich, ein paar Stichproben zu prüfen.${baselineSentence}`,
     });
   }
 
@@ -1843,12 +1972,25 @@ export function buildReportData(
     }
   }
 
-  // Belastungs-Spitzen: Coach (Energie), Lead (Steuerung), Chef (Linie).
-  if (weekday.highLoadDaysCount >= 3) {
+  // Belastungs-Spitzen: personalisiert. Statt fixer 10h-Schwelle:
+  // baseline.dayPresenceMs.p90 (mindestens 8h absolut, damit das auch
+  // bei Teilzeit-Personen sinnvoll bleibt). Fallback: 10h fest.
+  const highLoadThresholdMs = baseline.isReliable
+    ? Math.max(8 * 60 * 60_000, baseline.dayPresenceMs.p90)
+    : 10 * 60 * 60_000;
+  let personalizedHighLoadCount = 0;
+  dayPresMs.forEach((ms) => {
+    if (ms >= highLoadThresholdMs) personalizedHighLoadCount += 1;
+  });
+  const highLoadHoursLabel = `${Math.round(highLoadThresholdMs / 3_600_000)}`;
+  if (personalizedHighLoadCount >= 3) {
+    const baselineSentence = baseline.isReliable
+      ? ` Zur Einordnung: das ist deine persönliche Schwelle — der typische Tag liegt bei ${fmtHours(baseline.dayPresenceMs.median)} Anwesenheit, die längsten 10% bei mindestens ${fmtHours(baseline.dayPresenceMs.p90)}.`
+      : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 10 Stunden gesetzt.`;
     findings.push({
       level: 'warn',
       audiences: ['coach', 'lead', 'chef'],
-      htmlMessage: `<b>${weekday.highLoadDaysCount} besonders lange Tage</b> mit mindestens 10 Stunden Anwesenheit. Konkret heißt das: zwischen erstem und letztem Eintrag dieser Tage lagen mindestens 10 Stunden — das ist überdurchschnittlich lang. Ein einzelner solcher Tag ist kein Drama; drei oder mehr deuten auf ein Belastungs-Muster, das einen Blick auf die Steuerung verdient: Deadline-Stau, Personal-Engpass, oder einfach Phase.`,
+      htmlMessage: `<b>${personalizedHighLoadCount} besonders lange Tage</b> mit mindestens ${highLoadHoursLabel} Stunden Anwesenheit. Konkret heißt das: zwischen erstem und letztem Eintrag dieser Tage lagen mindestens ${highLoadHoursLabel} Stunden — für diese Person überdurchschnittlich lang. Ein einzelner solcher Tag ist kein Drama; drei oder mehr deuten auf ein Belastungs-Muster, das einen Blick auf die Steuerung verdient: Deadline-Stau, Personal-Engpass, oder einfach Phase.${baselineSentence}`,
     });
   }
 
@@ -1873,12 +2015,20 @@ export function buildReportData(
     });
   }
 
-  // Lange Arbeitsphasen ohne Pause: Coach.
-  if (rhythm.burst.longestBurstMin >= 240) {
+  // Lange Arbeitsphasen ohne Pause: personalisiert. Schwelle (in
+  // Minuten) ist max(180min, baseline.slot.p90 * 1.5 / 60_000) —
+  // relativ zur typischen Slot-Länge der Person. Fallback: 240min.
+  const burstThresholdMinPers = baseline.isReliable
+    ? Math.max(180, (baseline.slotLengthMs.p90 * 1.5) / 60_000)
+    : 240;
+  if (rhythm.burst.longestBurstMin >= burstThresholdMinPers) {
+    const baselineSentence = baseline.isReliable
+      ? ` Zur Einordnung: deine typische Slot-Länge ist ${fmtHours(baseline.slotLengthMs.median)}, die längsten 10% deiner Slots gehen bis ${fmtHours(baseline.slotLengthMs.p90)} — die ${Math.round(rhythm.burst.longestBurstMin / 60)}h-Phase ist also auch für dich substanziell lang.`
+      : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 4 Stunden gesetzt.`;
     findings.push({
       level: 'info',
       audiences: ['coach'],
-      htmlMessage: `<b>Längste Arbeitsphase am Stück: ${Math.round(rhythm.burst.longestBurstMin / 60)}h ohne erfasste Pause</b> am ${htmlEsc(rhythm.burst.longestBurstDate ?? '')}. Konkret heißt das: an diesem Tag lief mindestens ein Stück über 4 Stunden ohne sichtbare Unterbrechung. Vielleicht eine bewusste Tiefen-Phase — aber was hätte eine echte 15-Minuten-Pause dazwischen verändert (Klarheit, Energie für den Nachmittag)?`,
+      htmlMessage: `<b>Längste Arbeitsphase am Stück: ${Math.round(rhythm.burst.longestBurstMin / 60)}h ohne erfasste Pause</b> am ${htmlEsc(rhythm.burst.longestBurstDate ?? '')}. Konkret heißt das: an diesem Tag lief mindestens ein Stück über die für dich übliche Slot-Länge hinaus ohne sichtbare Unterbrechung. Vielleicht eine bewusste Tiefen-Phase — aber was hätte eine echte 15-Minuten-Pause dazwischen verändert (Klarheit, Energie für den Nachmittag)?${baselineSentence}`,
     });
   }
   if (rhythm.burst.longBurstCount >= 3) {
@@ -2111,6 +2261,7 @@ export function buildReportData(
     multitasking,
     projektLifecycle,
     changePoints,
+    baseline,
     lens,
     absences,
     findings,
