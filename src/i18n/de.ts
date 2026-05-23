@@ -201,6 +201,9 @@ export const de = {
     deleteConfirm: '„{name}" wirklich löschen?',
     deleteConfirmInUse:
       '„{name}" wird in {count} Einträgen verwendet. Wenn du es löschst, behalten diese Einträge den Wert als Freitext (sind aber nicht mehr in der Master-Liste). Trotzdem löschen?',
+    dataQuality: 'Datenqualität',
+    dataQualityHint:
+      'Schreibweisen unten in den jeweiligen Sections konsolidieren — sonst zerteilt sich die Report-Aggregat-Sicht künstlich.',
   },
 
   team: {

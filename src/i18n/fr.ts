@@ -201,6 +201,9 @@ export const fr = {
     deleteConfirm: 'Vraiment supprimer « {name} » ?',
     deleteConfirmInUse:
       "« {name} » est utilisé dans {count} entrées. Si tu le supprimes, ces entrées conservent la valeur en texte libre (mais ne seront plus dans la liste). Supprimer quand même ?",
+    dataQuality: 'Qualité des données',
+    dataQualityHint:
+      "Harmoniser les orthographes dans les sections ci-dessous — sinon la vue agrégée du rapport se fragmente artificiellement.",
   },
 
   team: {

@@ -146,9 +146,113 @@ export interface WeekdayProfile {
   highLoadDaysCount: number; // Tage mit >= 10h Präsenz
 }
 
+/**
+ * Tagesteil-Verteilung — wo im Tag fällt die Arbeit an?
+ * Morning 06–12 · Afternoon 12–18 · Evening 18–23 · Night 23–06.
+ * dominantPart = Tagesteil mit ≥ 40 % Anteil, sonst 'gemischt'.
+ */
+export interface DayPartProfile {
+  morningMs: number;
+  afternoonMs: number;
+  eveningMs: number;
+  nightMs: number;
+  dominantPart: 'morgens' | 'mittags' | 'abends' | 'nachts' | 'gemischt';
+  dominantPct: number;
+}
+
+/**
+ * Rhythmus-Festigkeit — wie konstant ist der Tagesablauf?
+ * Spreads in Minuten (Standardabweichung der Tages-Start/End-Zeiten).
+ * weekConsistencyCV = Variationskoeffizient der Wochen-Wallclock.
+ *
+ * Klassifikation:
+ *   'fix':        Start-Spread < 45 min UND End-Spread < 60 min
+ *   'rhythmisch': Start-Spread < 90 min UND End-Spread < 120 min
+ *   'gleitend':   alles darüber
+ */
+export interface RhythmConsistency {
+  startSpreadMin: number;
+  endSpreadMin: number;
+  rhythm: 'fix' | 'rhythmisch' | 'gleitend';
+  weekConsistencyCV: number | null;
+}
+
+/**
+ * Slot-Längen-Histogramm. Bins: micro < 15min · short 15–60 · medium 60–120
+ * · long 120–240 · deep > 240. deepFocusPct = Anteil ZEIT in Long+Deep-Slots.
+ */
+export interface SlotLengthHistogram {
+  microCount: number;
+  shortCount: number;
+  mediumCount: number;
+  longCount: number;
+  deepCount: number;
+  totalCount: number;
+  deepFocusPct: number;
+}
+
+/**
+ * Erfassungs-Disziplin — wie nachvollziehbar wurde erfasst?
+ *   notizCoverage:    % Einträge mit Notiz (≥1 Zeichen).
+ *   notizMedianChars: Median-Länge der vorhandenen Notizen.
+ *   editedPct:        % Einträge updated_at > created_at + 30 s.
+ */
+export interface ErfassungsDisziplin {
+  notizCoverage: number;
+  notizMedianChars: number;
+  editedPct: number;
+}
+
+/**
+ * Belastungs-Muster: längste Slot-Kette ohne Pause >15 min in Minuten.
+ * longBurstCount = Anzahl Slot-Ketten >180 min ohne Pause.
+ */
+export interface BurstPattern {
+  longestBurstMin: number;
+  longestBurstDate: string | null;
+  longBurstCount: number;
+}
+
+/**
+ * Projekt-Lebenszyklus — neu im Range, im Range ausgelaufen.
+ * Vergleich 1. vs 2. Hälfte mit Mindest-Schwelle 1 h pro Projekt
+ * (sonst Rauschen durch Einzelslots).
+ */
+export interface ProjektLifecycle {
+  newcomers: BreakdownRow[];
+  vanished: BreakdownRow[];
+}
+
+/**
+ * Multi-Stakeholder-Quote — % Einträge mit ≥ 2 Stakeholdern parallel.
+ * Indikator für Parallel-Mandate; geht über den globalen mtFactor hinaus.
+ */
+export interface MultiTaskingProfile {
+  multiStakeholderPct: number;
+}
+
+/**
+ * Datenqualitäts-Issues — gehen NICHT in den Report, sondern in den
+ * Manage-Tab. Disziplin-Themen sollen am Datenort gelöst werden, nicht
+ * im Bericht angeprangert sein.
+ */
+export interface DataQualityIssue {
+  type: 'duplicate-taetigkeit';
+  message: string;
+  /** Konkrete Werte, die im Manage-Tab sichtbar gemacht werden. */
+  items: string[];
+}
+
+/**
+ * Eine Finding ist zielgruppenklassifiziert. Wenn `audiences` undefined
+ * ist, gilt das Finding für alle Brillen. Die Klassifikation hält ein
+ * Coach-Report von Compliance-Findings und einen Board-Report von
+ * Detail-Hinweisen frei.
+ */
 export interface Finding {
   level: 'warn' | 'info' | 'ok';
   htmlMessage: string;
+  audiences?: ReportLens[];
 }
 
 export interface ReportData {
@@ -208,11 +312,26 @@ export interface ReportData {
   weekday: WeekdayProfile;
   /** Konzentrations-Drift 1. vs 2. Periodenhälfte. */
   drift: ConcentrationDrift | null;
+  /** Tagesteil-Modus + Rhythmus-Festigkeit + Burst. Phase A. */
+  rhythm: {
+    dayPart: DayPartProfile;
+    consistency: RhythmConsistency;
+    burst: BurstPattern;
+  };
+  /** Slot-Längen-Histogramm + Tiefen-Fokus-Quote. Phase A. */
+  slotLength: SlotLengthHistogram;
+  /** Erfassungs-Disziplin (Notiz + Edit-Quote). Phase A. */
+  disziplin: ErfassungsDisziplin;
+  /** Multi-Stakeholder-Quote. Phase A. */
+  multitasking: MultiTaskingProfile;
+  /** Projekt-Lebenszyklus 1. vs 2. Hälfte. Phase A. */
+  projektLifecycle: ProjektLifecycle;
+  /** Lens, mit der dieser Report generiert wurde (für den Dispatcher). */
+  lens: ReportLens;
   absences: AbsenceCount[];
   findings: Finding[];
-  /** Qualitatives Management-Summary als HTML (mehrere Paragraphen).
-   *  User kann's im Modal editieren. */
-  narrativeHtml: string;
+  /** Datenqualitäts-Issues für den Manage-Tab. NICHT im Report sichtbar. */
+  dataQualityIssues: DataQualityIssue[];
 }
 
 interface BuildOptions {
@@ -480,6 +599,366 @@ function buildWeekdayProfile(
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+   Phase-A-Datenpunkte: Tageszeit, Rhythmus, Slot-Länge, Disziplin,
+   Burst, Lifecycle, Multi-Stakeholder.
+   Alle reine Funktionen — Input nonAbsence-Einträge / Maps, Output Struct.
+   ───────────────────────────────────────────────────────────────────── */
+
+/** HH:MM → Minuten seit Mitternacht. Robust gegen leere Strings. */
+function timeToMin(hhmm: string): number {
+  if (!hhmm || hhmm.length < 4) return 0;
+  const [h, m] = hhmm.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/**
+ * Verteilt die Eintrags-Dauer auf die vier Tagesteile, indem die [start,end]-
+ * Spanne mit den jeweiligen Tagesteil-Fenstern verschnitten wird. So zählt
+ * ein Slot 11:30–13:00 anteilig in 'morgens' UND 'mittags' — kein Bucket-
+ * Effekt wo nur die Startzeit zählt.
+ */
+function buildDayPartProfile(entries: TimeEntry[]): DayPartProfile {
+  // Fenster in Minuten seit Mitternacht
+  const WINDOWS: Array<['morgens' | 'mittags' | 'abends' | 'nachts', number, number]> = [
+    ['morgens', 6 * 60, 12 * 60],
+    ['mittags', 12 * 60, 18 * 60],
+    ['abends', 18 * 60, 23 * 60],
+    ['nachts', 23 * 60, 24 * 60], // 23:00–24:00 — der Rest 00:00–06:00 wird unten gespiegelt
+  ];
+  let morningMs = 0;
+  let afternoonMs = 0;
+  let eveningMs = 0;
+  let nightMs = 0;
+
+  for (const e of entries) {
+    if (isAbsenceEntry(e)) continue;
+    const s = timeToMin(e.start_time);
+    let en = timeToMin(e.end_time);
+    if (en < s) en = s + Math.round((e.duration_ms || 0) / 60_000); // overnight-Fallback
+    // 00:00–06:00 → nightMs
+    if (s < 6 * 60) {
+      const overlap = Math.max(0, Math.min(en, 6 * 60) - s);
+      nightMs += overlap * 60_000;
+    }
+    for (const [part, ws, we] of WINDOWS) {
+      const overlap = Math.max(0, Math.min(en, we) - Math.max(s, ws));
+      if (overlap <= 0) continue;
+      const ms = overlap * 60_000;
+      if (part === 'morgens') morningMs += ms;
+      else if (part === 'mittags') afternoonMs += ms;
+      else if (part === 'abends') eveningMs += ms;
+      else nightMs += ms;
+    }
+  }
+
+  const total = morningMs + afternoonMs + eveningMs + nightMs;
+  const parts: Array<[DayPartProfile['dominantPart'], number]> = [
+    ['morgens', morningMs],
+    ['mittags', afternoonMs],
+    ['abends', eveningMs],
+    ['nachts', nightMs],
+  ];
+  const sorted = [...parts].sort((a, b) => b[1] - a[1]);
+  const [topName, topMs] = sorted[0];
+  const dominantPct = total > 0 ? (topMs / total) * 100 : 0;
+  const dominantPart: DayPartProfile['dominantPart'] =
+    dominantPct >= 40 ? topName : 'gemischt';
+
+  return {
+    morningMs,
+    afternoonMs,
+    eveningMs,
+    nightMs,
+    dominantPart,
+    dominantPct,
+  };
+}
+
+/** Standardabweichung einer Zahlenreihe. */
+function stdDev(values: number[]): number {
+  if (values.length === 0) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance =
+    values.reduce((a, v) => a + (v - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+/**
+ * Berechnet Rhythmus-Festigkeit:
+ *   - Tages-Anfangs- und End-Spreads als σ über alle aktiven Tage
+ *   - Wochen-CV = σ / Ø der Wochen-Wallclock (nur wenn ≥ 2 Wochen Daten)
+ * Klassifikation 'fix' / 'rhythmisch' / 'gleitend' steht im Interface.
+ */
+function buildRhythmConsistency(
+  byDay: Map<string, TimeEntry[]>,
+  weeks: Array<{ wallclockMs: number }>
+): RhythmConsistency {
+  const startMins: number[] = [];
+  const endMins: number[] = [];
+  byDay.forEach((es) => {
+    let firstStart = Infinity;
+    let lastEnd = -Infinity;
+    for (const e of es) {
+      if (isAbsenceEntry(e)) continue;
+      const s = timeToMin(e.start_time);
+      const en = timeToMin(e.end_time);
+      if (s < firstStart) firstStart = s;
+      if (en > lastEnd) lastEnd = en;
+    }
+    if (firstStart !== Infinity) startMins.push(firstStart);
+    if (lastEnd !== -Infinity) endMins.push(lastEnd);
+  });
+  const startSpread = stdDev(startMins);
+  const endSpread = stdDev(endMins);
+
+  let rhythm: RhythmConsistency['rhythm'];
+  if (startSpread < 45 && endSpread < 60) rhythm = 'fix';
+  else if (startSpread < 90 && endSpread < 120) rhythm = 'rhythmisch';
+  else rhythm = 'gleitend';
+
+  let weekCV: number | null = null;
+  if (weeks.length >= 2) {
+    const vals = weeks.map((w) => w.wallclockMs);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    if (mean > 0) weekCV = stdDev(vals) / mean;
+  }
+
+  return {
+    startSpreadMin: startSpread,
+    endSpreadMin: endSpread,
+    rhythm,
+    weekConsistencyCV: weekCV,
+  };
+}
+
+/**
+ * Slot-Längen-Histogramm + Tiefen-Fokus-Quote. Bins entsprechen den
+ * üblichen Arbeits-Phasen (Mini-Antwort, Normal-Slot, Vertiefung, Fokus-
+ * Block, Tiefenarbeit). deepFocusPct ist eine Zeit-Quote, keine Count-
+ * Quote — sonst würde viel-aber-kurz dasselbe Signal geben wie wenig-
+ * aber-tief.
+ */
+function buildSlotLengthHistogram(entries: TimeEntry[]): SlotLengthHistogram {
+  const MICRO = 15 * 60_000;
+  const SHORT = 60 * 60_000;
+  const MEDIUM = 120 * 60_000;
+  const LONG = 240 * 60_000;
+  let micro = 0;
+  let short = 0;
+  let medium = 0;
+  let long = 0;
+  let deep = 0;
+  let total = 0;
+  let deepFocusMs = 0;
+  let totalMs = 0;
+  for (const e of entries) {
+    if (isAbsenceEntry(e)) continue;
+    const ms = e.duration_ms || 0;
+    if (ms <= 0) continue;
+    total += 1;
+    totalMs += ms;
+    if (ms < MICRO) micro += 1;
+    else if (ms < SHORT) short += 1;
+    else if (ms < MEDIUM) medium += 1;
+    else if (ms < LONG) {
+      long += 1;
+      deepFocusMs += ms;
+    } else {
+      deep += 1;
+      deepFocusMs += ms;
+    }
+  }
+  return {
+    microCount: micro,
+    shortCount: short,
+    mediumCount: medium,
+    longCount: long,
+    deepCount: deep,
+    totalCount: total,
+    deepFocusPct: totalMs > 0 ? (deepFocusMs / totalMs) * 100 : 0,
+  };
+}
+
+/**
+ * Erfassungs-Disziplin. notizMedianChars wird ausschließlich über die
+ * NICHT-leeren Notizen berechnet, damit der Median nicht von der
+ * Notiz-Coverage verdeckt wird.
+ *
+ * editedPct: ein Eintrag gilt als „nachträglich angepasst", wenn
+ * updated_at mindestens 30 s nach created_at liegt. Anlage und sofortige
+ * Korrektur fällt damit nicht ins Gewicht.
+ */
+function buildErfassungsDisziplin(entries: TimeEntry[]): ErfassungsDisziplin {
+  if (entries.length === 0) {
+    return { notizCoverage: 0, notizMedianChars: 0, editedPct: 0 };
+  }
+  const notizLengths: number[] = [];
+  let withNotiz = 0;
+  let edited = 0;
+  for (const e of entries) {
+    if (isAbsenceEntry(e)) continue;
+    const n = (e.notiz || '').trim();
+    if (n.length > 0) {
+      withNotiz += 1;
+      notizLengths.push(n.length);
+    }
+    if (e.created_at && e.updated_at) {
+      const c = new Date(e.created_at).getTime();
+      const u = new Date(e.updated_at).getTime();
+      if (Number.isFinite(c) && Number.isFinite(u) && u - c > 30_000) {
+        edited += 1;
+      }
+    }
+  }
+  notizLengths.sort((a, b) => a - b);
+  const median =
+    notizLengths.length === 0
+      ? 0
+      : notizLengths[Math.floor(notizLengths.length / 2)];
+  const nonAbsenceCount = entries.filter((e) => !isAbsenceEntry(e)).length;
+  return {
+    notizCoverage:
+      nonAbsenceCount > 0 ? (withNotiz / nonAbsenceCount) * 100 : 0,
+    notizMedianChars: median,
+    editedPct:
+      nonAbsenceCount > 0 ? (edited / nonAbsenceCount) * 100 : 0,
+  };
+}
+
+/**
+ * Burst-Erkennung pro Tag: aufeinanderfolgende Slots ohne Pause > 15 min
+ * werden zu einer Kette aggregiert. Die längste Kette und die Anzahl der
+ * Ketten > 180 min werden zurückgeliefert.
+ *
+ * Funktioniert sortiert nach start_time. Über-Mitternacht-Spillover bleibt
+ * unberücksichtigt — der Helper sieht jeden Tag isoliert.
+ */
+function buildBurstPattern(byDay: Map<string, TimeEntry[]>): BurstPattern {
+  const PAUSE_THRESHOLD_MIN = 15;
+  const LONG_BURST_MIN = 180;
+  let maxBurst = 0;
+  let maxBurstDate: string | null = null;
+  let longBurstCount = 0;
+
+  byDay.forEach((es, date) => {
+    const slots = es
+      .filter((e) => !isAbsenceEntry(e) && e.start_time && e.end_time)
+      .map((e) => ({
+        s: timeToMin(e.start_time),
+        en: Math.max(timeToMin(e.end_time), timeToMin(e.start_time)),
+      }))
+      .sort((a, b) => a.s - b.s);
+    if (slots.length === 0) return;
+
+    let curStart = slots[0].s;
+    let curEnd = slots[0].en;
+    const closeAndCheck = () => {
+      const burstLen = curEnd - curStart;
+      if (burstLen > maxBurst) {
+        maxBurst = burstLen;
+        maxBurstDate = date;
+      }
+      if (burstLen >= LONG_BURST_MIN) longBurstCount += 1;
+    };
+
+    for (let i = 1; i < slots.length; i++) {
+      const gap = slots[i].s - curEnd;
+      if (gap <= PAUSE_THRESHOLD_MIN) {
+        curEnd = Math.max(curEnd, slots[i].en);
+      } else {
+        closeAndCheck();
+        curStart = slots[i].s;
+        curEnd = slots[i].en;
+      }
+    }
+    closeAndCheck();
+  });
+
+  return {
+    longestBurstMin: maxBurst,
+    longestBurstDate: maxBurstDate,
+    longBurstCount,
+  };
+}
+
+/**
+ * Projekt-Lebenszyklus. Projekte, die NUR in der zweiten Hälfte mit ≥ 1 h
+ * vorkommen, gelten als „neu im Range". Analog für „ausgelaufen".
+ */
+function buildProjektLifecycle(
+  firstEntries: TimeEntry[],
+  secondEntries: TimeEntry[]
+): ProjektLifecycle {
+  const MIN_MS = 60 * 60_000;
+  const firstProj = buildBreakdown(firstEntries, 'projekt');
+  const secondProj = buildBreakdown(secondEntries, 'projekt');
+  const firstSet = new Set(firstProj.map((r) => r.name));
+  const secondSet = new Set(secondProj.map((r) => r.name));
+  const newcomers = secondProj.filter(
+    (r) => !firstSet.has(r.name) && r.ms >= MIN_MS && r.name !== '—'
+  );
+  const vanished = firstProj.filter(
+    (r) => !secondSet.has(r.name) && r.ms >= MIN_MS && r.name !== '—'
+  );
+  return { newcomers, vanished };
+}
+
+/**
+ * Multi-Stakeholder-Quote. Zählt Einträge mit ≥ 2 Stakeholdern in der
+ * stakeholder[]-Liste.
+ */
+function buildMultiTaskingProfile(entries: TimeEntry[]): MultiTaskingProfile {
+  let multi = 0;
+  let total = 0;
+  for (const e of entries) {
+    if (isAbsenceEntry(e)) continue;
+    total += 1;
+    const list = Array.isArray(e.stakeholder)
+      ? e.stakeholder
+      : e.stakeholder
+        ? [e.stakeholder]
+        : [];
+    if (list.length >= 2) multi += 1;
+  }
+  return {
+    multiStakeholderPct: total > 0 ? (multi / total) * 100 : 0,
+  };
+}
+
+/**
+ * Tippfehler-Detection für Tätigkeit. Wandert aus den Findings in die
+ * dataQualityIssues — dort gehört es hin, weil es ein Disziplin-Issue
+ * ist, kein Report-Befund. Wird vom Manage-Tab direkt aufgerufen.
+ */
+export function detectDataQualityIssues(entries: TimeEntry[]): DataQualityIssue[] {
+  const issues: DataQualityIssue[] = [];
+  const taetCount = new Map<string, number>();
+  for (const e of entries) {
+    const t = e.taetigkeit || '';
+    if (!t) continue;
+    taetCount.set(t, (taetCount.get(t) || 0) + 1);
+  }
+  const taetKeys = Array.from(taetCount.keys());
+  for (let i = 0; i < taetKeys.length; i++) {
+    for (let j = i + 1; j < taetKeys.length; j++) {
+      const a = taetKeys[i];
+      const b = taetKeys[j];
+      if (
+        a.trim().toLowerCase().replace(/\.$/, '') ===
+        b.trim().toLowerCase().replace(/\.$/, '')
+      ) {
+        issues.push({
+          type: 'duplicate-taetigkeit',
+          message: `„${a}" (${taetCount.get(a)}x) und „${b}" (${taetCount.get(b)}x) sind dieselbe Tätigkeit mit unterschiedlicher Schreibweise.`,
+          items: [a, b],
+        });
+      }
+    }
+  }
+  return issues;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
    Hauptfunktion
    ───────────────────────────────────────────────────────────────────── */
 
@@ -697,51 +1176,31 @@ export function buildReportData(
     totalNaiveMs,
     breakdowns.stakeholders
   );
+
+  // Phase-A-Datenpunkte: alle vor den Findings, damit die Findings sie
+  // referenzieren können.
+  const dayPart = buildDayPartProfile(nonAbsence);
+  const rhythmCons = buildRhythmConsistency(byDay, weeks);
+  const burst = buildBurstPattern(byDay);
+  const rhythm = { dayPart, consistency: rhythmCons, burst };
+  const slotLength = buildSlotLengthHistogram(nonAbsence);
+  const disziplin = buildErfassungsDisziplin(nonAbsence);
+  const multitasking = buildMultiTaskingProfile(nonAbsence);
+  const projektLifecycle = buildProjektLifecycle(firstEntries, secondEntries);
+  const dataQualityIssues = detectDataQualityIssues(entries);
   const weekday = buildWeekdayProfile(dayWallMs, dayPresMs);
 
-  // ─── Findings (Data-Hygiene + Beobachtungen) ─────────────────────
+  // ─── Findings (zielgruppen-klassifiziert) ──────────────────────────
+  // Jedes Finding bekommt audiences[] mit. Begründung pro Klassifikation
+  // im Kommentar — die Heuristik: wer kann mit der Aussage etwas tun?
+  // Coach = Selbst-Reflexion, Lead = 1:1-Steuerung, Chef = Linien-
+  // Steuerung, Board = strategische Headlines. Tippfehler-Finding ist
+  // raus aus dem Report (→ dataQualityIssues für den Manage-Tab).
   const findings: Finding[] = [];
 
-  // Tippfehler-Detection
-  const taetCount = new Map<string, number>();
-  for (const e of entries) {
-    const t = e.taetigkeit || '';
-    if (!t) continue;
-    taetCount.set(t, (taetCount.get(t) || 0) + 1);
-  }
-  const taetKeys = Array.from(taetCount.keys());
-  const dupPairs: Array<{ a: string; b: string; ca: number; cb: number }> = [];
-  for (let i = 0; i < taetKeys.length; i++) {
-    for (let j = i + 1; j < taetKeys.length; j++) {
-      const a = taetKeys[i];
-      const b = taetKeys[j];
-      if (
-        a.trim().toLowerCase().replace(/\.$/, '') ===
-        b.trim().toLowerCase().replace(/\.$/, '')
-      ) {
-        dupPairs.push({
-          a,
-          b,
-          ca: taetCount.get(a) || 0,
-          cb: taetCount.get(b) || 0,
-        });
-      }
-    }
-  }
-  if (dupPairs.length > 0) {
-    const msgs = dupPairs
-      .map(
-        (p) =>
-          `&quot;${htmlEsc(p.a)}&quot; (${p.ca}x) / &quot;${htmlEsc(p.b)}&quot; (${p.cb}x)`
-      )
-      .join(' &middot; ');
-    findings.push({
-      level: 'warn',
-      htmlMessage: `<b>Tippfehler in Tätigkeit:</b> ${msgs}. Im Verwaltungs-Tab konsolidieren — sonst zerteilt sich die Aggregat-Sicht künstlich.`,
-    });
-  }
-
-  // Lange Tage
+  // Lange Tage (>14h Wallclock): operatives Belastungs-Signal — relevant
+  // für Coach (Energie), Lead (Steuerung), Chef (Auslastung). Nicht Board
+  // (Detail-Ebene zu fein).
   const veryLongDays: Array<{ date: string; ms: number }> = [];
   dayWallMs.forEach((ms, d) => {
     if (ms > 14 * 60 * 60_000) veryLongDays.push({ date: d, ms });
@@ -754,11 +1213,13 @@ export function buildReportData(
       .join(', ');
     findings.push({
       level: 'info',
+      audiences: ['coach', 'lead', 'chef'],
       htmlMessage: `<b>${veryLongDays.length} Tag(e) mit &gt;14h Wallclock</b> (${examples}). Falls Nacherfassung mehrerer Tage in einem Schritt: für sauberere Kennzahlen auf die echten Tage rückverteilen.`,
     });
   }
 
-  // Konzentration
+  // Konzentrations-Risiko: strategische Frage — Lead, Chef, Board. Coach
+  // bekommt das nicht: ist nichts, was die Person für sich „lösen" kann.
   if (
     breakdowns.stakeholders.length > 0 &&
     breakdowns.stakeholders[0].pct > 35
@@ -766,76 +1227,82 @@ export function buildReportData(
     const top = breakdowns.stakeholders[0];
     findings.push({
       level: 'info',
-      htmlMessage: `<b>Konzentrations-Risiko ${htmlEsc(top.name)}:</b> ${top.pct.toFixed(0)}% der Zeit auf einen Stakeholder. Falls dieser Stakeholder wegfällt oder das Hauptprojekt abgeschlossen wird, verschiebt sich das Profil schnell. Frage als Teamleader: proaktive Diversifikation oder bewusste Akzeptanz dass die Rolle so fokussiert ist?`,
+      audiences: ['lead', 'chef', 'board'],
+      htmlMessage: `<b>Konzentrations-Risiko ${htmlEsc(top.name)}:</b> ${top.pct.toFixed(0)}% der Zeit auf einen Stakeholder. Falls dieser Stakeholder wegfällt oder das Hauptprojekt abgeschlossen wird, verschiebt sich das Profil schnell.`,
     });
   }
 
-  // Multi-Tasking sehr hoch
+  // Multi-Tasking sehr hoch: betrieblicher Steuerungs-Hinweis — Lead, Chef.
+  // Coach wäre zu Anklage-haft; Board ist zu detailliert.
   if (mtFactor > 1.5) {
     findings.push({
       level: 'info',
-      htmlMessage: `<b>Multi-Tasking sehr hoch (${mtFactor.toFixed(2)}x).</b> Falls als Belastung empfunden: prüfen ob einzelne Slots als Single-Task bewusst geplant werden können, oder ob hier vergessene Tracker-Stops Schatten-Stunden erzeugen.`,
+      audiences: ['lead', 'chef'],
+      htmlMessage: `<b>Multi-Tasking sehr hoch (${mtFactor.toFixed(2)}x).</b> Entweder bewusste Parallel-Steuerung oder Hinweis auf vergessene Tracker. Prüfen lohnt sich.`,
     });
   }
 
-  // Nicht-Produktiv hoch
+  // Nicht-Produktiv-Anteil hoch: operative Output-Frage — Lead, Chef.
+  // Coach würde das als Vorwurf lesen; das Thema gehört in den Lead-1:1.
   const nonprodMs = taetBuckets.get('Nicht produktiv') || 0;
   const nonprodPct = totalNaiveMs > 0 ? (nonprodMs / totalNaiveMs) * 100 : 0;
   if (nonprodPct > 45) {
     findings.push({
       level: 'info',
-      htmlMessage: `<b>Nicht-Produktiv-Anteil bei ${nonprodPct.toFixed(0)}%.</b> Lohnt ein Blick: welche der Top-Projekte dort sind wirklich nötig, welche könnten asynchron oder als kürzere Slots laufen?`,
+      audiences: ['lead', 'chef'],
+      htmlMessage: `<b>Nicht-Produktiv-Anteil bei ${nonprodPct.toFixed(0)}%.</b> Welche der Top-Projekte dort sind wirklich nötig, welche könnten asynchron oder kürzer laufen?`,
     });
   }
 
-  // Coverage schwach
+  // Coverage schwach (≥5 Tage <60%): Datenbasis-Hinweis. Coach (Doku-
+  // Disziplin), Lead (Belastbarkeit der 1:1-Daten), Chef (Vorbehalt im
+  // Bericht), Board (Disclaimer-Notiz).
   if (daysThin >= 5) {
     findings.push({
       level: 'info',
-      htmlMessage: `<b>${daysThin} Tage mit Tracking-Coverage unter 60%.</b> Auf den schwächsten Tagen ist die Detail-Verteilung im Report weniger belastbar — für wichtige Reports ggf. nachvollziehen wo die untrackten Stunden hingingen.`,
+      audiences: ['coach', 'lead', 'chef', 'board'],
+      htmlMessage: `<b>${daysThin} Tage mit Tracking-Coverage unter 60%.</b> Auf den schwächsten Tagen ist die Detail-Verteilung weniger belastbar.`,
     });
   }
 
   // ── Out-of-Scope-Triage pro Top-Stakeholder ──────────────────────
-  // Reaktiv-Verdacht: ein Stakeholder mit substanziellem Anteil, der
-  // überdurchschnittlich viele Mini-Einträge (<15min) bindet. Klassisches
-  // Muster für „ad-hoc-Anfragen außerhalb des Mandats".
+  // Reaktiv-Verdacht: gehört Coach (Selbst-Reflexion: was ist meine
+  // Schutz-Strategie) + Lead (Mandats-Hebel im 1:1).
   for (const sp of stakeholderProfiles) {
     if (sp.microTaskPct >= 40 && sp.entriesCount >= 5) {
       findings.push({
         level: 'warn',
-        htmlMessage: `<b>Reaktiv-Verdacht ${htmlEsc(sp.name)}:</b> ${sp.microTaskPct.toFixed(0)}% der Einträge sind unter 15 Minuten (Ø ${fmtHours(sp.avgEntryMs)}). Bei ${sp.pct.toFixed(0)}% Gesamtanteil deutet das auf ad-hoc-Aufträge hin. Empfehlung: Triage-Layer einziehen (Mailbox / fixe Sprechzeiten), damit kleine Anfragen gebündelt statt im Strom abgefangen werden.`,
+        audiences: ['coach', 'lead'],
+        htmlMessage: `<b>Reaktiv-Verdacht ${htmlEsc(sp.name)}:</b> ${sp.microTaskPct.toFixed(0)}% der Einträge sind unter 15 Minuten (Ø ${fmtHours(sp.avgEntryMs)}). Bei ${sp.pct.toFixed(0)}% Gesamtanteil deutet das auf ad-hoc-Aufträge hin. Triage-Layer (Mailbox / fixe Sprechzeiten) gibt Stunden zurück.`,
       });
     }
   }
 
-  // Out-of-Scope-Verdacht: hoher Nicht-produktiv-Anteil bei einem
-  // Stakeholder. Heißt: viel Zeit wird gebunden, aber kein Output entsteht.
+  // Out-of-Scope-Verdacht: rein Lead — Scope-Klärung ist Lead-Steuerung,
+  // nicht Selbst-Reflexion.
   for (const sp of stakeholderProfiles) {
     if (sp.nonprodPct >= 40 && sp.ms >= 2 * 60 * 60_000) {
       findings.push({
         level: 'warn',
-        htmlMessage: `<b>Out-of-Scope-Verdacht ${htmlEsc(sp.name)}:</b> ${sp.nonprodPct.toFixed(0)}% der gebundenen Zeit (${fmtHours(sp.ms)}) ist als „Nicht produktiv" verbucht. Frage als Teamleader: ist das Beziehungspflege, die später Output erzeugt — oder fließt hier Steuerung in einen Stakeholder, der eigentlich nicht zum Kernauftrag gehört?`,
+        audiences: ['lead'],
+        htmlMessage: `<b>Out-of-Scope-Verdacht ${htmlEsc(sp.name)}:</b> ${sp.nonprodPct.toFixed(0)}% der gebundenen Zeit (${fmtHours(sp.ms)}) ist als „Nicht produktiv" verbucht. Beziehungspflege oder Scope-Drift?`,
       });
     }
   }
 
-  // Format-Anomalie: hoher Meeting-Anteil bei einem Stakeholder, der
-  // eigentlich asynchron läuft. Wichtig für eine Kommunikationsfunktion,
-  // die Output liefern soll statt nur abzustimmen.
+  // Meeting-lastiges Format: betriebliche Format-Frage — Lead + Chef.
   for (const sp of stakeholderProfiles) {
     if (sp.meetingHeavyPct >= 50 && sp.ms >= 2 * 60 * 60_000) {
       findings.push({
         level: 'info',
-        htmlMessage: `<b>Meeting-lastiges Format ${htmlEsc(sp.name)}:</b> ${sp.meetingHeavyPct.toFixed(0)}% der Zeit in synchronen Formaten (Meeting/Telefon/Workshop). Lohnt der Check: welche dieser Termine könnten zu einer Mail oder einem 1-Pager komprimiert werden? Bei einer Output-Funktion ist Async-First meist die Effizienz-Reserve.`,
+        audiences: ['lead', 'chef'],
+        htmlMessage: `<b>Meeting-lastiges Format ${htmlEsc(sp.name)}:</b> ${sp.meetingHeavyPct.toFixed(0)}% in synchronen Formaten. Welche Termine könnten als Mail/1-Pager komprimiert werden?`,
       });
     }
   }
 
-  // Meetings ohne Output: Cross-Indikator. Wenn ein Stakeholder
-  // viele Meetings macht UND diese überwiegend als 'Nicht produktiv'
-  // verbucht sind, ist das ein konkreterer Verdacht als nur „viel
-  // Meeting" oder nur „viel Nicht-produktiv".
+  // Meetings ohne Output: konkretester Lead/Chef-Hinweis aller OOS-
+  // Indikatoren — explizite Output-Frage, kein Detail-Coach-Thema.
   for (const sp of stakeholderProfiles) {
     if (
       sp.meetingHeavyPct >= 30 &&
@@ -844,42 +1311,114 @@ export function buildReportData(
     ) {
       findings.push({
         level: 'warn',
-        htmlMessage: `<b>Meetings ohne Output ${htmlEsc(sp.name)}:</b> ${sp.meetingHeavyPct.toFixed(0)}% Meeting-Anteil, davon ${sp.meetingNonprodPct.toFixed(0)}% als Nicht-produktiv markiert. Klare Empfehlung: pro Termin eine Output-Frage (Was ist das Ergebnis? Welche Entscheidung? Welche Aktion?) — andernfalls Format-Wechsel auf Mail/Update.`,
+        audiences: ['lead', 'chef'],
+        htmlMessage: `<b>Meetings ohne Output ${htmlEsc(sp.name)}:</b> ${sp.meetingHeavyPct.toFixed(0)}% Meeting-Anteil, davon ${sp.meetingNonprodPct.toFixed(0)}% Nicht-produktiv. Pro Termin eine Output-Frage — andernfalls Format-Wechsel.`,
       });
     }
   }
 
-  // Doku-Disziplin: Stakeholder mit substanziellem Anteil aber kaum
-  // Notizen — Nachvollziehbarkeit leidet, gerade für Coach/Chef-Reports.
+  // Doku-Lücke: Coach (Selbst-Reflexion „ich verliere Kontext") + Lead
+  // (Nachvollziehbarkeit für Review). NICHT Chef/Board — zu detailliert.
   for (const sp of stakeholderProfiles) {
     if (sp.notizPct <= 20 && sp.pct >= 15 && sp.entriesCount >= 8) {
       findings.push({
         level: 'info',
-        htmlMessage: `<b>Doku-Lücke ${htmlEsc(sp.name)}:</b> Nur ${sp.notizPct.toFixed(0)}% der Einträge haben eine Notiz, bei ${sp.pct.toFixed(0)}% Gesamtanteil. Im Coaching-/Review-Gespräch fehlt der Kontext, was inhaltlich passiert ist. Eine 1-Wort-Notiz pro Slot ist meist genug.`,
+        audiences: ['coach', 'lead'],
+        htmlMessage: `<b>Doku-Lücke ${htmlEsc(sp.name)}:</b> Nur ${sp.notizPct.toFixed(0)}% der Einträge haben eine Notiz, bei ${sp.pct.toFixed(0)}% Gesamtanteil. Eine 1-Wort-Notiz pro Slot ist meist genug.`,
       });
     }
   }
 
-  // Hochlast: mehrere Tage über 10h Präsenz hintereinander. Coach- und
-  // Teamleader-Signal — Burnout-Vorstufe, falls keine Erholung dazwischen.
+  // Hochlast (≥3 Tage ≥10h): Belastungs-Signal — Coach (Energie), Lead
+  // (Steuerung), Chef (Linie). Board nicht — zu Detail-orientiert.
   if (weekday.highLoadDaysCount >= 3) {
     findings.push({
       level: 'warn',
-      htmlMessage: `<b>${weekday.highLoadDaysCount} Tage mit ≥10h Präsenz</b> im Zeitraum. Kein Drama bei vereinzelten Spitzen — wenn das aber ein Muster wird, lohnt der Blick auf Belastungssteuerung. Frage: was würde es brauchen, damit diese Tage planbar einkürzbar sind?`,
+      audiences: ['coach', 'lead', 'chef'],
+      htmlMessage: `<b>${weekday.highLoadDaysCount} Tage mit ≥10h Präsenz</b> im Zeitraum. Bei vereinzelten Spitzen kein Drama — als Muster lohnt der Blick auf Belastungssteuerung.`,
     });
   }
 
-  // Wochenend-Anteil
+  // Wochenend-Anteil: persönlich (Coach — Grenzen-Frage) + Lead
+  // (strukturelle Frage „reicht die Wochentag-Kapazität?"). NICHT Chef/
+  // Board — als Linien-Aussage zu intim, als Strategie-Aussage irrelevant.
   if (weekday.weekendMs > 0 && totalWallMs > 0) {
     const weekendShare = (weekday.weekendMs / totalWallMs) * 100;
     if (weekendShare >= 8) {
       findings.push({
         level: 'info',
-        htmlMessage: `<b>Wochenend-Anteil ${weekendShare.toFixed(0)}%</b> (${fmtHours(weekday.weekendMs)}). Falls bewusst geplant (Deadlines, Reisetage): okay. Falls regelmäßig: Indikator dass die Wochentag-Kapazität nicht reicht — strukturelle statt akute Frage.`,
+        audiences: ['coach', 'lead'],
+        htmlMessage: `<b>Wochenend-Anteil ${weekendShare.toFixed(0)}%</b> (${fmtHours(weekday.weekendMs)}). Bewusst geplant oder Indikator strukturell knapper Wochentag-Kapazität?`,
       });
     }
   }
 
+  // Tiefen-Fokus zu gering (<20% deepFocusPct + ≥30 Slots): Coach-relevant
+  // (Fokus-Frage), Chef-relevant (Output-Effizienz).
+  if (slotLength.totalCount >= 30 && slotLength.deepFocusPct < 20) {
+    findings.push({
+      level: 'info',
+      audiences: ['coach', 'chef'],
+      htmlMessage: `<b>Wenig Tiefenarbeit:</b> Nur ${slotLength.deepFocusPct.toFixed(0)}% der Zeit fällt auf Slots über 2h — der Rest ist Stückwerk. Wo könnte ein 4h-Block ohne Kalendertermine geplant werden?`,
+    });
+  }
+
+  // Burst-Pattern (Kette >4h ohne Pause): Coach (Erholungs-Frage). Lead
+  // nur wenn ≥3 lange Bursts (dann strukturell). Nicht Chef/Board.
+  if (rhythm.burst.longestBurstMin >= 240) {
+    findings.push({
+      level: 'info',
+      audiences: ['coach'],
+      htmlMessage: `<b>Längste Slot-Kette ${Math.round(rhythm.burst.longestBurstMin / 60)}h ohne Pause</b> am ${rhythm.burst.longestBurstDate}. Was hätte eine echte 15-Minuten-Pause dazwischen verändert?`,
+    });
+  }
+  if (rhythm.burst.longBurstCount >= 3) {
+    findings.push({
+      level: 'info',
+      audiences: ['lead'],
+      htmlMessage: `<b>${rhythm.burst.longBurstCount} Slot-Ketten über 3h ohne Pause</b> — Belastungs-Pattern mit struktureller Komponente. Was bricht den Strom regelmäßig auf?`,
+    });
+  }
+
+  // Wochen-Inkonsistenz (CV ≥ 0.5): Chef + Board — strategische Frage
+  // („sind die Wochen planbar?"). Coach nicht — als persönliche Kritik
+  // unfair, oft strukturell bedingt.
+  if (
+    rhythm.consistency.weekConsistencyCV !== null &&
+    rhythm.consistency.weekConsistencyCV >= 0.5
+  ) {
+    findings.push({
+      level: 'info',
+      audiences: ['chef', 'board'],
+      htmlMessage: `<b>Stark schwankende Wochenlast</b> (CV ${rhythm.consistency.weekConsistencyCV.toFixed(2)}) — die Wochen unterscheiden sich substantiell in der Auslastung. Plan- oder Ressourcen-Schwankung?`,
+    });
+  }
+
+  // Projekt-Lifecycle: Newcomers/Vanished — Chef (Linien-Trend) + Board
+  // (strategischer Wandel).
+  if (
+    projektLifecycle.newcomers.length > 0 ||
+    projektLifecycle.vanished.length > 0
+  ) {
+    const newNames = projektLifecycle.newcomers
+      .slice(0, 3)
+      .map((p) => `${htmlEsc(p.name)} (${fmtHours(p.ms)})`)
+      .join(', ');
+    const goneNames = projektLifecycle.vanished
+      .slice(0, 3)
+      .map((p) => `${htmlEsc(p.name)} (${fmtHours(p.ms)})`)
+      .join(', ');
+    const parts: string[] = [];
+    if (newNames) parts.push(`neu im Range: ${newNames}`);
+    if (goneNames) parts.push(`ausgelaufen: ${goneNames}`);
+    findings.push({
+      level: 'info',
+      audiences: ['chef', 'board'],
+      htmlMessage: `<b>Projekt-Bewegung:</b> ${parts.join(' · ')}.`,
+    });
+  }
+
+  // OK-Fallback: nur wenn rein NICHTS auffällig war — alle Brillen.
   if (findings.length === 0) {
     findings.push({
       level: 'ok',
@@ -895,36 +1434,8 @@ export function buildReportData(
     team: `Team-Report – ${subjectName}`,
   };
 
-  // Narrative HTML (mehrere Paragraphen)
-  const narrativeHtml = generateNarrativeHtml({
-    range,
-    workingDays,
-    weeksCount: weeks.length,
-    scope,
-    subjectName,
-    breakdowns,
-    avgWall,
-    avgPres,
-    mtFactor,
-    coverage,
-    productivePct,
-    nonprodPct,
-    konzeptPct:
-      totalNaiveMs > 0
-        ? ((taetBuckets.get('Konzeption') || 0) / totalNaiveMs) * 100
-        : 0,
-    konzeptMs: taetBuckets.get('Konzeption') || 0,
-    fmtBuckets: breakdowns.formate,
-    trend,
-    daysGood,
-    daysOk,
-    daysThin,
-    stakeholderProfiles,
-    weekday,
-    totalWallMs,
-    drift,
-    lens,
-  });
+  // Welle 4: Narrative wird vom brillenspezifischen Renderer komponiert,
+  // nicht mehr hier. ReportData führt nur strukturierte Daten.
 
   const data: ReportData = {
     meta: {
@@ -960,9 +1471,15 @@ export function buildReportData(
     stakeholderProfiles,
     weekday,
     drift,
+    rhythm,
+    slotLength,
+    disziplin,
+    multitasking,
+    projektLifecycle,
+    lens,
     absences,
     findings,
-    narrativeHtml,
+    dataQualityIssues,
   };
   return data;
 }
@@ -1018,799 +1535,6 @@ function buildConcentrationDrift(
     coverageSecond: secondPres > 0 ? secondWall / secondPres : 1,
   };
 }
-
-/* ─────────────────────────────────────────────────────────────────────
-   Narrative-Generator — qualitatives Management-Summary als HTML
-   ───────────────────────────────────────────────────────────────────── */
-
-interface NarrativeOpts {
-  range: ReportRange;
-  workingDays: number;
-  weeksCount: number;
-  scope: ReportScope;
-  subjectName: string;
-  breakdowns: ReportData['breakdowns'];
-  avgWall: number;
-  avgPres: number;
-  mtFactor: number;
-  coverage: number;
-  productivePct: number;
-  nonprodPct: number;
-  konzeptPct: number;
-  konzeptMs: number;
-  fmtBuckets: BreakdownRow[];
-  trend: ReportData['trend'];
-  daysGood: number;
-  daysOk: number;
-  daysThin: number;
-  stakeholderProfiles: StakeholderProfile[];
-  weekday: WeekdayProfile;
-  totalWallMs: number;
-  drift: ConcentrationDrift | null;
-  lens: ReportLens;
-}
-
-export function generateNarrativeHtml(o: NarrativeOpts): string {
-  const paras: string[] = [];
-
-  const topSh = o.breakdowns.stakeholders[0];
-  if (!topSh) {
-    return '<p>Keine Daten im Zeitraum.</p>';
-  }
-
-  // Para 1: Stakeholder-Charakter — datengetrieben nach Konzentration.
-  //   pct ≥ 50%: klar konzentriert
-  //   30–50%:    Schwerpunkt + Breite
-  //   <30%:      breit verteilt
-  paras.push(buildStakeholderPara(o, topSh));
-
-  // Para 2: Projekt-Verteilung — basiert auf Top-2-Anteil UND Anzahl
-  // Projekte. Verhindert den vorherigen Pseudo-Insight, dass eine "scheinbare
-  // Breite" immer "klare Kraftbündelung" wäre.
-  if (o.breakdowns.projekte.length >= 2) {
-    paras.push(buildProjektPara(o));
-  } else if (o.breakdowns.projekte.length === 1) {
-    const only = o.breakdowns.projekte[0];
-    paras.push(
-      `<b>Wo die Stunden hingehen.</b> Einziges Projekt im Zeitraum: &laquo;${htmlEsc(only.name)}&raquo; — keine Verteilung zu analysieren.`
-    );
-  }
-
-  // Para 2b: Mandanten-Steckbriefe — ein Mini-Dossier pro Stakeholder
-  // mit substanziellem Anteil. Liefert dem Coach/Teamleader/Chef einen
-  // schnellen, datengetriebenen Eindruck pro wichtigem Stakeholder ohne
-  // dass er die Breakdown-Tabellen durchgehen muss.
-  const steckbriefe = buildSteckbriefePara(o);
-  if (steckbriefe) paras.push(steckbriefe);
-
-  // Para 3: Modus
-  const prodJudge =
-    o.productivePct >= 50
-      ? 'starker Output-Modus'
-      : o.productivePct >= 40
-        ? 'ausgeglichener Mix von Output und Steuerung'
-        : 'stark steuerungs- und abstimmungslastiger Modus';
-
-  const totalFmt = o.fmtBuckets.reduce((a, b) => a + b.ms, 0);
-  const einzel = o.fmtBuckets.find((f) => f.name === 'Einzelarbeit');
-  const einzelPct = einzel && totalFmt > 0 ? (einzel.ms / totalFmt) * 100 : 0;
-  const asynJudge =
-    einzelPct > 75
-      ? ', asynchron-dominiert (auffallend wenige Meetings für eine Kommunikationsfunktion — Abstimmung läuft offenbar primär über Mail/Telefon)'
-      : '';
-  const mtJudge =
-    o.mtFactor > 1.3
-      ? `. Multi-Tasking-Faktor ${o.mtFactor.toFixed(2)} — du trackst ~${((o.mtFactor - 1) * 100).toFixed(0)}% mehr Aufgabenzeit als reine Wallclock, klares Indiz für parallel laufende Stränge`
-      : '';
-
-  paras.push(
-    `<b>Wie gearbeitet wird.</b> ${prodJudge}: ${o.productivePct.toFixed(0)}% Produktiv, ${o.nonprodPct.toFixed(0)}% Nicht-produktiv${o.konzeptMs > 0 ? `, ${o.konzeptPct.toFixed(0)}% Konzeption` : ''}${asynJudge}${mtJudge}.`
-  );
-
-  // Para 3b: Wochenrhythmus + Tagesextremwerte
-  const rhythmus = buildRhythmusPara(o);
-  if (rhythmus) paras.push(rhythmus);
-
-  // Para 4: Trend
-  if (o.trend.growth.length > 0 || o.trend.decline.length > 0) {
-    const parts: string[] = [];
-    if (o.trend.growth.length > 0) {
-      const descs = o.trend.growth
-        .slice(0, 3)
-        .map(
-          (t) =>
-            `<b>${htmlEsc(t.name)}</b> wuchs von ${t.firstPct.toFixed(0)}% auf ${t.secondPct.toFixed(0)}%`
-        )
-        .join(', ');
-      parts.push(`Gewinner: ${descs}`);
-    }
-    if (o.trend.decline.length > 0) {
-      const descs = o.trend.decline
-        .slice(0, 3)
-        .map(
-          (t) =>
-            `<b>${htmlEsc(t.name)}</b> fiel von ${t.firstPct.toFixed(0)}% auf ${t.secondPct.toFixed(0)}%`
-        )
-        .join(', ');
-      parts.push(`Verlierer: ${descs}`);
-    }
-    paras.push(
-      `<b>Verschiebung im Zeitraum.</b> Vergleicht man die erste mit der zweiten Periodenhälfte: ${parts.join('. ')}.`
-    );
-  }
-
-  // Para 4a: Konzentrations-Drift — verstärkt oder lockert sich der
-  // Schwerpunkt, öffnet oder schließt sich das Portfolio?
-  if (o.drift) {
-    const driftPara = buildDriftPara(o.drift);
-    if (driftPara) paras.push(driftPara);
-  }
-
-  // Para 4b: Out-of-Scope-Aufmerksamkeit — datengetrieben aus
-  // stakeholderProfiles. Wird nur eingefügt, wenn mind. ein Profil
-  // ein auffälliges Muster zeigt.
-  const oos = buildOutOfScopePara(o);
-  if (oos) paras.push(oos);
-
-  // Para 5: Datenqualität
-  const covPct = o.coverage * 100;
-  const covMeaning =
-    covPct >= 85
-      ? 'die Detail-Insights sind belastbar — fast alles, was passiert ist, ist auch erfasst'
-      : covPct >= 70
-        ? 'die Detail-Insights tragen; kleinere Lücken sind die Regel'
-        : covPct >= 55
-          ? 'die Tendenz stimmt, aber bei Detail-Kennzahlen mit Vorsicht — etwa ein Drittel der Anwesenheit ist nicht in Slots'
-          : 'Detail-Aggregationen sind tendenziell zu niedrig — die echte Verteilung dürfte breiter sein';
-
-  paras.push(
-    `<b>Wie sicher die Zahlen sind.</b> Ø ${fmtHours(o.avgPres)} Präsenz / ${fmtHours(o.avgWall)} Wallclock pro aktivem Tag — Period-Coverage <b>${covPct.toFixed(0)}%</b> (${covMeaning}). Verteilung: ${o.daysGood} Tage ≥80%, ${o.daysOk} Tage 60–80%${o.daysThin > 0 ? `, ${o.daysThin} Tage unter 60% (Detail-Aussagen dort wackelig)` : ', keine Tage unter 60%'}.`
-  );
-
-  // Lens-spezifische Closing-Para. Die Daten sind über alle Lenses
-  // gleich; nur die Brille (welche Fragen man stellt, was als
-  // Headline taugt) wechselt.
-  const closing = LENS_CLOSING_BUILDERS[o.lens](o);
-  if (closing) paras.push(closing);
-
-  return paras.map((p) => `<p>${p}</p>`).join('\n');
-}
-
-/**
- * Para 1 — Stakeholder-Charakter. Die Tonalität (konzentriert / Schwerpunkt
- * + Breite / breit verteilt) hängt am Top-1-Anteil. Der Kontext-Halbsatz
- * (folgen mit Abstand / dahinter erkennbar / substanzielle Breite) hängt
- * am Top-3-Anteil. Bewusst zwei orthogonale Achsen, damit der Text die
- * Form der Verteilung trifft, nicht nur die Spitze.
- */
-function buildStakeholderPara(
-  o: NarrativeOpts,
-  topSh: BreakdownRow
-): string {
-  const shCount = o.breakdowns.stakeholders.length;
-  const header = `Im Zeitraum <b>${htmlEsc(o.range.label)}</b> (${o.workingDays} aktive Tage, ${o.weeksCount} Wochen)`;
-
-  if (shCount === 1) {
-    return `${header} zeigt sich ein Single-Stakeholder-Profil: <b>${htmlEsc(topSh.name)}</b> bindet 100% der erfassten Zeit.`;
-  }
-
-  // Lead-Satz: Charakter nach Top-1-Anteil — Sprach-Varianz aus Pool.
-  // Seed = Subject + Range + Top-Anteil → derselbe Report stabil, andere
-  // Daten ergeben andere Wortwahl.
-  const variantSeed = `${o.subjectName}|${o.range.label}|${topSh.name}|${topSh.pct.toFixed(0)}`;
-  let leadCore: string;
-  if (topSh.pct >= 50) {
-    leadCore = pickVariant(STAKEHOLDER_LEAD_VARIANTS.concentrated, variantSeed);
-    leadCore += `. <b>${htmlEsc(topSh.name)}</b> bindet ${topSh.pct.toFixed(0)}% der erfassten Zeit`;
-  } else if (topSh.pct >= 30) {
-    leadCore = pickVariant(STAKEHOLDER_LEAD_VARIANTS.schwerpunkt, variantSeed);
-    leadCore += `. <b>${htmlEsc(topSh.name)}</b> führt mit ${topSh.pct.toFixed(0)}%`;
-  } else {
-    leadCore = pickVariant(STAKEHOLDER_LEAD_VARIANTS.breit, variantSeed);
-    leadCore += `. <b>${htmlEsc(topSh.name)}</b> hält die Spitze mit nur ${topSh.pct.toFixed(0)}%`;
-  }
-  const lead = leadCore;
-
-  // Kontext-Halbsatz: Form der Verteilung nach Top-3-Anteil.
-  const others = o.breakdowns.stakeholders
-    .slice(1, 4)
-    .map((s) => htmlEsc(s.name))
-    .join(', ');
-  const top3 = o.breakdowns.stakeholders
-    .slice(0, 3)
-    .reduce((sum, s) => sum + s.pct, 0);
-
-  let context: string;
-  if (top3 >= 80) {
-    context = `, dahinter ${others} mit deutlichem Abstand. Top-3 bündeln ${top3.toFixed(0)}% — wenig Streuung`;
-  } else if (top3 >= 60) {
-    context = `, dahinter ${others} mit erkennbaren Anteilen. Top-3 ${top3.toFixed(0)}% — Mischlage`;
-  } else {
-    context = `, dahinter ${others} und weitere mit substanziellen Anteilen. Top-3 nur ${top3.toFixed(0)}% — echte Breite`;
-  }
-
-  return `${header} ${lead}${context}.`;
-}
-
-/**
- * Para 2 — Projekt-Verteilung. Zwei Achsen: Top-2-Anteil (Konzentration)
- * und Projekt-Anzahl (Portfolio-Breite). Aus der Kombination ergeben sich
- * vier qualitative Klassen — schmales Portfolio, Kraftbündelung trotz
- * Portfolio, Mischlage, echte Breite.
- */
-function buildProjektPara(o: NarrativeOpts): string {
-  const tp1 = o.breakdowns.projekte[0];
-  const tp2 = o.breakdowns.projekte[1];
-  const projCount = o.breakdowns.projekte.length;
-  const top2 = tp1.pct + tp2.pct;
-  const lead = `&laquo;${htmlEsc(tp1.name)}&raquo; (${tp1.pct.toFixed(0)}%) und &laquo;${htmlEsc(tp2.name)}&raquo; (${tp2.pct.toFixed(0)}%)`;
-  const seed = `${o.subjectName}|${o.range.label}|${tp1.name}|${projCount}`;
-  const intro = `<b>${pickVariant(PROJEKT_INTRO_VARIANTS, seed)}</b>`;
-
-  if (projCount <= 3) {
-    // Schmales Portfolio: Konzentration ist hier Folge der Anzahl, nicht
-    // der Auswahl — entsprechend einordnen.
-    return `${intro} Schmales Projekt-Portfolio (${projCount}): ${lead} sind die Hauptlast (zusammen ${top2.toFixed(0)}%). Konzentration durch geringe Anzahl, nicht durch Schwerpunktsetzung — Projektwechsel würden das Bild stark verschieben.`;
-  }
-
-  if (top2 >= 70) {
-    return `${intro} ${lead} binden zusammen ${top2.toFixed(0)}% der Zeit. Die scheinbare Breite (${projCount} Projekte) täuscht — klare Kraftbündelung. Operativ effizient, aber bei Top-Abschluss verschiebt sich das Bild rasch.`;
-  }
-
-  if (top2 >= 40) {
-    return `${intro} ${lead} führen mit zusammen ${top2.toFixed(0)}%, dahinter ein erkennbares Portfolio aus ${projCount - 2} weiteren Projekten. Mischlage — parallele Steuerung sichtbar, Kontextwechsel-Kosten nennenswert.`;
-  }
-
-  // top2 < 40 % bei ≥4 Projekten: echte Breite.
-  return `${intro} Breit verteiltes Portfolio aus ${projCount} Projekten: ${lead} an der Spitze, aber zusammen nur ${top2.toFixed(0)}%. Hohe Diversifikation, Kontextwechsel-Kosten substanziell — kein dominanter Schwerpunkt.`;
-}
-
-/**
- * Para 2b — Mandanten-Steckbriefe. Pro Top-Stakeholder ein bis zwei
- * Sätze mit Top-Projekt, Hauptaktivität, Format-Schwerpunkt und Doku-
- * Disziplin. Hört bei drei Profilen auf, damit der Report nicht zur
- * Aufzählung wird.
- *
- * Liefert `null` wenn keine Stakeholder-Profile vorliegen (Edge-Case
- * Kleinzeitraum oder Single-Stakeholder).
- */
-function buildSteckbriefePara(o: NarrativeOpts): string | null {
-  const profiles = o.stakeholderProfiles.slice(0, 3);
-  if (profiles.length === 0) return null;
-
-  const lines = profiles.map((p) => {
-    const parts: string[] = [];
-    parts.push(
-      `<b>${htmlEsc(p.name)}</b> &middot; ${p.pct.toFixed(0)}% &middot; ${fmtHours(p.ms)} an ${p.daysActive} Tagen`
-    );
-    const inhalt: string[] = [];
-    if (p.topProjekt && p.topProjekt.name !== '—') {
-      inhalt.push(
-        `vor allem &laquo;${htmlEsc(p.topProjekt.name)}&raquo; (${p.topProjekt.pct.toFixed(0)}%)`
-      );
-    }
-    if (p.topTaetigkeit && p.topTaetigkeit.name !== '—') {
-      inhalt.push(
-        `${htmlEsc(p.topTaetigkeit.name)} (${p.topTaetigkeit.pct.toFixed(0)}%)`
-      );
-    }
-    if (p.topFormat && p.topFormat.name !== '—') {
-      inhalt.push(
-        `Format ${htmlEsc(p.topFormat.name)} (${p.topFormat.pct.toFixed(0)}%)`
-      );
-    }
-    if (inhalt.length > 0) parts.push(inhalt.join(', '));
-
-    const marker: string[] = [];
-    if (p.microTaskPct >= 40) {
-      marker.push(`${p.microTaskPct.toFixed(0)}% Mini-Slots`);
-    }
-    if (p.nonprodPct >= 30) {
-      marker.push(`${p.nonprodPct.toFixed(0)}% nicht-produktiv`);
-    }
-    if (p.notizPct <= 25 && p.entriesCount >= 8) {
-      marker.push(`nur ${p.notizPct.toFixed(0)}% mit Notiz`);
-    }
-    if (marker.length > 0) {
-      parts.push(`auffällig: ${marker.join(', ')}`);
-    }
-
-    // &mdash; macht im Druck saubere Trenner zwischen den Teilsätzen.
-    return `&bull;&nbsp; ${parts.join(' &mdash; ')}`;
-  });
-
-  // <br/> statt <ul>/<li>: bleibt innerhalb des <p>-Wrappers gültig,
-  // den der Aufrufer um jeden Paragrafen legt.
-  return `<b>Mandanten im Detail.</b><br/>${lines.join('<br/>')}`;
-}
-
-/**
- * Para 3b — Wochenrhythmus + Tagesextremwerte. Liefert auch dann etwas,
- * wenn die Verteilung gleichmäßig ist (dann „gleichmäßiges Profil").
- */
-function buildRhythmusPara(o: NarrativeOpts): string | null {
-  const wd = o.weekday;
-  if (!wd.byDay.some((d) => d.ms > 0)) return null;
-
-  // Variations-Indikator: höchster vs niedrigster Wochentag (nur unter
-  // den nicht-leeren Tagen).
-  const nonZero = wd.byDay.filter((d) => d.ms > 0);
-  const hi = nonZero.reduce((a, b) => (a.ms > b.ms ? a : b));
-  const lo = nonZero.reduce((a, b) => (a.ms < b.ms ? a : b));
-  const spread = hi.ms > 0 ? (hi.ms - lo.ms) / hi.ms : 0; // 0..1
-
-  let pattern: string;
-  if (spread < 0.3) {
-    pattern = `gleichmäßiges Wochenprofil — alle aktiven Wochentage tragen ähnlich bei`;
-  } else if (spread < 0.6) {
-    pattern = `<b>${hi.label}</b> ist der stärkste Wochentag (${hi.pct.toFixed(0)}% der Zeit), <b>${lo.label}</b> der ruhigste`;
-  } else {
-    pattern = `stark schwankendes Wochenprofil — <b>${hi.label}</b> trägt ${hi.pct.toFixed(0)}%, <b>${lo.label}</b> nur ${lo.pct.toFixed(0)}%`;
-  }
-
-  const parts: string[] = [pattern];
-
-  // Tageextremwerte
-  if (o.weekday.longestDay && o.weekday.longestDay.ms > 0) {
-    parts.push(
-      `längster Tag ${o.weekday.longestDay.date} mit ${fmtHours(o.weekday.longestDay.ms)} Präsenz`
-    );
-  }
-  if (wd.highLoadDaysCount > 0) {
-    parts.push(`${wd.highLoadDaysCount} Tage über 10h Präsenz`);
-  }
-
-  // Wochenend-Anteil
-  if (wd.weekendMs > 0 && o.totalWallMs > 0) {
-    const wePct = (wd.weekendMs / o.totalWallMs) * 100;
-    if (wePct >= 5) {
-      parts.push(`Wochenend-Anteil ${wePct.toFixed(0)}% (${fmtHours(wd.weekendMs)})`);
-    }
-  }
-
-  const seed = `${o.subjectName}|${o.range.label}|rhythmus|${wd.heaviestDow}`;
-  const intro = pickVariant(RHYTHMUS_INTRO_VARIANTS, seed);
-  return `${intro} ${parts.join('; ')}.`;
-}
-
-/**
- * Para 4b — Out-of-Scope-Aufmerksamkeit. Aggregiert die Profil-
- * Indikatoren (Reaktiv, Out-of-Scope, Meeting-lastig) zu einem
- * konkreten Handlungs-Absatz. Wird nur eingefügt, wenn mind. ein
- * Profil eine markante Auffälligkeit zeigt.
- */
-function buildOutOfScopePara(o: NarrativeOpts): string | null {
-  interface Hit {
-    name: string;
-    label: string;
-    pct: number;
-  }
-  const reactive: Hit[] = [];
-  const oos: Hit[] = [];
-  const meeting: Hit[] = [];
-
-  for (const p of o.stakeholderProfiles) {
-    if (p.microTaskPct >= 40 && p.entriesCount >= 5) {
-      reactive.push({ name: p.name, label: 'Reaktiv', pct: p.microTaskPct });
-    }
-    if (p.nonprodPct >= 40 && p.ms >= 2 * 60 * 60_000) {
-      oos.push({ name: p.name, label: 'Out-of-Scope', pct: p.nonprodPct });
-    }
-    if (p.meetingHeavyPct >= 50 && p.ms >= 2 * 60 * 60_000) {
-      meeting.push({ name: p.name, label: 'Meeting-lastig', pct: p.meetingHeavyPct });
-    }
-  }
-
-  if (reactive.length + oos.length + meeting.length === 0) return null;
-
-  const lines: string[] = [];
-  if (reactive.length > 0) {
-    const list = reactive
-      .map((h) => `${htmlEsc(h.name)} (${h.pct.toFixed(0)}% Mini-Slots)`)
-      .join(', ');
-    lines.push(
-      `<b>Reaktiv-Druck</b> bei ${list} — viele kleine Slots deuten auf ad-hoc-Anfragen außerhalb planbaren Mandats. Triage-Layer (fixe Sprechzeiten, Mailbox-First) gibt Stunden zurück.`
-    );
-  }
-  if (oos.length > 0) {
-    const list = oos
-      .map((h) => `${htmlEsc(h.name)} (${h.pct.toFixed(0)}% nicht-produktiv)`)
-      .join(', ');
-    lines.push(
-      `<b>Scope-Frage</b> bei ${list} — hohe Beziehungsarbeit oder Steuerung ohne sichtbaren Output. Ist diese Bindung strategisch gewollt, oder ein historisches Erbe das geprüft gehört?`
-    );
-  }
-  if (meeting.length > 0) {
-    const list = meeting
-      .map((h) => `${htmlEsc(h.name)} (${h.pct.toFixed(0)}% Meetings)`)
-      .join(', ');
-    lines.push(
-      `<b>Async-Reserve</b> bei ${list} — synchron-lastig für eine Kommunikationsfunktion. Welche dieser Termine könnten als Brief/1-Pager/Mail komprimiert werden?`
-    );
-  }
-
-  const seed = `${o.subjectName}|${o.range.label}|oos|${reactive.length}|${oos.length}|${meeting.length}`;
-  const intro = pickVariant(OOS_INTRO_VARIANTS, seed);
-  return `${intro} ${lines.join(' ')}`;
-}
-
-/**
- * Para 4a — Konzentrations-Drift. Vergleicht Top-1-Anteil und Portfolio-
- * Breite zwischen den beiden Hälften. Liefert `null`, wenn keine
- * substanzielle Verschiebung erkennbar ist (alle Δ unter Schwelle).
- */
-function buildDriftPara(drift: ConcentrationDrift): string | null {
-  const dTopSh = drift.top1ShareSecond - drift.top1ShareFirst;
-  const dTopProj = drift.top1ProjShareSecond - drift.top1ProjShareFirst;
-  const dDistinctSh = drift.distinctShSecond - drift.distinctShFirst;
-  const dDistinctProj = drift.distinctProjSecond - drift.distinctProjFirst;
-  const dCov = (drift.coverageSecond - drift.coverageFirst) * 100;
-
-  const SIGN = 5;       // 5 Prozentpunkte = signifikant für Anteil
-  const SIGN_COV = 8;   // 8 Prozentpunkte für Coverage
-  const SIGN_COUNT = 2; // 2 mehr/weniger aktive Entitäten
-
-  const parts: string[] = [];
-
-  // Konzentration Stakeholder
-  if (Math.abs(dTopSh) >= SIGN) {
-    if (dTopSh > 0) {
-      parts.push(
-        `<b>${htmlEsc(drift.topShNameSecond)}</b> bindet in der zweiten Hälfte ${drift.top1ShareSecond.toFixed(0)}% (vorher ${drift.top1ShareFirst.toFixed(0)}%) — Schwerpunkt verstärkt sich`
-      );
-    } else {
-      parts.push(
-        `der Spitzen-Anteil sinkt von ${drift.top1ShareFirst.toFixed(0)}% auf ${drift.top1ShareSecond.toFixed(0)}% — Aufmerksamkeit streut sich`
-      );
-    }
-  }
-
-  // Portfolio-Breite (Stakeholder)
-  if (Math.abs(dDistinctSh) >= SIGN_COUNT) {
-    if (dDistinctSh > 0) {
-      parts.push(
-        `Portfolio öffnet sich (${drift.distinctShFirst} → ${drift.distinctShSecond} aktive Stakeholder)`
-      );
-    } else {
-      parts.push(
-        `Portfolio verschmälert sich (${drift.distinctShFirst} → ${drift.distinctShSecond} aktive Stakeholder)`
-      );
-    }
-  }
-
-  // Projekt-Drift
-  if (Math.abs(dTopProj) >= SIGN || Math.abs(dDistinctProj) >= SIGN_COUNT) {
-    const projParts: string[] = [];
-    if (Math.abs(dTopProj) >= SIGN) {
-      if (dTopProj > 0) {
-        projParts.push(
-          `Top-Projekt &laquo;${htmlEsc(drift.topProjNameSecond)}&raquo; gewinnt (${drift.top1ProjShareFirst.toFixed(0)}% → ${drift.top1ProjShareSecond.toFixed(0)}%)`
-        );
-      } else {
-        projParts.push(
-          `Top-Projekt-Anteil sinkt (${drift.top1ProjShareFirst.toFixed(0)}% → ${drift.top1ProjShareSecond.toFixed(0)}%)`
-        );
-      }
-    }
-    if (Math.abs(dDistinctProj) >= SIGN_COUNT) {
-      projParts.push(
-        `${drift.distinctProjFirst} → ${drift.distinctProjSecond} aktive Projekte`
-      );
-    }
-    if (projParts.length > 0) parts.push(projParts.join(', '));
-  }
-
-  // Coverage-Drift
-  if (Math.abs(dCov) >= SIGN_COV) {
-    if (dCov > 0) {
-      parts.push(
-        `Tracking-Qualität verbessert sich (Coverage ${(drift.coverageFirst * 100).toFixed(0)}% → ${(drift.coverageSecond * 100).toFixed(0)}%)`
-      );
-    } else {
-      parts.push(
-        `Tracking-Qualität fällt ab (Coverage ${(drift.coverageFirst * 100).toFixed(0)}% → ${(drift.coverageSecond * 100).toFixed(0)}%)`
-      );
-    }
-  }
-
-  if (parts.length === 0) return null;
-  const seed = `${drift.topShNameFirst}|${drift.topShNameSecond}|${drift.top1ShareFirst.toFixed(0)}|${drift.top1ShareSecond.toFixed(0)}`;
-  const intro = pickVariant(DRIFT_INTRO_VARIANTS, seed);
-  return `${intro} ${parts.join('; ')}.`;
-}
-
-/* ─────────────────────────────────────────────────────────────────────
-   Sprach-Varianz — deterministische Wahl aus Synonyme-Pools
-   ───────────────────────────────────────────────────────────────────── */
-
-/** Stabiler Integer-Hash über einen String — gleicher Seed → gleicher
- *  Wert über Reload-Grenzen hinweg. djb2-Variante. */
-function dataHash(seed: string): number {
-  let h = 5381;
-  for (let i = 0; i < seed.length; i++) {
-    h = ((h << 5) + h + seed.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
-}
-
-/** Pickt eine Variante deterministisch aus einem Pool, anhand eines
- *  Seed. So bleibt derselbe Report bei Re-Render stabil, aber zwei
- *  verschiedene Reports (anderer Subject/Range) klingen verschieden. */
-function pickVariant<T>(pool: T[], seed: string): T {
-  if (pool.length === 0) throw new Error('pickVariant: empty pool');
-  return pool[dataHash(seed) % pool.length];
-}
-
-const STAKEHOLDER_LEAD_VARIANTS = {
-  concentrated: [
-    'zeigt sich ein klar konzentriertes Arbeitsprofil',
-    'ein fokussiertes Profil mit klarem Schwerpunkt',
-    'die Aufmerksamkeit ist deutlich konzentriert',
-    'ein verdichtetes Bild — die Energie fließt gebündelt',
-    'ein Schwerpunkt-Profil, das nicht maskiert sein will',
-  ],
-  schwerpunkt: [
-    'zeigt sich ein Schwerpunkt-getragenes Profil',
-    'ein Profil mit erkennbarem, aber nicht erdrückendem Schwerpunkt',
-    'die Verteilung trägt einen Schwerpunkt, ohne davon dominiert zu werden',
-    'eine getragene Mischlage mit eindeutiger Spitze',
-    'erkennbarer Hauptzug, daneben spürbares Portfolio',
-  ],
-  breit: [
-    'zeigt sich ein breit verteiltes Profil',
-    'ein Portfolio-Profil ohne klare Hauptlast',
-    'die Aufmerksamkeit streut sich über mehrere Mandanten',
-    'ein fächeriges Bild — viele Mandanten, kein dominanter',
-    'breit aufgestellt, mit aktiv betreutem Portfolio',
-  ],
-};
-
-const PROJEKT_INTRO_VARIANTS = [
-  'Wo die Stunden hingehen.',
-  'Wohin die Aufmerksamkeit fließt.',
-  'Was die Zeit bindet.',
-  'Wo das Gewicht liegt.',
-  'Wofür die Stunden anfallen.',
-];
-
-const RHYTHMUS_INTRO_VARIANTS = [
-  '<b>Wochenrhythmus.</b>',
-  '<b>Rhythmus der Tage.</b>',
-  '<b>Wie die Woche getragen wird.</b>',
-];
-
-const OOS_INTRO_VARIANTS = [
-  '<b>Was die Aufmerksamkeit kostet.</b>',
-  '<b>Wo die Reibung sitzt.</b>',
-  '<b>Stunden-Senken im Blick.</b>',
-];
-
-const DRIFT_INTRO_VARIANTS = [
-  '<b>Wie sich das Bild verschiebt.</b>',
-  '<b>Bewegung im Zeitraum.</b>',
-  '<b>Was sich gerade verändert.</b>',
-];
-
-/* ─────────────────────────────────────────────────────────────────────
-   Lens-Closing-Builders — eine pro Lens, lose gekoppelt via Map.
-   Daten kommen aus NarrativeOpts (alle Lenses sehen denselben Datenpool);
-   die Lens entscheidet nur, welche Fragen gestellt werden.
-   ───────────────────────────────────────────────────────────────────── */
-
-/** Findet das markanteste OOS-Profil — für Lead/Chef-Closings. */
-function pickWorstOosProfile(
-  profiles: StakeholderProfile[]
-): StakeholderProfile | null {
-  return (
-    profiles
-      .filter(
-        (p) =>
-          p.nonprodPct >= 30 || p.microTaskPct >= 30 || p.meetingHeavyPct >= 50
-      )
-      .sort((a, b) => b.pct - a.pct)[0] || null
-  );
-}
-
-/**
- * Coach-Lens — Selbst-Reflexion, persönliche Anrede, Energie und
- * Doku-Disziplin im Fokus. Liefert maximal drei Reflexions-Fragen,
- * datengetrieben aus dem, was im Zeitraum auffällig war.
- */
-function buildCoachClosing(o: NarrativeOpts): string | null {
-  const fragen: string[] = [];
-
-  // Hochlast → Energie-Frage
-  if (o.weekday.highLoadDaysCount >= 2) {
-    fragen.push(
-      `${o.weekday.highLoadDaysCount} Tage über 10h Präsenz — was hat dich an diesen Tagen so lange gehalten, und war's der erwartete Output?`
-    );
-  } else if (o.weekday.longestDay && o.weekday.longestDay.ms >= 11 * 3600_000) {
-    fragen.push(
-      `Längster Tag ${o.weekday.longestDay.date} mit ${fmtHours(o.weekday.longestDay.ms)} — bewusst oder unbeabsichtigt?`
-    );
-  }
-
-  // Doku-Disziplin (nimmt den Stakeholder mit der schlechtesten Notiz-Quote)
-  const lowestNotizSh = o.stakeholderProfiles
-    .filter((p) => p.entriesCount >= 8 && p.notizPct <= 30)
-    .sort((a, b) => a.notizPct - b.notizPct)[0];
-  if (lowestNotizSh) {
-    fragen.push(
-      `Bei ${htmlEsc(lowestNotizSh.name)} nur ${lowestNotizSh.notizPct.toFixed(0)}% mit Notiz — welche Slots wären rückblickend mit einer 1-Wort-Notiz greifbarer gewesen?`
-    );
-  }
-
-  // Wochenend-Anteil → Grenzen-Frage
-  if (o.weekday.weekendMs > 0 && o.totalWallMs > 0) {
-    const wePct = (o.weekday.weekendMs / o.totalWallMs) * 100;
-    if (wePct >= 8) {
-      fragen.push(
-        `${wePct.toFixed(0)}% deiner Zeit fiel auf Wochenenden — was würde es brauchen, damit du das in der Woche unterbringen könntest?`
-      );
-    }
-  }
-
-  if (fragen.length === 0) {
-    // Trotzdem ein freundlicher Closing wenn nichts auffällig war.
-    return `<b>Was sich aus den Daten lesen lässt.</b> Wenig Auffälliges in diesem Zeitraum — Rhythmus tragend, Doku ausreichend. Frage zum Mitnehmen: gibt es einen Bereich, in dem du dir mehr Tiefe als Breite wünschst?`;
-  }
-
-  const items = fragen
-    .slice(0, 3)
-    .map((q) => `&bull;&nbsp; ${q}`)
-    .join('<br/>');
-  return `<b>Was zur Reflexion ansteht.</b><br/>${items}`;
-}
-
-/**
- * Teamleader-Lens — Steuerungs-Hebel, Belastung, Mandat, Konzentrations-
- * Risiko. Tonalität: betrieblich, klare Fragen für ein 1:1.
- */
-function buildLeadClosing(o: NarrativeOpts): string | null {
-  const hebel: string[] = [];
-
-  // Konzentrations-Risiko
-  const topSh = o.breakdowns.stakeholders[0];
-  if (topSh && topSh.pct >= 50) {
-    hebel.push(
-      `<b>${htmlEsc(topSh.name)}-Klumpen</b> bei ${topSh.pct.toFixed(0)}% — ist die Fokussierung strategisch gewollt, oder gehört eine bewusste Diversifikation auf den Plan?`
-    );
-  }
-
-  // Out-of-Scope: nimm das auffälligste Profil
-  const oosSh = pickWorstOosProfile(o.stakeholderProfiles);
-  if (oosSh) {
-    const marker: string[] = [];
-    if (oosSh.microTaskPct >= 30) marker.push(`${oosSh.microTaskPct.toFixed(0)}% Mini-Slots`);
-    if (oosSh.nonprodPct >= 30) marker.push(`${oosSh.nonprodPct.toFixed(0)}% nicht-produktiv`);
-    if (oosSh.meetingHeavyPct >= 50) marker.push(`${oosSh.meetingHeavyPct.toFixed(0)}% Meetings`);
-    hebel.push(
-      `<b>Mandat ${htmlEsc(oosSh.name)}</b> (${marker.join(', ')}): Triage-Layer oder Scope-Klärung?`
-    );
-  }
-
-  // Hochlast
-  if (o.weekday.highLoadDaysCount >= 3) {
-    hebel.push(
-      `<b>Belastungsmuster</b>: ${o.weekday.highLoadDaysCount} Tage über 10h — was ist der Engpass, der diese Spitzen erzwingt?`
-    );
-  }
-
-  // Coverage-Drift falls vorhanden
-  if (o.drift) {
-    const dCov = (o.drift.coverageSecond - o.drift.coverageFirst) * 100;
-    if (Math.abs(dCov) >= 10) {
-      hebel.push(
-        dCov < 0
-          ? `<b>Datenqualität</b> verschlechtert sich — Tracking-Disziplin in der zweiten Hälfte abgesunken (Coverage ${(o.drift.coverageFirst * 100).toFixed(0)}% → ${(o.drift.coverageSecond * 100).toFixed(0)}%).`
-          : `<b>Datenqualität</b> verbessert sich (Coverage ${(o.drift.coverageFirst * 100).toFixed(0)}% → ${(o.drift.coverageSecond * 100).toFixed(0)}%) — gut, die Reports werden tragfähiger.`
-      );
-    }
-  }
-
-  if (hebel.length === 0) {
-    return `<b>Steuerungs-Hebel.</b> Keine roten Flaggen in diesem Zeitraum — gutes Signal. Nächste Frage zur Vorlage: welche zwei Stakeholder bekommen in der nächsten Periode bewusst mehr/weniger Anteil?`;
-  }
-
-  const items = hebel
-    .slice(0, 3)
-    .map((h) => `&bull;&nbsp; ${h}`)
-    .join('<br/>');
-  return `<b>Steuerungs-Hebel für das 1:1.</b><br/>${items}`;
-}
-
-/**
- * Chef-Lens — Operative Effizienz, Output-Quote, Trend. Datenheadline-
- * Stil, weniger Fragen, mehr direkte Aussagen.
- */
-function buildChefClosing(o: NarrativeOpts): string | null {
-  const headlines: string[] = [];
-
-  // Output-Quote
-  const prodLabel =
-    o.productivePct >= 50
-      ? 'Output-Modus dominant'
-      : o.productivePct >= 40
-        ? 'ausgeglichen zwischen Output und Steuerung'
-        : 'steuerungslastig — Output unter 40%';
-  headlines.push(`<b>${prodLabel}</b> (${o.productivePct.toFixed(0)}% Produktiv-Quote).`);
-
-  // Multi-Tasking
-  if (o.mtFactor > 1.4) {
-    headlines.push(
-      `<b>Hoher Parallelitäts-Faktor</b> (${o.mtFactor.toFixed(2)}x) — entweder bewusste Multi-Spur-Steuerung oder Hinweis auf vergessene Tracker.`
-    );
-  } else if (o.mtFactor > 1.15) {
-    headlines.push(`<b>Moderates Parallelitäts-Niveau</b> (${o.mtFactor.toFixed(2)}x).`);
-  }
-
-  // Top-Schwerpunkt
-  const topSh = o.breakdowns.stakeholders[0];
-  if (topSh) {
-    headlines.push(
-      `<b>Schwerpunkt</b> ${htmlEsc(topSh.name)} (${topSh.pct.toFixed(0)}%), Top-Projekt ${o.breakdowns.projekte[0] ? `&laquo;${htmlEsc(o.breakdowns.projekte[0].name)}&raquo; (${o.breakdowns.projekte[0].pct.toFixed(0)}%)` : '—'}.`
-    );
-  }
-
-  // Drift-Headline
-  if (o.drift) {
-    const dShare = o.drift.top1ShareSecond - o.drift.top1ShareFirst;
-    if (Math.abs(dShare) >= 8) {
-      headlines.push(
-        dShare > 0
-          ? `<b>Konzentration verstärkt sich</b> (${o.drift.top1ShareFirst.toFixed(0)}% → ${o.drift.top1ShareSecond.toFixed(0)}% beim Top-Stakeholder).`
-          : `<b>Konzentration lockert sich</b> (${o.drift.top1ShareFirst.toFixed(0)}% → ${o.drift.top1ShareSecond.toFixed(0)}%).`
-      );
-    }
-  }
-
-  // Datenbasis-Disclaimer kurz
-  const covPct = o.coverage * 100;
-  if (covPct < 70) {
-    headlines.push(
-      `<b>Datenbasis mit Vorbehalt</b> (Coverage ${covPct.toFixed(0)}%) — Aussagen tendenziell konservativ.`
-    );
-  }
-
-  if (headlines.length === 0) return null;
-  return `<b>Was die Zahlen sagen.</b> ${headlines.join(' ')}`;
-}
-
-/**
- * Board-Lens — Geschäftsleitung. Knapp, drei Headlines, keine Fragen.
- * Ein Reader-Modus für Leute mit 30 Sekunden Aufmerksamkeit.
- */
-function buildBoardClosing(o: NarrativeOpts): string | null {
-  const topSh = o.breakdowns.stakeholders[0];
-  const topProj = o.breakdowns.projekte[0];
-  const headlines: string[] = [];
-
-  headlines.push(
-    `<b>Auslastung:</b> Ø ${fmtHours(o.avgPres)} Präsenz / ${fmtHours(o.avgWall)} Wallclock pro Arbeitstag.`
-  );
-
-  if (topSh && topProj) {
-    headlines.push(
-      `<b>Schwerpunkte:</b> ${htmlEsc(topSh.name)} ${topSh.pct.toFixed(0)}%, ${htmlEsc(topProj.name)} ${topProj.pct.toFixed(0)}%. ${o.breakdowns.stakeholders.length} Stakeholder, ${o.breakdowns.projekte.length} Projekte aktiv.`
-    );
-  }
-
-  headlines.push(
-    `<b>Profil:</b> ${o.productivePct.toFixed(0)}% Produktiv${o.mtFactor > 1.3 ? `, Parallelitäts-Faktor ${o.mtFactor.toFixed(1)}x` : ''}. Datenbasis ${(o.coverage * 100).toFixed(0)}%.`
-  );
-
-  return `<b>Auf einen Blick.</b><br/>${headlines.map((h) => `&bull;&nbsp; ${h}`).join('<br/>')}`;
-}
-
-const LENS_CLOSING_BUILDERS: Record<
-  ReportLens,
-  (o: NarrativeOpts) => string | null
-> = {
-  coach: buildCoachClosing,
-  lead: buildLeadClosing,
-  chef: buildChefClosing,
-  board: buildBoardClosing,
-};
 
 function isoWeek(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);

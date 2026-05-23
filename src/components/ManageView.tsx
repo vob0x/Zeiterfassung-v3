@@ -24,6 +24,7 @@ import { useMasterStore } from '@/stores/masterStore';
 import { useTeamStore } from '@/stores/teamStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useI18n } from '@/i18n';
+import { detectDataQualityIssues } from '@/lib/reportData';
 import type { MasterDataItem, TimeEntry } from '@/types';
 
 type Dim = 'stakeholder' | 'projekt' | 'taetigkeit' | 'format';
@@ -79,6 +80,13 @@ export default function ManageView() {
   );
   const counters = useMemo(() => buildUseCounters(allEntries), [allEntries]);
 
+  // Phase-A-Welle-4: Datenqualitäts-Issues (Tippfehler etc.) leben hier,
+  // nicht im Report. Disziplin gehört an den Datenort.
+  const dataQualityIssues = useMemo(
+    () => detectDataQualityIssues(allEntries),
+    [allEntries]
+  );
+
   const itemsByDim: Record<Dim, MasterDataItem[]> = {
     stakeholder: stakeholders,
     projekt: projects,
@@ -101,6 +109,10 @@ export default function ManageView() {
         {t('manage.intro')}
       </p>
 
+      {dataQualityIssues.length > 0 && (
+        <DataQualityPanel issues={dataQualityIssues} />
+      )}
+
       {SECTIONS.map((sec) => (
         <Section
           key={sec.dim}
@@ -111,6 +123,46 @@ export default function ManageView() {
         />
       ))}
     </section>
+  );
+}
+
+/**
+ * Datenqualitäts-Panel — zeigt Issues (z. B. Tippfehler-Duplikate in
+ * Tätigkeiten), die vom Report bewusst weggehalten werden. Hier ist der
+ * Ort der Korrektur: der User kann direkt in der zugehörigen Section
+ * die Schreibweisen vereinheitlichen.
+ */
+function DataQualityPanel({
+  issues,
+}: {
+  issues: ReturnType<typeof detectDataQualityIssues>;
+}) {
+  const { t } = useI18n();
+  return (
+    <div
+      className="rounded p-3 space-y-2"
+      style={{
+        background: 'rgba(212,112,110,0.08)',
+        border: '1px solid rgba(212,112,110,0.35)',
+      }}
+    >
+      <div
+        className="text-[10px] uppercase tracking-widest"
+        style={{ color: '#D4706E' }}
+      >
+        {t('manage.dataQuality')}
+      </div>
+      <ul className="space-y-1.5 text-xs" style={{ color: 'var(--text)' }}>
+        {issues.map((iss, i) => (
+          <li key={i} className="leading-relaxed">
+            <span style={{ color: '#D4706E' }}>•</span> {iss.message}
+          </li>
+        ))}
+      </ul>
+      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+        {t('manage.dataQualityHint')}
+      </div>
+    </div>
   );
 }
 
