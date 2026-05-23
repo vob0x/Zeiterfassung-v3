@@ -41,14 +41,18 @@ function buildHeadlines(data: ReportData): string {
   const k = data.kpis;
   const heads: string[] = [];
 
-  // Output-Anteil
+  // Versickerungs-Anteil (Welle 6, REPORT-PHASE-C). Tausch der
+  // bisherigen Produktiv-Headline durch die ehrlichere Selbsteinschätzung
+  // „Nicht produktiv". Hoher Wert ist die Warnung, nicht das Normale.
   let outputHead: string;
-  if (k.productivePct >= 50) {
-    outputHead = `<b>Der Bericht zeigt eine produktive Periode:</b> ${k.productivePct.toFixed(0)}% der Zeit lief auf direkt wertschöpfende Aufgaben (${fmtHours(k.productiveMs)}). Der Rest war Steuerung, Abstimmung, Verwaltung — normaler Anteil.`;
-  } else if (k.productivePct >= 40) {
-    outputHead = `<b>Produktive Arbeit und Steuerung halten sich die Waage:</b> ${k.productivePct.toFixed(0)}% der Zeit war direkt wertschöpfend (${fmtHours(k.productiveMs)}). Solide Mischung, kein Output-Engpass.`;
+  if (k.leakPct < 10) {
+    outputHead = `<b>Sehr fokussierte Periode:</b> nur ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden im Tracker explizit als „nicht produktiv" markiert. Versickerung nahe null — die Routine trägt, kein operativer Hebel nötig.`;
+  } else if (k.leakPct < 25) {
+    outputHead = `<b>Geringe Versickerung:</b> ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Üblicher Anteil — leichtes Grundrauschen, kein Steuerungs-Thema.`;
+  } else if (k.leakPct < 40) {
+    outputHead = `<b>Merklicher Versickerungs-Anteil:</b> ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Konkret heißt das: substanzielle Selbsteinschätzung als verlorene Zeit — wo sammelt sich das? Welches Projekt, welcher Kontext?`;
   } else {
-    outputHead = `<b>Auffällig wenig direkte Wertschöpfung:</b> nur ${k.productivePct.toFixed(0)}% der Zeit lief auf produktive Aufgaben (${fmtHours(k.productiveMs)}). Konkret heißt das: der Großteil des Tages ist Verwaltung, Abstimmung, Meetings — gewollt (z.B. Führungs-Rolle) oder Hinweis, dass Wertschöpfungs-Zeit untergeht.`;
+    outputHead = `<b>Versickerung dominiert:</b> ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Über 40 % Selbsteinschätzung als verschwendet ist ein Alarmsignal — operativer Schnitt überfällig.`;
   }
   heads.push(outputHead);
 
@@ -329,9 +333,14 @@ function pickPriorityAction(data: ReportData): string {
     return `Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} ist substantiell. Konkret: Tracker-Hygiene prüfen (vergessene laufende Tracker bei Wechseln) — falls die Disziplin steht, bewusste Mehr-Mandanten-Steuerung im Team-Standard verankern.`;
   }
 
-  // 5. Output-Engpass beim Hauptmandanten
-  if (top && k.productivePct < 35) {
-    return `Bei <b>${esc(top.name)}</b> als Hauptmandant nur ${k.productivePct.toFixed(0)}% direkte Wertschöpfung. Mandats-Schnitt prüfen — ist die hohe Steuerungs-/Abstimmungs-Last die Rolle, oder hat sich der Auftrag verschoben?`;
+  // 5. Hoher Versickerungs-Anteil (Welle 6) — wenn die Person selbst
+  // 40%+ als „nicht produktiv" markiert, ist das ein dringender
+  // operativer Hinweis, unabhängig vom Hauptmandanten.
+  if (k.leakPct >= 40) {
+    return `Versickerungs-Anteil bei ${k.leakPct.toFixed(0)}% — über 40 % der Zeit als „nicht produktiv" selbsteingestuft. Quellen identifizieren (welche Projekte, welche Kontexte) und gezielt eingreifen — das ist nicht Tracker-Streuung, das ist eine bewusste Selbstmessung.`;
+  }
+  if (top && k.leakPct >= 25) {
+    return `Bei <b>${esc(top.name)}</b> als Hauptmandant: Versickerungs-Anteil ${k.leakPct.toFixed(0)}% (${fmtHours(k.leakMs)}) als „nicht produktiv" markiert. Mandats-Schnitt prüfen — bindet der Auftrag in einem Maß, dass Wertschöpfung untergeht?`;
   }
 
   // Default: keine roten Flaggen, Routine trägt

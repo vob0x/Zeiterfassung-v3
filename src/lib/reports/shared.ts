@@ -149,6 +149,45 @@ export function interpretCoverage(pct: number): ScaleAssessment {
   };
 }
 
+/**
+ * Versickerungs-Skala (Welle 6, REPORT-PHASE-C). pct = Anteil der Zeit,
+ * die von der Person selbst als „Nicht produktiv" markiert wurde —
+ * also bewusst als versickert eingestuft. Die Skala kehrt sich
+ * gegenüber `interpretProductivePct` um: hoher Wert ist die Warnung,
+ * niedriger Wert ist gut. Das `level`-Mapping bleibt dasselbe wie bei
+ * den anderen Skalen — die Farbgebung in der UI invertiert dadurch
+ * automatisch korrekt (low/grün ist gut, high/rot ist Warnung).
+ *
+ * Anders als bei interpretProductivePct gibt es kein „üblich"-Plateau:
+ * jede selbst markierte Versickerung ist Verlust, deshalb steigen die
+ * Stufen monoton mit dem Wert.
+ */
+export function interpretLeakPct(pct: number): ScaleAssessment {
+  if (pct < 10)
+    return {
+      level: 'high', // semantisch positiv: wenig Versickerung → grünes Badge
+      label: 'sehr fokussiert',
+      hint: 'Unter 10 % der Zeit als „nicht produktiv" markiert — sehr seltene Selbsteinschätzung.',
+    };
+  if (pct < 25)
+    return {
+      level: 'normal',
+      label: 'gering',
+      hint: '10 – 25 % als versickert markiert — leichter Anteil unproduktive Zeit.',
+    };
+  if (pct < 40)
+    return {
+      level: 'elevated',
+      label: 'merklich',
+      hint: '25 – 40 % als versickert markiert — substanzieller Anteil verlorener Zeit.',
+    };
+  return {
+    level: 'low', // semantisch negativ: viel Versickerung → rotes Badge
+    label: 'hoch',
+    hint: 'Über 40 % als „nicht produktiv" markiert — Versickerung dominiert, dringender Hebel-Bedarf.',
+  };
+}
+
 /** Tiefer Fokus (Slot ≥ 2h Anteil): <20% fragmentiert, >55% sehr fokussiert. */
 export function interpretDeepFocus(pct: number): ScaleAssessment {
   if (pct < 20)

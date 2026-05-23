@@ -185,6 +185,21 @@ function buildCoachParagraphs(data: ReportData): string {
     );
   }
 
+  // Welle 6 — Versickerungs-Block. Erscheint nur, wenn der Anteil
+  // bewusst markierter „nicht produktiver" Zeit substanziell ist. Coach-
+  // Ton: deine Bewertung, nicht die der Daten — also was war es?
+  if (data.kpis.leakPct >= 25) {
+    const topNonprodSh = data.stakeholderProfiles
+      .filter((p) => p.nonprodPct >= 30 && p.entriesCount >= 5)
+      .sort((a, b) => b.nonprodPct - a.nonprodPct)[0];
+    const wo = topNonprodSh
+      ? ` Der größte Anteil davon steckte in der Arbeit für <b>${esc(topNonprodSh.name)}</b> (${topNonprodSh.nonprodPct.toFixed(0)}% dieser Mandant-Slots).`
+      : '';
+    paras.push(
+      `Was zu denken gibt: ${data.kpis.leakPct.toFixed(0)}% deiner Zeit hast du selbst als „nicht produktiv" markiert. Das ist deine Bewertung, nicht die der Daten — du hast diese Slots aktiv so eingestuft.${wo} Welche dieser Slots würdest du im Nachhinein anders setzen — beim nächsten Mal sagen oder gar nicht erst zusagen?`
+    );
+  }
+
   // Welle 5a — Coach-spezifische ChangePoints in Prosa. Nur EIN
   // narrativer Bruch, der relevanteste. Mehr macht den Coach-Bericht
   // zu lang — zwei narrative Brüche fühlten sich wie ein zweiter

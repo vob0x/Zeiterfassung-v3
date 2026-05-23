@@ -16,8 +16,8 @@ import {
   fmtHours,
   fmtHoursShort,
   interpretCoverage,
+  interpretLeakPct,
   interpretParallelFactor,
-  interpretProductivePct,
   renderChangePointSection,
   renderDriftArrow,
   renderFindingsBlock,
@@ -285,7 +285,10 @@ function buildHebel(data: ReportData): string {
 function buildKpiAnhang(data: ReportData): string {
   const k = data.kpis;
   const mt = interpretParallelFactor(k.multiTaskingFactor);
-  const prod = interpretProductivePct(k.productivePct);
+  // Welle 6 — Versickerungs-Modell ersetzt die Produktiv-Skala. Der
+  // Wert kommt aus der bewussten „Nicht produktiv"-Markierung der
+  // Person, nicht aus dem Komplement der Produktiv-Quote.
+  const leak = interpretLeakPct(k.leakPct);
   const cov = k.coverage * 100;
   const covScale = interpretCoverage(cov);
   return `<div class="lead-kpi-mini">
@@ -300,9 +303,9 @@ function buildKpiAnhang(data: ReportData): string {
       <div class="lead-kpi-s">${mt.hint}</div>
     </div>
     <div class="lead-kpi-tile">
-      <div class="lead-kpi-h">Produktiv-Anteil</div>
-      <div class="lead-kpi-v">${k.productivePct.toFixed(0)}% <span class="scale-badge scale-${prod.level}">${prod.label}</span></div>
-      <div class="lead-kpi-s">${prod.hint}</div>
+      <div class="lead-kpi-h">Versickerungs-Anteil</div>
+      <div class="lead-kpi-v">${k.leakPct.toFixed(0)}% <span class="scale-badge scale-${leak.level}">${leak.label}</span></div>
+      <div class="lead-kpi-s">${leak.hint}</div>
     </div>
     <div class="lead-kpi-tile">
       <div class="lead-kpi-h">Tracking-Genauigkeit</div>

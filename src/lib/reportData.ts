@@ -431,6 +431,15 @@ export interface ReportData {
     workingDays: number;
     productivePct: number;
     productiveMs: number;
+    /**
+     * Welle 6 — Versickerungs-Modell. Anteil der naiv getrackten Zeit,
+     * die mit Tätigkeit „Nicht produktiv" markiert wurde. Hoher Wert =
+     * Warnung (Person selbst markiert mehr Zeit als versickert).
+     * Komplementär zu productivePct, aber unabhängig (zwischen beidem
+     * liegt z.B. „Konzeption" und andere produktive Tätigkeiten).
+     */
+    leakMs: number;
+    leakPct: number;
   };
   perMember?: PerMemberRow[];
   breakdowns: {
@@ -1798,6 +1807,13 @@ export function buildReportData(
   const productivePct =
     totalNaiveMs > 0 ? (productiveMs / totalNaiveMs) * 100 : 0;
 
+  // Welle 6 — Versickerungs-Modell. Tätigkeit „Nicht produktiv" wird
+  // von der Person bewusst gesetzt, wenn ein Slot sich im Nachhinein
+  // als verschwendet anfühlt. Der Anteil ist der Versickerungs-Index.
+  const leakMs = taetBuckets.get('Nicht produktiv') || 0;
+  const leakPct =
+    totalNaiveMs > 0 ? (leakMs / totalNaiveMs) * 100 : 0;
+
   // Coverage-Buckets
   let daysGood = 0;
   let daysOk = 0;
@@ -2478,6 +2494,8 @@ export function buildReportData(
       workingDays,
       productivePct,
       productiveMs,
+      leakMs,
+      leakPct,
     },
     perMember,
     breakdowns,

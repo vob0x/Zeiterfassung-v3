@@ -14,7 +14,7 @@ import type { ReportData } from '../reportData';
 import {
   esc,
   fmtHoursShort,
-  interpretProductivePct,
+  interpretLeakPct,
   renderBars,
   renderFindingsBlock,
 } from './shared';
@@ -52,9 +52,10 @@ export function renderBoardBody(data: ReportData): string {
     </div>`);
   }
 
-  // Profil-Karte: Produktiv-Anteil, Datenqualität, ggf. Parallel-Index.
-  // Skala-Badge neben dem Produktiv-Anteil ist der einzige Anker, den
-  // ein Board-Mitglied hat — 47 % allein sagt ohne Maßstab nichts.
+  // Profil-Karte: Versickerungs-Anteil (Welle 6, REPORT-PHASE-C).
+  // Die Selbsteinschätzung „Nicht produktiv" ist die ehrlichere Aussage
+  // als ein nackter Produktiv-Anteil — sie misst, was die Person selbst
+  // als verschwendet markiert hat. Hoher Wert ist die Warnung.
   const profilSubParts: string[] = [];
   profilSubParts.push(
     `${covPct.toFixed(0)}% des Tages lückenlos erfasst (Tracking-Genauigkeit).`
@@ -64,11 +65,11 @@ export function renderBoardBody(data: ReportData): string {
       `Pro getrackter Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(1)} Stunden Aufgaben an — Hinweis auf parallele Mandanten-Steuerung.`
     );
   }
-  const prodScale = interpretProductivePct(k.productivePct);
+  const leakScale = interpretLeakPct(k.leakPct);
   heroRows.push(`<div class="board-hero-cell">
     <div class="board-hero-label">Profil</div>
-    <div class="board-hero-value">${k.productivePct.toFixed(0)}% Produktiv <span class="scale-badge scale-${prodScale.level}">${prodScale.label}</span></div>
-    <div class="board-hero-sub">Anteil direkt wertschöpfender Arbeit (gegenüber Verwaltung, Abstimmung, Meetings). ${profilSubParts.join(' ')}</div>
+    <div class="board-hero-value">${k.leakPct.toFixed(0)}% Versickerung <span class="scale-badge scale-${leakScale.level}">${leakScale.label}</span></div>
+    <div class="board-hero-sub">Anteil der Zeit, die im Tracker explizit als „nicht produktiv" markiert wurde — Selbsteinschätzung der Person, nicht algorithmische Bewertung. ${profilSubParts.join(' ')}</div>
   </div>`);
 
   const heroHtml = `<div class="board-hero">
