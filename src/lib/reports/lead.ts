@@ -278,7 +278,7 @@ function buildHebel(data: ReportData): string {
 function buildKpiAnhang(data: ReportData): string {
   const k = data.kpis;
   return `<div class="lead-kpi-mini">
-    <div>Echte Arbeitszeit <b>${fmtHours(k.totalWallclockMs)}</b></div>
+    <div>Getrackte Zeit <b>${fmtHours(k.totalWallclockMs)}</b></div>
     <div>Anwesenheit <b>${fmtHours(k.totalPresenceMs)}</b></div>
     <div>Parallel-Faktor <b>${k.multiTaskingFactor.toFixed(2)}x</b></div>
     <div>Produktiv-Anteil <b>${k.productivePct.toFixed(0)}%</b></div>

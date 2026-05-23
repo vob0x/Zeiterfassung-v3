@@ -34,7 +34,7 @@ export function renderBoardBody(data: ReportData): string {
   heroRows.push(`<div class="board-hero-cell">
     <div class="board-hero-label">Auslastung</div>
     <div class="board-hero-value">${fmtHoursShort(k.avgPresenceMsPerDay)} <span style="font-size:14px;color:#888">/ Tag</span></div>
-    <div class="board-hero-sub">Anwesenheit zwischen erstem und letztem Eintrag im Schnitt, an ${k.workingDays} Arbeitstagen. Davon Ø ${fmtHoursShort(k.avgWallclockMsPerDay)} effektive Arbeit (Pausen-bereinigt).</div>
+    <div class="board-hero-sub">Anwesenheit zwischen erstem und letztem Eintrag im Schnitt, an ${k.workingDays} Arbeitstagen. Davon Ø ${fmtHoursShort(k.avgWallclockMsPerDay)} im Tracker erfasst (Lücken zwischen Einträgen herausgerechnet — die echte Arbeitszeit kann höher liegen, falls nicht alles getrackt wurde).</div>
   </div>`);
 
   if (topSh && topProj) {
@@ -58,7 +58,7 @@ export function renderBoardBody(data: ReportData): string {
   );
   if (k.multiTaskingFactor > 1.2) {
     profilSubParts.push(
-      `Pro echter Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(1)} Stunden Aufgaben an — Hinweis auf parallele Mandanten-Steuerung.`
+      `Pro getrackter Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(1)} Stunden Aufgaben an — Hinweis auf parallele Mandanten-Steuerung.`
     );
   }
   heroRows.push(`<div class="board-hero-cell">

@@ -68,9 +68,9 @@ function buildHeadlines(data: ReportData): string {
 
   // Parallel-Arbeit (Multi-Tasking)
   if (k.multiTaskingFactor > 1.4) {
-    heads.push(`<b>Hohe Parallel-Last:</b> pro echter Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(2)}h Aufgaben an. Konkret heißt das: oft liefen mehrere Themen gleichzeitig im selben Slot — bewusste Mehr-Mandanten-Steuerung, oder Hinweis auf parallel laufende Tracker, die nicht gestoppt wurden. Stichprobe lohnt sich.`);
+    heads.push(`<b>Hohe Parallel-Last:</b> pro getrackter Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(2)}h Aufgaben an. Konkret heißt das: oft liefen mehrere Themen gleichzeitig im selben Slot — bewusste Mehr-Mandanten-Steuerung, oder Hinweis auf parallel laufende Tracker, die nicht gestoppt wurden. Stichprobe lohnt sich.`);
   } else if (k.multiTaskingFactor > 1.15) {
-    heads.push(`<b>Moderate Parallel-Last:</b> pro echter Arbeitsstunde rund ${k.multiTaskingFactor.toFixed(2)}h Aufgaben gebucht. Üblicher Anteil paralleler Arbeit, z.B. wenn Mandanten in einem gemeinsamen Slot besprochen werden.`);
+    heads.push(`<b>Moderate Parallel-Last:</b> pro getrackter Arbeitsstunde rund ${k.multiTaskingFactor.toFixed(2)}h Aufgaben gebucht. Üblicher Anteil paralleler Arbeit, z.B. wenn Mandanten in einem gemeinsamen Slot besprochen werden.`);
   } else {
     heads.push(`<b>Sequenzielle Arbeit:</b> Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} — die Person macht ein Ding nach dem anderen, kaum Mehrfachzuordnung pro Slot.`);
   }
@@ -286,7 +286,7 @@ function buildClosing(data: ReportData): string {
 
   if (k.multiTaskingFactor > 1.5) {
     messages.push(
-      `Parallel-Faktor von ${k.multiTaskingFactor.toFixed(2)} ist substantiell. Konkret heißt das: pro echter Arbeitsstunde wurden ${k.multiTaskingFactor.toFixed(2)}h Aufgaben gezählt — entweder ist Tracker-Disziplin zu prüfen, oder die Mehr-Mandanten-Steuerung ist bewusst so gewählt.`
+      `Parallel-Faktor von ${k.multiTaskingFactor.toFixed(2)} ist substantiell. Konkret heißt das: pro getrackter Arbeitsstunde wurden ${k.multiTaskingFactor.toFixed(2)}h Aufgaben gezählt — entweder ist Tracker-Disziplin zu prüfen, oder die Mehr-Mandanten-Steuerung ist bewusst so gewählt.`
     );
   }
 

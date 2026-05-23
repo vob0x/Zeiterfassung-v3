@@ -2062,7 +2062,7 @@ export function buildReportData(
       .map((x) => `${x.date} (${fmtHours(x.ms)})`)
       .join(', ');
     const baselineSentence = baseline.isReliable
-      ? ` Zur Einordnung: dein typischer Tag hat ${fmtHours(baseline.dayWallclockMs.median)} echte Arbeitszeit, deine längsten 10% liegen bei mindestens ${fmtHours(baseline.dayWallclockMs.p90)} — die obigen Tage sprengen auch diese Spitze.`
+      ? ` Zur Einordnung: dein typischer Tag hat ${fmtHours(baseline.dayWallclockMs.median)} getrackte Arbeitszeit, deine längsten 10% liegen bei mindestens ${fmtHours(baseline.dayWallclockMs.p90)} — die obigen Tage sprengen auch diese Spitze.`
       : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 14 Stunden gesetzt.`;
     findings.push({
       level: 'info',
@@ -2100,7 +2100,7 @@ export function buildReportData(
       level: 'info',
       kind: 'mt-high',
       audiences: ['lead', 'chef'],
-      htmlMessage: `<b>Auffällig viel Parallel-Arbeit:</b> pro echter Arbeitsstunde fielen ${mtFactor.toFixed(2)}h Aufgaben an. Konkret heißt das: oft liefen mehrere Themen gleichzeitig im selben Slot (z.B. mehrere Stakeholder gleichzeitig zugewiesen). Entweder bewusste Mehr-Mandanten-Steuerung — oder vergessene Tracker, die nicht gestoppt wurden. Lohnt sich, ein paar Stichproben zu prüfen.${baselineSentence}`,
+      htmlMessage: `<b>Auffällig viel Parallel-Arbeit:</b> pro getrackter Arbeitsstunde fielen ${mtFactor.toFixed(2)}h Aufgaben an. Konkret heißt das: oft liefen mehrere Themen gleichzeitig im selben Slot (z.B. mehrere Stakeholder gleichzeitig zugewiesen). Entweder bewusste Mehr-Mandanten-Steuerung — oder vergessene Tracker, die nicht gestoppt wurden. Lohnt sich, ein paar Stichproben zu prüfen.${baselineSentence}`,
     });
   }
 
@@ -2373,7 +2373,7 @@ export function buildReportData(
       }
       case 'multiTasking': {
         if (cp.deltaSign === 'up') {
-          headline = `<b>${wkLabel} war besonders parallel:</b> du hast pro echter Arbeitsstunde ${cp.currentValue.toFixed(2)}h Aufgaben gezählt — Schnitt sonst ${cp.baselineValue.toFixed(2)}h.`;
+          headline = `<b>${wkLabel} war besonders parallel:</b> du hast pro getrackter Arbeitsstunde ${cp.currentValue.toFixed(2)}h Aufgaben gezählt — Schnitt sonst ${cp.baselineValue.toFixed(2)}h.`;
           erklaerung = `Konkret heißt das: mehrere Themen liefen gleichzeitig (z.B. mehrere Stakeholder im selben Slot). Bewusste Mehr-Mandanten-Steuerung oder Zerstreuung?`;
         } else {
           headline = `<b>${wkLabel} war seriell:</b> Parallel-Last ${cp.currentValue.toFixed(2)}h pro Arbeitsstunde, gegenüber Schnitt ${cp.baselineValue.toFixed(2)}h.`;

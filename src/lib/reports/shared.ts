@@ -749,10 +749,10 @@ export function wrapAsDocument(
   ${bodyHtml}
   <div class="footer">
     <b>Methodik kurz erklärt:</b>
-    <i>Echte Arbeitszeit</i> = vereinigte Tracker-Zeit eines Tages ohne Doppelzählung (wenn zwei Tracker parallel liefen, zählt das nur einmal).
+    <i>Getrackte Zeit</i> = vereinigte Tracker-Zeit eines Tages ohne Doppelzählung (wenn zwei Tracker parallel liefen, zählt das nur einmal). Das ist eine Untergrenze der tatsächlich gearbeiteten Zeit — was nicht getrackt wurde, ist hier nicht drin.
     <i>Anwesenheit</i> = Zeit zwischen erstem und letztem Eintrag des Tages.
-    <i>Tracking-Genauigkeit</i> = wie viel Prozent der Anwesenheit lückenlos erfasst ist (echte Arbeit ÷ Anwesenheit).
-    <i>Parallel-Faktor</i> = wie viele Stunden Aufgaben pro echter Arbeitsstunde gezählt werden (1.0 = sauber sequenziell, höher = mehrere Themen gleichzeitig im Slot).
+    <i>Tracking-Genauigkeit</i> = wie viel Prozent der Anwesenheit im Tracker erfasst ist (getrackte Zeit ÷ Anwesenheit).
+    <i>Parallel-Faktor</i> = wie viele Stunden Aufgaben pro getrackter Arbeitsstunde gezählt werden (1.0 = sauber sequenziell, höher = mehrere Themen gleichzeitig im Slot).
     Soll-Vergleiche (Plan vs. Ist) sind bewusst nicht Teil dieses Berichts — die Daten beschreiben, was war, ohne Bewertung gegen ein Ziel.
   </div>
 </body>
