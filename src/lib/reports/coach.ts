@@ -16,29 +16,29 @@ import {
   fmtHoursShort,
   dayPartLabel,
   rhythmLabel,
-  renderCompositesOnly,
 } from './shared';
 
 export function renderCoachBody(data: ReportData): string {
   const tagline = buildTagline(data);
   const minikpi = buildMiniKpi(data);
   const weekstrip = buildWeekstrip(data);
+  // Stärken-Block — bewusste Anerkennung, was diese Periode getragen hat.
+  // Coach-Brille war bisher asymmetrisch zugunsten der Sorgen; positive
+  // Muster verdienen dieselbe Sichtbarkeit.
+  const strengths = buildStrengthsBlock(data);
   const paragraphs = buildCoachParagraphs(data);
-  // Welle 5c — Composite-Karten erscheinen für Coach zusätzlich zu
-  // den narrativen Paragrafen, weil sie das große Bild benennen, das
-  // aus mehreren Einzel-Beobachtungen entsteht.
-  const compositeHtml = renderCompositesOnly(data, 'coach');
-  const compositeBlock = compositeHtml
-    ? `<h2>Was sich übergreifend zeigt</h2>${compositeHtml}`
-    : '';
   const questions = buildReflectionQuestions(data);
   const disclaimer = buildDisclaimer(data);
 
+  // Composite-Block wurde entfernt — er überlappte mit den narrativen
+  // Change-Point-Paragrafen, hat den Coach-Bericht aufgeblasen und im
+  // 2-Minuten-Modus erschlagen. Die operativ-strategische Schicht
+  // bleibt Lead / Chef / Board vorbehalten.
   return `
     <div class="coach-tagline">${tagline}</div>
     ${minikpi}
     ${weekstrip}
-    ${compositeBlock}
+    ${strengths}
     <div class="coach-narrative">${paragraphs}</div>
     ${questions}
     ${disclaimer}
@@ -185,9 +185,10 @@ function buildCoachParagraphs(data: ReportData): string {
     );
   }
 
-  // Welle 5a — Coach-spezifische ChangePoints in Prosa. Nur die ersten
-  // zwei coach-relevanten Brüche, narrativ formuliert. Wenn keine
-  // coach-Brüche im Datensatz: dieser Absatz fehlt einfach.
+  // Welle 5a — Coach-spezifische ChangePoints in Prosa. Nur EIN
+  // narrativer Bruch, der relevanteste. Mehr macht den Coach-Bericht
+  // zu lang — zwei narrative Brüche fühlten sich wie ein zweiter
+  // Report im Report an.
   const coachCPs = data.changePoints
     .filter((cp) => {
       switch (cp.metric) {
@@ -203,7 +204,7 @@ function buildCoachParagraphs(data: ReportData): string {
           return false;
       }
     })
-    .slice(0, 2);
+    .slice(0, 1);
   for (const cp of coachCPs) {
     const wk = esc(cp.weekLabel);
     let sentence = '';
@@ -240,7 +241,88 @@ function buildCoachParagraphs(data: ReportData): string {
 }
 
 /**
- * 3 datengetriebene Reflexionsfragen. Falls nichts auffällig: eine
+ * „Was trägt" — Anerkennung der positiven Muster im Datenbild.
+ *
+ * Coach-Brille kann fast nur Auffälligkeiten ausweisen — wer alles
+ * richtig macht, bekommt im Schlimmsten den Generic-Satz „eine ruhige
+ * Periode". Diese Sektion gibt positiven Mustern eigenen Platz. Es
+ * werden zwei bis drei tatsächlich vorhandene Stärken anerkannt,
+ * nicht erfundene Komplimente — wenn nichts greift, fällt der Block
+ * weg.
+ */
+function buildStrengthsBlock(data: ReportData): string {
+  const items: string[] = [];
+  const k = data.kpis;
+  const hi = data.weekday.highLoadDaysCount;
+  const we = data.weekday.weekendMs;
+  const deep = data.slotLength.deepFocusPct;
+  const rhythm = data.rhythm.consistency.rhythm;
+  const covPct = k.coverage * 100;
+  const notizCov = data.disziplin.notizCoverage;
+
+  // Tiefe Arbeit — Slots über 2h sind selten genug, um sie zu würdigen
+  if (data.slotLength.totalCount >= 20 && deep >= 40) {
+    items.push(
+      `<b>Tiefe ist da:</b> ${deep.toFixed(0)}% deiner Zeit lief in Blöcken über zwei Stunden — du hast dir Konzentration geleistet. Das ist eine Qualität, die in fragmentierten Wochen schnell verloren geht.`
+    );
+  }
+
+  // Doku-Disziplin
+  if (notizCov >= 60 && data.kpis.entriesCount >= 20) {
+    items.push(
+      `<b>Doku-Disziplin trägt:</b> ${notizCov.toFixed(0)}% deiner Einträge haben eine Notiz. In drei Monaten weißt du noch, was du an jedem Slot gemacht hast — das ist mehr wert, als es im Moment aussieht.`
+    );
+  }
+
+  // Verlässlicher Tagesrhythmus
+  if (rhythm === 'fix' || rhythm === 'rhythmisch') {
+    items.push(
+      rhythm === 'fix'
+        ? `<b>Verlässlicher Rhythmus:</b> deine Start- und Endzeiten lagen eng beieinander. Das gibt dem Tag eine Form, an der du dich orientieren kannst — und anderen ein Zeitfenster, in dem du erreichbar bist.`
+        : `<b>Rhythmischer Tagesablauf:</b> du hast wiedererkennbare Phasen, kein chaotisches Hin und Her. Solche Strukturen tragen, ohne dass man sie merkt.`
+    );
+  }
+
+  // Tracking-Disziplin
+  if (covPct >= 80 && data.kpis.entriesCount >= 30) {
+    items.push(
+      `<b>Tracking-Routine sitzt:</b> ${covPct.toFixed(0)}% des Tages lückenlos erfasst. Das macht jede spätere Auswertung erst möglich — die Mühe, die niemand sieht, zahlt sich hier ein.`
+    );
+  }
+
+  // Keine Überlast-Tage — Bahnen halten ist ebenso eine Leistung
+  if (hi === 0 && data.kpis.workingDays >= 10) {
+    items.push(
+      `<b>Bahnen gehalten:</b> kein einziger Tag über 10 Stunden — du hast dir die Grenze bewusst oder unbewusst gesetzt. In Phasen mit Druck ist das nicht selbstverständlich.`
+    );
+  }
+
+  // Wochenende geschützt
+  if (we === 0 && k.totalWallclockMs > 0 && data.kpis.workingDays >= 10) {
+    items.push(
+      `<b>Wochenende geschützt:</b> null erfasste Arbeitszeit am Wochenende. Das ist ein Beitrag zur Tragfähigkeit der Woche — die Erholung lädt nach, was die Wochentage abrufen.`
+    );
+  }
+
+  // Saubere serielle Arbeit
+  if (k.multiTaskingFactor <= 1.1 && k.entriesCount >= 30) {
+    items.push(
+      `<b>Saubere Sequenz:</b> Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} — du arbeitest weitgehend ein Ding nach dem anderen, statt mehrere Themen gleichzeitig im selben Slot zu mischen. Das macht die Erfassung sauber und die Arbeit klarer.`
+    );
+  }
+
+  if (items.length === 0) return '';
+
+  // Maximal drei — sonst wird der Block zur Streichelseite
+  const top = items.slice(0, 3);
+  return `<div class="coach-strengths">
+    <h3>Was trägt</h3>
+    ${top.map((s) => `<div class="coach-strength-item">${s}</div>`).join('')}
+  </div>`;
+}
+
+/**
+ * 2 datengetriebene Reflexionsfragen. Falls nichts auffällig: eine
  * freundliche Generisch-Frage.
  */
 function buildReflectionQuestions(data: ReportData): string {
@@ -303,12 +385,15 @@ function buildReflectionQuestions(data: ReportData): string {
     );
   }
 
+  // Coach-Bericht ist für 2-Minuten-Lesen — zwei Fragen mit Tiefe
+  // wirken stärker als drei, die schon zur Sammelstelle werden.
   const items = fragen
-    .slice(0, 3)
+    .slice(0, 2)
     .map((q) => `<div class="coach-q-item">${q}</div>`)
     .join('');
+  const heading = fragen.length >= 2 ? 'Zwei Fragen zur Reflexion' : 'Eine Frage zur Reflexion';
   return `<div class="coach-questions">
-    <h3>Drei Fragen zur Reflexion</h3>
+    <h3>${heading}</h3>
     ${items}
   </div>`;
 }

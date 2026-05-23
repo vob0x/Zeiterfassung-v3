@@ -54,6 +54,129 @@ export function fmtHoursShort(ms: number): string {
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+   Benchmark-Skalen — Einordnung nackter Zahlen
+   ─────────────────────────────────────────────────────────────────────
+   Nackte Werte wie „Parallel-Faktor 1.23x" oder „Produktiv-Anteil 47%"
+   sind ohne Maßstab nicht aussagekräftig. Die Skalen hier sind keine
+   verbindlichen Industrie-Benchmarks — sie sind erfahrungs-basierte
+   Daumenregeln, die dem Leser einen Anker geben: ist diese Zahl niedrig,
+   üblich, erhöht oder hoch?
+   ───────────────────────────────────────────────────────────────────── */
+
+export type ScaleLevel = 'low' | 'normal' | 'elevated' | 'high';
+
+export interface ScaleAssessment {
+  /** Einordnung für CSS-Färbung. */
+  level: ScaleLevel;
+  /** Kurz-Etikett für Inline-Anzeige neben dem Wert. */
+  label: string;
+  /** Ein-Satz-Erklärung der Skala (Tooltip / Subtext). */
+  hint: string;
+}
+
+/** Parallel-Faktor: 1.0 = sequenziell, >1.4 = hoch parallel. */
+export function interpretParallelFactor(x: number): ScaleAssessment {
+  if (x < 1.05)
+    return {
+      level: 'normal',
+      label: 'sequenziell',
+      hint: 'Werte um 1.0 = sauber seriell, ein Ding nach dem anderen.',
+    };
+  if (x < 1.2)
+    return {
+      level: 'normal',
+      label: 'leicht parallel',
+      hint: 'Bis ca. 1.2 = vereinzelte Mehrfach-Belegung im selben Slot.',
+    };
+  if (x < 1.4)
+    return {
+      level: 'elevated',
+      label: 'moderat parallel',
+      hint: '1.2 – 1.4 = häufiger mehrere Themen gleichzeitig; üblich bei Mandanten-Steuerung.',
+    };
+  return {
+    level: 'high',
+    label: 'hoch parallel',
+    hint: 'Über 1.4 = oft mehrere Tracker gleichzeitig — Hygiene prüfen oder bewusst gewählt.',
+  };
+}
+
+/** Produktiv-Anteil: <30% niedrig, 30-45% üblich für Steuerungs-Rollen. */
+export function interpretProductivePct(pct: number): ScaleAssessment {
+  if (pct < 30)
+    return {
+      level: 'low',
+      label: 'niedrig',
+      hint: 'Unter 30 % direkt wertschöpfend — Steuerungs-/Abstimmungs-Last dominiert.',
+    };
+  if (pct < 45)
+    return {
+      level: 'normal',
+      label: 'üblich für Steuerung',
+      hint: '30 – 45 % ist typisch in Führungs- / Beratungs-Profilen.',
+    };
+  if (pct < 60)
+    return {
+      level: 'elevated',
+      label: 'output-stark',
+      hint: '45 – 60 % = klarer Wertschöpfungs-Schwerpunkt.',
+    };
+  return {
+    level: 'high',
+    label: 'sehr output-stark',
+    hint: 'Über 60 % = überdurchschnittlich produktive Verteilung.',
+  };
+}
+
+/** Tracking-Coverage: <60% lückenhaft, >=80% belastbar. */
+export function interpretCoverage(pct: number): ScaleAssessment {
+  if (pct < 60)
+    return {
+      level: 'low',
+      label: 'lückenhaft',
+      hint: 'Unter 60 % = größere Tages-Lücken; Detail-Schlüsse mit Vorbehalt.',
+    };
+  if (pct < 80)
+    return {
+      level: 'normal',
+      label: 'brauchbar',
+      hint: '60 – 80 % = kleinere Lücken, Tendenzen tragen.',
+    };
+  return {
+    level: 'high',
+    label: 'belastbar',
+    hint: 'Über 80 % = lückenlos erfasst, Detail-Aussagen tragen.',
+  };
+}
+
+/** Tiefer Fokus (Slot ≥ 2h Anteil): <20% fragmentiert, >55% sehr fokussiert. */
+export function interpretDeepFocus(pct: number): ScaleAssessment {
+  if (pct < 20)
+    return {
+      level: 'low',
+      label: 'fragmentiert',
+      hint: 'Unter 20 % in Slots über 2h = wenig zusammenhängende Tiefe.',
+    };
+  if (pct < 40)
+    return {
+      level: 'normal',
+      label: 'normal',
+      hint: '20 – 40 % = gemischter Tag, einige tiefe Phasen.',
+    };
+  if (pct < 55)
+    return {
+      level: 'elevated',
+      label: 'fokussiert',
+      hint: 'Über 40 % = klare Konzentrations-Anteile.',
+    };
+  return {
+    level: 'high',
+    label: 'sehr fokussiert',
+    hint: 'Über 55 % = überwiegend tiefe Arbeit, selten erreicht.',
+  };
+}
+
+/* ─────────────────────────────────────────────────────────────────────
    Wiederverwendete Bausteine
    ───────────────────────────────────────────────────────────────────── */
 
@@ -645,6 +768,11 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .coach-questions h3{margin-top:0;color:#6c5a2c;font-size:15px}
 .coach-q-item{margin:10px 0;font-size:14.5px;line-height:1.5}
 .coach-q-item::before{content:'→ ';color:#C9A962;font-weight:700}
+.coach-strengths{background:#f0f8f4;border-left:4px solid #6EC49E;border-radius:4px;padding:16px 22px;margin:24px 0}
+.coach-strengths h3{margin-top:0;color:#3a8d6e;font-size:14px;text-transform:uppercase;letter-spacing:0.04em}
+.coach-strength-item{margin:8px 0;font-size:14px;line-height:1.55}
+.coach-strength-item::before{content:'✓ ';color:#6EC49E;font-weight:700}
+.coach-strength-item b{color:#1c1a17}
 
 /* LEAD-spezifisch — Cockpit, Karten, Hebel */
 .lead-three{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0 24px}
@@ -674,8 +802,18 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .lead-hebel h3{margin-top:0;color:#6c5a2c;font-size:15px}
 .lead-hebel-item{margin:10px 0;font-size:14px;line-height:1.5}
 .lead-hebel-item::before{content:'▸ ';color:#C9A962;font-weight:700}
-.lead-kpi-mini{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:12px;margin-top:14px;padding-top:14px;border-top:1px solid #e5dfc8;color:#666}
-.lead-kpi-mini b{color:#1c1a17;font-variant-numeric:tabular-nums}
+.lead-kpi-mini{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #e5dfc8}
+.lead-kpi-tile{background:white;border:1px solid #e5dfc8;border-radius:4px;padding:10px 12px}
+.lead-kpi-h{font-size:10.5px;color:#888;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px}
+.lead-kpi-v{font-size:15px;color:#1c1a17;font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.lead-kpi-s{font-size:11px;color:#888;line-height:1.4;margin-top:4px}
+
+/* Skalen-Badges — Einordnung neben einem nackten Wert */
+.scale-badge{font-size:10px;padding:1px 7px;border-radius:8px;text-transform:uppercase;letter-spacing:0.04em;font-weight:600;white-space:nowrap}
+.scale-low{background:#fff0e8;color:#D4706E;border:1px solid #f5d4c8}
+.scale-normal{background:#f4f0e6;color:#6c5a2c;border:1px solid #e5dfc8}
+.scale-elevated{background:#fff8eb;color:#9e7a1f;border:1px solid #ebd9a8}
+.scale-high{background:#f0f8f4;color:#3a8d6e;border:1px solid #c8e4d6}
 
 /* CHEF-spezifisch — Headlines, Tabellen, knapp */
 .chef-headlines{display:flex;flex-direction:column;gap:8px;margin:18px 0 24px}
@@ -692,6 +830,8 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .chef-drift-table td{padding:6px 8px}
 .chef-drift-table td.num{text-align:right;font-variant-numeric:tabular-nums}
 .chef-closing{background:#fff8eb;border-left:4px solid #C9A962;border-radius:4px;padding:16px 20px;margin:24px 0;font-size:14px;line-height:1.55}
+.chef-mix-hint{margin:8px 0 12px;font-size:13px;color:#555;line-height:1.5}
+.chef-mix-hint b{color:#1c1a17}
 
 /* BOARD-spezifisch — Hero, One-Pager, sehr knapp */
 .board-hero{background:linear-gradient(135deg,#fff8eb 0%,#fdfbf6 100%);border:1px solid #d8cfb6;border-radius:8px;padding:32px 28px;margin:20px 0 28px}
@@ -712,7 +852,7 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 }
 @media print{
   body{background:white;max-width:none;padding:12mm;margin:0}
-  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.lead-hebel,.chef-closing,.lead-card-tags .tag,.coach-minikpi-tile,.board-trend,.cp-card,.cp-card-meaning,.cp-card-cooccur,.cp-card-persist,.cp-card-snapshot,.cp-card-action,.cp-persist-tag,.composite,.composite-warn,.composite-info,.composite-tag,.composite-hebel{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.coach-strengths,.lead-hebel,.chef-closing,.lead-card-tags .tag,.lead-kpi-tile,.coach-minikpi-tile,.board-trend,.cp-card,.cp-card-meaning,.cp-card-cooccur,.cp-card-persist,.cp-card-snapshot,.cp-card-action,.cp-persist-tag,.composite,.composite-warn,.composite-info,.composite-tag,.composite-hebel,.scale-badge,.scale-low,.scale-normal,.scale-elevated,.scale-high{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   h2{break-after:avoid}
   section{break-inside:avoid-page}
   .cp-card,.composite{break-inside:avoid}

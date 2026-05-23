@@ -139,10 +139,29 @@ function buildSchwerpunkt(data: ReportData): string {
 
 /**
  * Operativer Mix als zwei horizontale Bar-Strips: Tätigkeits-Mix und
- * Format-Mix. Auf Top-5 begrenzt um nicht zu erschlagen.
+ * Format-Mix. Auf Top-5 begrenzt um nicht zu erschlagen. Voran eine
+ * Aussage-Zeile mit den dominanten Anteilen — sonst sind die Bars nur
+ * eine Stütze ohne Schlussfolgerung.
  */
 function buildOperativerMix(data: ReportData): string {
-  return `<div class="chef-matrix">
+  const topTaet = data.breakdowns.taetigkeiten[0];
+  const topFormat = data.breakdowns.formate[0];
+  const hints: string[] = [];
+  if (topTaet && topTaet.pct >= 35) {
+    hints.push(
+      `Tätigkeits-Schwergewicht <b>${esc(topTaet.name)}</b> bei ${topTaet.pct.toFixed(0)}%`
+    );
+  }
+  if (topFormat && topFormat.pct >= 45) {
+    hints.push(
+      `Format-Schwergewicht <b>${esc(topFormat.name)}</b> bei ${topFormat.pct.toFixed(0)}%`
+    );
+  }
+  const hintLine =
+    hints.length > 0
+      ? `<p class="chef-mix-hint">${hints.join(' · ')} — dominante Achsen im Tagesgeschäft.</p>`
+      : '';
+  return `${hintLine}<div class="chef-matrix">
     <div>
       <h3>Tätigkeits-Mix</h3>
       ${renderBars(data.breakdowns.taetigkeiten, '#888', 5)}
@@ -265,50 +284,56 @@ function buildFindingsSection(data: ReportData): string {
 }
 
 /**
- * Chef-Closing — knappe Aussage, keine Frage. Reine Operative-Zusammen-
- * fassung wenn nichts auffällig war, sonst spitze Konsequenz.
+ * Chef-Closing — EINE priorisierte Empfehlung, nicht die Wiederholung
+ * aller Headlines. Reihenfolge: Datenqualität zuerst (sonst trägt der
+ * Bericht nicht), dann Composite-Befunde, dann Klumpen, dann Multi-
+ * Tasking, dann Output-Engpass. Wenn nichts greift: Routine.
  */
 function buildClosing(data: ReportData): string {
+  const action = pickPriorityAction(data);
+  return `<div class="chef-closing">
+    <b>Nächster Hebel.</b> ${action}
+  </div>`;
+}
+
+/**
+ * Wählt die wichtigste operative Konsequenz aus dem Datenbild aus.
+ * Genau eine Empfehlung, damit der Closing-Block nicht zur Wiederholung
+ * der Headlines verkommt.
+ */
+function pickPriorityAction(data: ReportData): string {
   const k = data.kpis;
   const top = data.breakdowns.stakeholders[0];
-  const messages: string[] = [];
 
+  // 1. Datenqualität — wenn das nicht steht, tragen die Detail-Schlüsse nicht.
+  if (k.coverage < 0.6) {
+    return `Tracking-Routine als erstes stabilisieren — die Datenbasis ist mit ${(k.coverage * 100).toFixed(0)}% zu dünn für belastbare Detail-Schlüsse aus diesem Bericht. Erst Erfassung in den Griff bekommen, dann inhaltlich steuern.`;
+  }
+
+  // 2. Composite-Befunde — diese fassen mehrere Schwächen zusammen
+  const warnComposite = data.composites.find((c) => c.level === 'warn');
+  if (warnComposite) {
+    return `${warnComposite.diagnosis} <b>Maßnahme:</b> ${warnComposite.hebel}`;
+  }
+
+  // 3. Klumpen-Verstärkung — strategisches Risiko, kein Detail-Thema
   if (data.drift) {
     const dShare = data.drift.top1ShareSecond - data.drift.top1ShareFirst;
-    if (Math.abs(dShare) >= 8) {
-      messages.push(
-        dShare > 0
-          ? `Schwerpunkt verstärkt sich von ${data.drift.top1ShareFirst.toFixed(0)}% auf ${data.drift.top1ShareSecond.toFixed(0)}% — Klumpen-Risiko wird größer, ein einzelner Mandanten-Wegfall hätte spürbarere Folgen.`
-          : `Schwerpunkt lockert sich von ${data.drift.top1ShareFirst.toFixed(0)}% auf ${data.drift.top1ShareSecond.toFixed(0)}% — das Portfolio öffnet sich, mehr Mandanten teilen sich die Aufmerksamkeit.`
-      );
+    if (dShare >= 8 && data.drift.top1ShareSecond >= 50) {
+      return `Klumpen-Risiko bei <b>${esc(data.drift.topShNameSecond)}</b> verstärkt sich (${data.drift.top1ShareFirst.toFixed(0)}% → ${data.drift.top1ShareSecond.toFixed(0)}%). Entweder Diversifikation als bewussten Auftrag für die nächsten Wochen setzen, oder die strategische Großmandat-Logik schriftlich bestätigen.`;
     }
   }
 
+  // 4. Multi-Tasking auffällig — Hygiene oder bewusste Wahl
   if (k.multiTaskingFactor > 1.5) {
-    messages.push(
-      `Parallel-Faktor von ${k.multiTaskingFactor.toFixed(2)} ist substantiell. Konkret heißt das: pro getrackter Arbeitsstunde wurden ${k.multiTaskingFactor.toFixed(2)}h Aufgaben gezählt — entweder ist Tracker-Disziplin zu prüfen, oder die Mehr-Mandanten-Steuerung ist bewusst so gewählt.`
-    );
+    return `Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} ist substantiell. Konkret: Tracker-Hygiene prüfen (vergessene laufende Tracker bei Wechseln) — falls die Disziplin steht, bewusste Mehr-Mandanten-Steuerung im Team-Standard verankern.`;
   }
 
-  if (k.coverage < 0.7) {
-    messages.push(
-      `Tracking-Genauigkeit nur ${(k.coverage * 100).toFixed(0)}%. Konkret heißt das: die Detail-Verteilungen unten sind tendenziell konservativ — die echte Lage könnte breiter sein als hier ausgewiesen, weil ein guter Teil des Tages außerhalb der Einträge liegt.`
-    );
-  }
-
+  // 5. Output-Engpass beim Hauptmandanten
   if (top && k.productivePct < 35) {
-    messages.push(
-      `Produktiver Anteil unter 35% bei <b>${esc(top.name)}</b> als Hauptmandant — Output-Aktivitäten (direkte Wertschöpfung) sind dünn gegenüber Steuerung/Verwaltung. Ist das so gewollt?`
-    );
+    return `Bei <b>${esc(top.name)}</b> als Hauptmandant nur ${k.productivePct.toFixed(0)}% direkte Wertschöpfung. Mandats-Schnitt prüfen — ist die hohe Steuerungs-/Abstimmungs-Last die Rolle, oder hat sich der Auftrag verschoben?`;
   }
 
-  if (messages.length === 0) {
-    messages.push(
-      'Stabile Linienlage — keine operativen Hebel akut nötig. Routine trägt.'
-    );
-  }
-
-  return `<div class="chef-closing">
-    <b>Operative Konsequenz.</b> ${messages.slice(0, 3).join(' ')}
-  </div>`;
+  // Default: keine roten Flaggen, Routine trägt
+  return `Stabile Linienlage — keine operativen Hebel akut nötig. Beobachten reicht; Energie für die nächste Periode anderweitig setzen.`;
 }

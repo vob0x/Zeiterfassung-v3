@@ -15,6 +15,9 @@ import {
   esc,
   fmtHours,
   fmtHoursShort,
+  interpretCoverage,
+  interpretParallelFactor,
+  interpretProductivePct,
   renderChangePointSection,
   renderDriftArrow,
   renderFindingsBlock,
@@ -51,14 +54,14 @@ function buildCockpit(data: ReportData): string {
   if (hi >= 3) {
     belastungClass = 'ampel-warn';
     belastungValue = `${hi} lange Tage`;
-    belastungSub = `An ${hi} Tagen lag zwischen erstem und letztem Eintrag mehr als 10 Stunden — überdurchschnittlich lange Tage. Im Gespräch fragen: was treibt diese Spitzen — Deadline, Personalengpass, oder Entscheidung der Person?`;
+    belastungSub = `An ${hi} Tagen lag zwischen erstem und letztem Eintrag mehr als 10 Stunden — überdurchschnittlich lange Tage. <b>Im Gespräch fragen:</b> Was treibt diese Spitzen — Deadline, Personalengpass, bewusste Entscheidung? Und wirkt der Rhythmus tragfähig oder zehrt er?`;
   } else if (hi >= 1) {
     belastungValue = `${hi} lange${hi === 1 ? 'r' : ''} Tag${hi === 1 ? '' : 'e'}`;
-    belastungSub = `Vereinzelte lange Tage über 10 Stunden, aber kein Muster. Wert: notieren, nicht ansprechen.`;
+    belastungSub = `Vereinzelte lange Tage über 10 Stunden, aber kein durchgängiges Muster. <b>Kurz anhaken:</b> War an diesen Tagen etwas Besonderes — Abgabe, Workshop, Reise — oder bewusst gewählte Intensität?`;
   } else {
     belastungClass = 'ampel-ok';
     belastungValue = `Ø ${fmtHoursShort(k.avgPresenceMsPerDay)} / Tag`;
-    belastungSub = `Belastung im normalen Bereich, keine Tage über 10 Stunden. Solide Routine.`;
+    belastungSub = `Keine Tage über 10 Stunden, solide Routine. <b>Verstärker-Frage:</b> Was hilft dabei, diesen Rhythmus zu halten — und wo steckt die Reserve für besondere Phasen?`;
   }
   cards.push(`<div class="lead-three-card ${belastungClass}">
     <div class="lead-three-h">Belastung</div>
@@ -75,16 +78,16 @@ function buildCockpit(data: ReportData): string {
     schwerpunktValue = `${top.pct.toFixed(0)}% ${esc(top.name)}`;
     if (top.pct >= 60) {
       schwerpunktClass = 'ampel-warn';
-      schwerpunktSub = `Mehr als ${top.pct.toFixed(0)}% der Zeit fließen in einen einzigen Mandanten — Klumpen-Risiko. Wenn dieser Auftrag wegfällt, ändert sich die Auslastung schlagartig. Bewusste Großmandat-Strategie, oder Diversifikation überfällig?`;
+      schwerpunktSub = `Über ${top.pct.toFixed(0)}% der Zeit in einen einzigen Mandanten — Klumpen-Risiko. Wenn dieser Auftrag wegfällt, ändert sich die Auslastung schlagartig. <b>Im Gespräch fragen:</b> Ist diese Konzentration strategisch gewollt, oder steht Diversifikation als Auftrag an?`;
     } else if (top.pct >= 35) {
-      schwerpunktSub = `${top.pct.toFixed(0)}% bei ${esc(top.name)} — ein klar erkennbarer Hauptmandant, daneben aber ein gesundes Portfolio anderer Themen. Stabile Mischung.`;
+      schwerpunktSub = `${top.pct.toFixed(0)}% bei ${esc(top.name)} — klar erkennbarer Hauptmandant mit gesundem Portfolio daneben. <b>Im Gespräch fragen:</b> Stimmen die Anteile zur strategischen Wunsch-Mischung, oder driftet die Realität schleichend von der Planung weg?`;
     } else {
       schwerpunktClass = 'ampel-ok';
-      schwerpunktSub = `Spitzenanteil unter ${top.pct.toFixed(0)}% — die Arbeitszeit verteilt sich breit über mehrere Mandanten. Kein akutes Klumpen-Thema.`;
+      schwerpunktSub = `Spitzenanteil bei ${top.pct.toFixed(0)}% — Arbeitszeit verteilt sich breit über mehrere Mandanten. <b>Im Gespräch fragen:</b> Ist die Verteilung bewusst-divers, oder fehlt ein klarer Schwerpunkt? Welche zwei Mandanten sollen in der nächsten Periode mehr Gewicht bekommen?`;
     }
   } else {
     schwerpunktValue = '—';
-    schwerpunktSub = 'Zu wenig Datenbasis für eine Schwerpunkt-Aussage.';
+    schwerpunktSub = 'Zu wenig Datenbasis für eine Schwerpunkt-Aussage — im Gespräch nicht thematisieren.';
   }
   cards.push(`<div class="lead-three-card ${schwerpunktClass}">
     <div class="lead-three-h">Schwerpunkt</div>
@@ -99,20 +102,20 @@ function buildCockpit(data: ReportData): string {
   let dqSub: string;
   if (covPct >= 80) {
     dqClass = 'ampel-ok';
-    dqSub = `Vom Anwesenheitsfenster (erster bis letzter Eintrag des Tages) sind ${covPct.toFixed(0)}% lückenlos erfasst. Die Detail-Aussagen unten sind belastbar.`;
+    dqSub = `${covPct.toFixed(0)}% des Anwesenheitsfensters lückenlos erfasst — Detail-Aussagen tragen. <b>Im Gespräch:</b> Tracking ist hier kein Thema — nur kurze Anerkennung, dann zu Inhalten.`;
   } else if (covPct >= 60) {
-    dqSub = `${covPct.toFixed(0)}% des Anwesenheitsfensters sind erfasst — brauchbar, aber mit kleineren Lücken im Tagesablauf. Tendenz-Aussagen sind belastbar, Minuten-genaue Vergleiche weniger.`;
+    dqSub = `${covPct.toFixed(0)}% erfasst — brauchbar, mit kleineren Lücken. Tendenzen sind belastbar, Minuten-genaue Vergleiche weniger. <b>Frage am Rand:</b> Gibt es einen bestimmten Tages-Übergang (Mittag, Feierabend) der gern fehlt, oder Themen die schwer zu tracken sind?`;
   } else {
     dqClass = 'ampel-warn';
-    dqSub = `Nur ${covPct.toFixed(0)}% des Tages sind lückenlos erfasst — größere Lücken im Tagesablauf. Tendenzen stimmen, Detail-Aussagen (Mandant-Verteilung, Tätigkeit) mit Vorbehalt. Im Gespräch eher Tracking-Routine ansprechen als Inhalte.`;
+    dqSub = `Nur ${covPct.toFixed(0)}% des Tages erfasst — größere Lücken. Tendenzen stimmen, Detail-Aussagen mit Vorbehalt. <b>Im Gespräch fragen:</b> Braucht die Tracking-Routine Unterstützung — weniger Kategorien, einfachere Bedienung, fester Reminder?`;
   }
   if (data.drift) {
     const dCov = (data.drift.coverageSecond - data.drift.coverageFirst) * 100;
     if (Math.abs(dCov) >= 10) {
       dqValue += ` (${dCov > 0 ? '↑' : '↓'} ${Math.abs(dCov).toFixed(0)}pp)`;
       dqSub = dCov > 0
-        ? `${covPct.toFixed(0)}% des Tages erfasst — Tracking-Disziplin steigt deutlich gegenüber der ersten Hälfte des Zeitraums.`
-        : `${covPct.toFixed(0)}% des Tages erfasst — Tracking-Disziplin sinkt in der zweiten Hälfte des Zeitraums um ${Math.abs(dCov).toFixed(0)}pp. Im Gespräch die Routine ansprechen, bevor die Datenbasis ganz wegbricht.`;
+        ? `${covPct.toFixed(0)}% erfasst — Tracking-Disziplin steigt deutlich gegenüber der ersten Hälfte. <b>Im Gespräch:</b> Was hat den Unterschied gemacht — neuer Reminder, einfacheres Setup, mehr Übung? Verstärken, was funktioniert.`
+        : `${covPct.toFixed(0)}% erfasst — Tracking-Disziplin sinkt in der zweiten Hälfte um ${Math.abs(dCov).toFixed(0)}pp. <b>Im Gespräch fragen:</b> Was ist passiert — neue Aufgaben-Art, technisches Problem, Motivations-Einbruch? Routine ansprechen, bevor die Datenbasis ganz wegbricht.`;
     }
   }
   cards.push(`<div class="lead-three-card ${dqClass}">
@@ -274,13 +277,37 @@ function buildHebel(data: ReportData): string {
   </div>`;
 }
 
-/** Knapper KPI-Anhang am Ende — Referenzwerte für Detail-Fragen. */
+/**
+ * KPI-Anhang mit Benchmark-Skalen. Nackte Werte (1.23x, 47%) sind ohne
+ * Maßstab nicht aussagekräftig — die Skala neben dem Wert gibt dem
+ * Lead einen sofortigen Anker für Detail-Fragen im Gespräch.
+ */
 function buildKpiAnhang(data: ReportData): string {
   const k = data.kpis;
+  const mt = interpretParallelFactor(k.multiTaskingFactor);
+  const prod = interpretProductivePct(k.productivePct);
+  const cov = k.coverage * 100;
+  const covScale = interpretCoverage(cov);
   return `<div class="lead-kpi-mini">
-    <div>Getrackte Zeit <b>${fmtHours(k.totalWallclockMs)}</b></div>
-    <div>Anwesenheit <b>${fmtHours(k.totalPresenceMs)}</b></div>
-    <div>Parallel-Faktor <b>${k.multiTaskingFactor.toFixed(2)}x</b></div>
-    <div>Produktiv-Anteil <b>${k.productivePct.toFixed(0)}%</b></div>
+    <div class="lead-kpi-tile">
+      <div class="lead-kpi-h">Getrackte Zeit</div>
+      <div class="lead-kpi-v">${fmtHours(k.totalWallclockMs)}</div>
+      <div class="lead-kpi-s">Anwesenheit: ${fmtHours(k.totalPresenceMs)}</div>
+    </div>
+    <div class="lead-kpi-tile">
+      <div class="lead-kpi-h">Parallel-Faktor</div>
+      <div class="lead-kpi-v">${k.multiTaskingFactor.toFixed(2)}x <span class="scale-badge scale-${mt.level}">${mt.label}</span></div>
+      <div class="lead-kpi-s">${mt.hint}</div>
+    </div>
+    <div class="lead-kpi-tile">
+      <div class="lead-kpi-h">Produktiv-Anteil</div>
+      <div class="lead-kpi-v">${k.productivePct.toFixed(0)}% <span class="scale-badge scale-${prod.level}">${prod.label}</span></div>
+      <div class="lead-kpi-s">${prod.hint}</div>
+    </div>
+    <div class="lead-kpi-tile">
+      <div class="lead-kpi-h">Tracking-Genauigkeit</div>
+      <div class="lead-kpi-v">${cov.toFixed(0)}% <span class="scale-badge scale-${covScale.level}">${covScale.label}</span></div>
+      <div class="lead-kpi-s">${covScale.hint}</div>
+    </div>
   </div>`;
 }
