@@ -200,22 +200,31 @@ function buildCoachParagraphs(data: ReportData): string {
     let sentence = '';
     switch (cp.metric) {
       case 'wallclock':
-        sentence = `In ${wk} sind deine Wallclock-Stunden auf ${cp.currentValue.toFixed(1)}h gesprungen — gegenüber den vorherigen ${cp.baselineWeekCount} Wochen mit Ø ${cp.baselineValue.toFixed(1)}h. Was war in dieser Woche anders?`;
+        sentence = `In ${wk} bist du auf ${cp.currentValue.toFixed(1)} Arbeitsstunden gekommen — gegenüber Schnitt ${cp.baselineValue.toFixed(1)}h in den ${cp.baselineWeekCount} Wochen davor. Das sind rund ${Math.abs(cp.deltaAbsolute).toFixed(0)} Stunden mehr als sonst. Was war in dieser Woche anders — Deadline, Krise, oder nachgeholte Arbeit aus vorherigen Tagen?`;
         break;
       case 'deepFocus':
-        sentence = `Auffällig: in ${wk} fiel dein Anteil tiefer Slots auf ${cp.currentValue.toFixed(0)}% — vorher lag er stabil bei ${cp.baselineValue.toFixed(0)}%. Was hat dich da unterbrochen?`;
+        sentence = `Auffällig: in ${wk} fiel der Anteil deiner konzentrierten Arbeit (Blöcke über 2 Stunden am Stück) auf ${cp.currentValue.toFixed(0)}% — sonst lag er bei ${cp.baselineValue.toFixed(0)}%. Konkret heißt das: die Woche war fragmentierter, mehr Stückwerk statt zusammenhängender Arbeit. Was hat dich da unterbrochen — Termine, Anfragen, oder eine grundsätzlich andere Aufgabenstellung?`;
         break;
       case 'multiTasking':
-        sentence = `Auch der Parallelitäts-Faktor ist in ${wk} hochgegangen (${cp.currentValue.toFixed(2)}x statt ${cp.baselineValue.toFixed(2)}x). Hattest du das Gefühl, an zu vielen Sachen gleichzeitig zu sitzen?`;
+        sentence = `Auch die Parallel-Last ist in ${wk} hochgegangen — pro Arbeitsstunde fielen ${cp.currentValue.toFixed(2)}h Aufgaben an statt sonst ${cp.baselineValue.toFixed(2)}h. Das heißt: mehrere Themen liefen öfter gleichzeitig im selben Slot. Hattest du das Gefühl, an zu vielen Sachen gleichzeitig zu sitzen — oder war das eine bewusste Mehr-Mandanten-Woche?`;
         break;
       case 'meeting':
-        sentence = `In ${wk} ist dein Meeting-Anteil deutlich gestiegen (${cp.currentValue.toFixed(0)}% gegenüber Ø ${cp.baselineValue.toFixed(0)}%). Bewusst oder von außen reingerutscht?`;
+        sentence = `In ${wk} ist dein Termin-Anteil deutlich gestiegen — ${cp.currentValue.toFixed(0)}% der Arbeitszeit in Meetings und Calls (gegenüber Ø ${cp.baselineValue.toFixed(0)}%). Konkret heißt das: weniger Zeit für eigene stille Arbeit. Hast du die Termine selbst gewollt, oder sind sie von außen reingerutscht?`;
         break;
       case 'coverage':
-        sentence = `Die Tracking-Disziplin hat in ${wk} nachgelassen — Coverage ist von ${cp.baselineValue.toFixed(0)}% auf ${cp.currentValue.toFixed(0)}% gefallen. Vergessliche Tage, oder eine besonders dichte Woche?`;
+        sentence = `Die Tracking-Disziplin hat in ${wk} nachgelassen — nur ${cp.currentValue.toFixed(0)}% des Tages waren lückenlos erfasst, sonst ${cp.baselineValue.toFixed(0)}%. Eine vergessliche Woche, eine besonders dichte Woche ohne Tracking-Pause, oder fehlt der Tag-Anfang/das Tag-Ende?`;
         break;
     }
-    if (sentence) paras.push(sentence);
+    if (sentence) {
+      // Falls der Bruch nicht einmalig war, das anhängen — als Person
+      // ist die Frage 'einmalig oder neuer Zustand' relevant.
+      if (cp.context.persistence === 'haelt-an') {
+        sentence += ` Und das war nicht nur diese eine Woche — die Folgewoche hat das Muster mitgetragen, also ist es schon ein Stück weit ein neuer Zustand, kein Ausreißer.`;
+      } else if (cp.context.persistence === 'einmalig') {
+        sentence += ` Tröstlich: schon in der Folgewoche ging es Richtung deines üblichen Schnitts zurück.`;
+      }
+      paras.push(sentence);
+    }
   }
 
   return paras.map((p) => `<p class="coach-para">${p}</p>`).join('\n');
@@ -230,58 +239,58 @@ function buildReflectionQuestions(data: ReportData): string {
 
   if (data.weekday.highLoadDaysCount >= 2) {
     fragen.push(
-      `${data.weekday.highLoadDaysCount} Tage über 10h Präsenz — was hat dich an diesen Tagen so lange gehalten, und war's der erwartete Output?`
+      `${data.weekday.highLoadDaysCount} Tage hatten über 10 Stunden zwischen erstem und letztem Eintrag — das sind sehr lange Arbeitstage. Was hat dich an diesen Tagen so lange gehalten, und kam am Ende der Output dabei raus, den du erwartet hast?`
     );
   }
 
-  // Doku-Disziplin-Frage (greift den schlechtesten Stakeholder auf)
+  // Doku-Disziplin (an einem konkreten Mandanten festgemacht)
   const lowestNotizSh = data.stakeholderProfiles
     .filter((p) => p.entriesCount >= 8 && p.notizPct <= 30)
     .sort((a, b) => a.notizPct - b.notizPct)[0];
   if (lowestNotizSh) {
     fragen.push(
-      `Bei ${esc(lowestNotizSh.name)} nur ${lowestNotizSh.notizPct.toFixed(0)}% mit Notiz — welche Slots wären rückblickend mit einer 1-Wort-Notiz greifbarer gewesen?`
+      `Bei ${esc(lowestNotizSh.name)} tragen nur ${lowestNotizSh.notizPct.toFixed(0)}% der Einträge einen Kommentar. Wenn du in drei Monaten die Slots dieses Mandanten anschaust — welche davon wären jetzt schwer einzuordnen, weil dir die kurze Notiz fehlt?`
     );
   }
 
-  // Wochenende
+  // Wochenend-Arbeit
   if (data.weekday.weekendMs > 0 && data.kpis.totalWallclockMs > 0) {
     const wePct =
       (data.weekday.weekendMs / data.kpis.totalWallclockMs) * 100;
     if (wePct >= 8) {
       fragen.push(
-        `${wePct.toFixed(0)}% deiner Zeit fiel auf Wochenenden — was würde es brauchen, damit du das in der Woche unterbringen könntest?`
+        `${wePct.toFixed(0)}% deiner Arbeitszeit lag am Wochenende. Konkret heißt das: ein knappes Zehntel der Stunden ist außerhalb der Wochentage geschehen. Bewusst geplant — oder zeigt sich hier, dass die Wochentage zu eng werden? Was müsste sich ändern, damit du das in der Woche unterbringen könntest?`
       );
     }
   }
 
-  // Burst-Frage
+  // Lange Arbeitsphasen ohne Pause
   if (data.rhythm.burst.longestBurstMin >= 240) {
     fragen.push(
-      `Längste Slot-Kette ohne Pause war ${Math.round(data.rhythm.burst.longestBurstMin / 60)}h — was hätte eine bewusste 15-Minuten-Pause dazwischen verändert?`
+      `An deinem stärksten Tag bist du ${Math.round(data.rhythm.burst.longestBurstMin / 60)} Stunden am Stück gearbeitet, ohne dass eine Pause im Tracker auftaucht. Was hätte eine bewusste 15-Minuten-Pause in der Mitte verändert — Klarheit für den Nachmittag, mehr Energie?`
     );
   }
 
-  // Reaktiv-Frage (aus stakeholderProfiles)
+  // Ad-hoc-Strom an einem konkreten Mandanten
   const reactiveSh = data.stakeholderProfiles
     .filter((p) => p.microTaskPct >= 40 && p.entriesCount >= 5)
     .sort((a, b) => b.microTaskPct - a.microTaskPct)[0];
   if (reactiveSh) {
     fragen.push(
-      `Bei ${esc(reactiveSh.name)} fielen ${reactiveSh.microTaskPct.toFixed(0)}% deiner Einträge unter 15 Minuten — wie schützt du dich vor ad-hoc-Strom?`
+      `Bei ${esc(reactiveSh.name)} waren ${reactiveSh.microTaskPct.toFixed(0)}% deiner Einträge kürzer als 15 Minuten — viele kleine Aktionen statt zusammenhängender Arbeit. Was würde dir helfen, diese Anfragen zu sammeln, statt jede einzeln zu beantworten?`
     );
   }
 
-  // Wenig Tiefenarbeit
+  // Wenig konzentrierte Arbeit
   if (data.slotLength.totalCount >= 30 && data.slotLength.deepFocusPct < 20) {
     fragen.push(
-      `Nur ${data.slotLength.deepFocusPct.toFixed(0)}% deiner Zeit fiel auf Slots über zwei Stunden — wo könntest du im Kalender einen vier-Stunden-Block freihalten?`
+      `Nur ${data.slotLength.deepFocusPct.toFixed(0)}% deiner Zeit lag in Blöcken über zwei Stunden — der Rest war Stückwerk. Wo im Kalender könntest du einen Vier-Stunden-Block freihalten, auch wenn er „leer" aussieht?`
     );
   }
 
   if (fragen.length === 0) {
     fragen.push(
-      `Wenig Auffälliges in diesem Zeitraum — Rhythmus tragend, Doku ausreichend. Gibt es einen Bereich, in dem du dir mehr Tiefe als Breite wünschen würdest?`
+      `Wenig Auffälliges in diesem Zeitraum — dein Rhythmus trägt, die Dokumentation ist ausreichend. Gibt es trotzdem ein Thema, in dem du dir die nächste Periode mehr Tiefe (statt Breite) wünschen würdest?`
     );
   }
 

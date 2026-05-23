@@ -15,7 +15,6 @@ import type { ChangePointMetric, ReportData } from '../reportData';
 import {
   esc,
   fmtHours,
-  fmtHoursShort,
   renderBars,
   renderDriftArrow,
   renderFindings,
@@ -42,45 +41,51 @@ function buildHeadlines(data: ReportData): string {
   const k = data.kpis;
   const heads: string[] = [];
 
-  // Output-Modus
-  const prodLabel =
-    k.productivePct >= 50
-      ? 'Output-Modus dominant'
-      : k.productivePct >= 40
-        ? 'Output und Steuerung ausgeglichen'
-        : 'Steuerungs-lastig — Output unter 40%';
-  heads.push(`<b>${prodLabel}.</b> ${k.productivePct.toFixed(0)}% Produktiv-Quote bei ${fmtHours(k.productiveMs)} produktiver Zeit.`);
+  // Output-Anteil
+  let outputHead: string;
+  if (k.productivePct >= 50) {
+    outputHead = `<b>Der Bericht zeigt eine produktive Periode:</b> ${k.productivePct.toFixed(0)}% der Zeit lief auf direkt wertschöpfende Aufgaben (${fmtHours(k.productiveMs)}). Der Rest war Steuerung, Abstimmung, Verwaltung — normaler Anteil.`;
+  } else if (k.productivePct >= 40) {
+    outputHead = `<b>Produktive Arbeit und Steuerung halten sich die Waage:</b> ${k.productivePct.toFixed(0)}% der Zeit war direkt wertschöpfend (${fmtHours(k.productiveMs)}). Solide Mischung, kein Output-Engpass.`;
+  } else {
+    outputHead = `<b>Auffällig wenig direkte Wertschöpfung:</b> nur ${k.productivePct.toFixed(0)}% der Zeit lief auf produktive Aufgaben (${fmtHours(k.productiveMs)}). Konkret heißt das: der Großteil des Tages ist Verwaltung, Abstimmung, Meetings — gewollt (z.B. Führungs-Rolle) oder Hinweis, dass Wertschöpfungs-Zeit untergeht.`;
+  }
+  heads.push(outputHead);
 
   // Konzentration
   const top = data.breakdowns.stakeholders[0];
   if (top) {
-    const conc =
-      top.pct >= 50
-        ? 'klar konzentriert'
-        : top.pct >= 30
-          ? 'getragener Schwerpunkt'
-          : 'breit verteilt';
-    heads.push(`<b>Verteilung ${conc}.</b> <b>${esc(top.name)}</b> führt mit ${top.pct.toFixed(0)}%, ${data.breakdowns.stakeholders.length} aktive Stakeholder, ${data.breakdowns.projekte.length} Projekte.`);
+    let concHead: string;
+    if (top.pct >= 50) {
+      concHead = `<b>Klare Konzentration auf einen Mandanten:</b> <b>${esc(top.name)}</b> bindet ${top.pct.toFixed(0)}% der Zeit. Konkret heißt das Klumpen-Risiko: wenn dieser Auftrag wegfällt, ändert sich die Auslastung schlagartig. ${data.breakdowns.stakeholders.length} Mandanten und ${data.breakdowns.projekte.length} Projekte im Bewegungsfeld.`;
+    } else if (top.pct >= 30) {
+      concHead = `<b>Klar erkennbarer Hauptmandant:</b> <b>${esc(top.name)}</b> mit ${top.pct.toFixed(0)}% Anteil, daneben ein Portfolio von ${data.breakdowns.stakeholders.length} aktiven Mandanten und ${data.breakdowns.projekte.length} Projekten. Stabile Mischung, kein Klumpen.`;
+    } else {
+      concHead = `<b>Breit verteilte Arbeitszeit:</b> der größte Mandant (${esc(top.name)}) liegt bei nur ${top.pct.toFixed(0)}%. Konkret heißt das: ${data.breakdowns.stakeholders.length} aktive Mandanten teilen sich die Aufmerksamkeit. Kein akutes Klumpen-Thema, aber eventuell Hinweis auf zu breite Streuung.`;
+    }
+    heads.push(concHead);
   }
 
-  // Multi-Tasking
+  // Parallel-Arbeit (Multi-Tasking)
   if (k.multiTaskingFactor > 1.4) {
-    heads.push(`<b>Hoher Parallelitäts-Faktor (${k.multiTaskingFactor.toFixed(2)}x).</b> Entweder bewusste Parallel-Steuerung oder Hinweis auf vergessene Tracker — prüfen lohnt.`);
+    heads.push(`<b>Hohe Parallel-Last:</b> pro echter Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(2)}h Aufgaben an. Konkret heißt das: oft liefen mehrere Themen gleichzeitig im selben Slot — bewusste Mehr-Mandanten-Steuerung, oder Hinweis auf parallel laufende Tracker, die nicht gestoppt wurden. Stichprobe lohnt sich.`);
   } else if (k.multiTaskingFactor > 1.15) {
-    heads.push(`<b>Moderates Parallelitäts-Niveau (${k.multiTaskingFactor.toFixed(2)}x).</b> Naive ${fmtHoursShort(k.totalNaiveMs)} vs Wallclock ${fmtHoursShort(k.totalWallclockMs)}.`);
+    heads.push(`<b>Moderate Parallel-Last:</b> pro echter Arbeitsstunde rund ${k.multiTaskingFactor.toFixed(2)}h Aufgaben gebucht. Üblicher Anteil paralleler Arbeit, z.B. wenn Mandanten in einem gemeinsamen Slot besprochen werden.`);
   } else {
-    heads.push(`<b>Sequentielle Arbeitsweise (Faktor ${k.multiTaskingFactor.toFixed(2)}x).</b> Tracker laufen einzeln, Naive und Wallclock fast deckungsgleich.`);
+    heads.push(`<b>Sequenzielle Arbeit:</b> Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} — die Person macht ein Ding nach dem anderen, kaum Mehrfachzuordnung pro Slot.`);
   }
 
-  // Datenbasis
+  // Tracking-Datenqualität
   const covPct = k.coverage * 100;
-  const covLabel =
-    covPct >= 80
-      ? 'Datenbasis tragend'
-      : covPct >= 60
-        ? 'Datenbasis brauchbar mit Lücken'
-        : 'Datenbasis schwach — Detail-Aussagen unter Vorbehalt';
-  heads.push(`<b>${covLabel} (Coverage ${covPct.toFixed(0)}%).</b> ${data.coverage.daysGood} Tage ≥80%, ${data.coverage.daysOk} Tage 60–80%, ${data.coverage.daysThin} Tage <60%.`);
+  let covHead: string;
+  if (covPct >= 80) {
+    covHead = `<b>Belastbare Datenbasis:</b> ${covPct.toFixed(0)}% des Anwesenheitsfensters sind lückenlos erfasst. Detail-Aussagen unten sind tragend (${data.coverage.daysGood} Tage gut erfasst, ${data.coverage.daysOk} mit kleinen Lücken, ${data.coverage.daysThin} unter 60%).`;
+  } else if (covPct >= 60) {
+    covHead = `<b>Datenbasis brauchbar, aber mit Lücken:</b> ${covPct.toFixed(0)}% des Anwesenheitsfensters lückenlos erfasst. Tendenzen sind belastbar, minuten-genaue Vergleiche weniger (${data.coverage.daysGood} Tage gut, ${data.coverage.daysOk} mittel, ${data.coverage.daysThin} schwach erfasst).`;
+  } else {
+    covHead = `<b>Schwache Datenbasis:</b> nur ${covPct.toFixed(0)}% des Tages sind erfasst — der Rest sind Lücken zwischen den Einträgen. Detail-Aussagen mit Vorbehalt führen, Tendenzen bleiben gültig (${data.coverage.daysGood} Tage gut, ${data.coverage.daysOk} mittel, ${data.coverage.daysThin} schwach erfasst).`;
+  }
+  heads.push(covHead);
 
   return `<div class="chef-headlines">
     ${heads.map((h) => `<div class="chef-headline">${h}</div>`).join('')}
@@ -159,34 +164,34 @@ function buildDriftSection(data: ReportData): string {
   const rows: string[] = [];
 
   rows.push(`<tr>
-    <td>Top-Stakeholder-Anteil</td>
+    <td>Anteil größter Mandant</td>
     <td class="num">${d.top1ShareFirst.toFixed(0)}% (${esc(d.topShNameFirst)})</td>
     <td class="num">${d.top1ShareSecond.toFixed(0)}% (${esc(d.topShNameSecond)})</td>
     <td class="num">${renderDriftArrow(d.top1ShareSecond - d.top1ShareFirst)}</td>
   </tr>`);
 
   rows.push(`<tr>
-    <td>Top-Projekt-Anteil</td>
+    <td>Anteil größtes Projekt</td>
     <td class="num">${d.top1ProjShareFirst.toFixed(0)}% (${esc(d.topProjNameFirst)})</td>
     <td class="num">${d.top1ProjShareSecond.toFixed(0)}% (${esc(d.topProjNameSecond)})</td>
     <td class="num">${renderDriftArrow(d.top1ProjShareSecond - d.top1ProjShareFirst)}</td>
   </tr>`);
 
   rows.push(`<tr>
-    <td>aktive Stakeholder</td>
+    <td>Anzahl aktiver Mandanten</td>
     <td class="num">${d.distinctShFirst}</td>
     <td class="num">${d.distinctShSecond}</td>
     <td class="num">${renderDriftArrow(d.distinctShSecond - d.distinctShFirst, 1)}</td>
   </tr>`);
 
   rows.push(`<tr>
-    <td>Tracking-Coverage</td>
+    <td>Tracking-Genauigkeit</td>
     <td class="num">${(d.coverageFirst * 100).toFixed(0)}%</td>
     <td class="num">${(d.coverageSecond * 100).toFixed(0)}%</td>
     <td class="num">${renderDriftArrow((d.coverageSecond - d.coverageFirst) * 100)}</td>
   </tr>`);
 
-  // Lifecycle-Zeile (separate, weil nicht-numerisch)
+  // Projekt-Lebenszyklus-Zeile
   let lifecycleRow = '';
   if (
     data.projektLifecycle.newcomers.length > 0 ||
@@ -226,22 +231,28 @@ function buildDriftSection(data: ReportData): string {
             ? '#D4706E'
             : '#888';
         const labels: Record<ChangePointMetric, string> = {
-          wallclock: 'Wallclock',
-          meeting: 'Meeting-Anteil',
-          deepFocus: 'Tiefenarbeit',
-          multiTasking: 'Multi-Tasking',
-          topStakeholder: 'Top-Stakeholder',
-          coverage: 'Coverage',
+          wallclock: 'Arbeitsstunden',
+          meeting: 'Termin-Anteil',
+          deepFocus: 'Konzentrations-Anteil',
+          multiTasking: 'Parallel-Last',
+          topStakeholder: 'Anteil Hauptmandant',
+          coverage: 'Tracking-Genauigkeit',
         };
-        return `<li><b>${esc(cp.weekLabel)}</b>: ${labels[cp.metric]} <span style="color:${color}">${arrow}</span> (${cp.baselineWeekCount} Wo. Baseline)</li>`;
+        const persistMark =
+          cp.context.persistence === 'haelt-an'
+            ? ' <span style="color:#D4706E;font-size:10px;font-weight:600">·  hält an</span>'
+            : cp.context.persistence === 'einmalig'
+              ? ' <span style="color:#3a8d6e;font-size:10px">· einmalig</span>'
+              : '';
+        return `<li><b>${esc(cp.weekLabel)}</b>: ${labels[cp.metric]} <span style="color:${color}">${arrow}</span>${persistMark} <span style="color:#aaa">(vs. ${cp.baselineWeekCount} Wo. davor)</span></li>`;
       })
       .join('');
-    cpBlock = `<div class="cp-inline" style="margin-top:10px"><b>Wochen-Brüche:</b><ul style="margin:4px 0 0 18px;padding:0;font-size:12px;color:#555;list-style:disc">${lines}</ul></div>`;
+    cpBlock = `<div class="cp-inline" style="margin-top:10px"><b>Auffällige Wochen-Brüche</b> (Details + Handlungs-Hinweise unter „Operative Hinweise"):<ul style="margin:4px 0 0 18px;padding:0;font-size:12px;color:#555;list-style:disc">${lines}</ul></div>`;
   }
 
-  return `<h2>Verschiebung im Zeitraum</h2>
+  return `<h2>Verschiebung im Zeitraum (1. vs. 2. Hälfte)</h2>
   <table class="chef-drift-table">
-    <thead><tr><th>Achse</th><th class="num">1. Hälfte</th><th class="num">2. Hälfte</th><th class="num">Δ</th></tr></thead>
+    <thead><tr><th>Achse</th><th class="num">1. Hälfte</th><th class="num">2. Hälfte</th><th class="num">Veränderung</th></tr></thead>
     <tbody>${rows.join('')}${lifecycleRow}</tbody>
   </table>
   ${cpBlock}`;
@@ -267,27 +278,27 @@ function buildClosing(data: ReportData): string {
     if (Math.abs(dShare) >= 8) {
       messages.push(
         dShare > 0
-          ? `Schwerpunkt verstärkt sich (${data.drift.top1ShareFirst.toFixed(0)}% → ${data.drift.top1ShareSecond.toFixed(0)}%) — Konzentrations-Risiko im Auge behalten.`
-          : `Schwerpunkt lockert sich (${data.drift.top1ShareFirst.toFixed(0)}% → ${data.drift.top1ShareSecond.toFixed(0)}%) — Portfolio öffnet sich.`
+          ? `Schwerpunkt verstärkt sich von ${data.drift.top1ShareFirst.toFixed(0)}% auf ${data.drift.top1ShareSecond.toFixed(0)}% — Klumpen-Risiko wird größer, ein einzelner Mandanten-Wegfall hätte spürbarere Folgen.`
+          : `Schwerpunkt lockert sich von ${data.drift.top1ShareFirst.toFixed(0)}% auf ${data.drift.top1ShareSecond.toFixed(0)}% — das Portfolio öffnet sich, mehr Mandanten teilen sich die Aufmerksamkeit.`
       );
     }
   }
 
   if (k.multiTaskingFactor > 1.5) {
     messages.push(
-      `Parallelitäts-Faktor ${k.multiTaskingFactor.toFixed(2)}x ist substantiell — entweder Tracker-Disziplin prüfen oder Steuerung bewusst belassen.`
+      `Parallel-Faktor von ${k.multiTaskingFactor.toFixed(2)} ist substantiell. Konkret heißt das: pro echter Arbeitsstunde wurden ${k.multiTaskingFactor.toFixed(2)}h Aufgaben gezählt — entweder ist Tracker-Disziplin zu prüfen, oder die Mehr-Mandanten-Steuerung ist bewusst so gewählt.`
     );
   }
 
   if (k.coverage < 0.7) {
     messages.push(
-      `Coverage ${(k.coverage * 100).toFixed(0)}% bedeutet: Detail-Verteilungen tendenziell konservativ, echte Lage breiter als ausgewiesen.`
+      `Tracking-Genauigkeit nur ${(k.coverage * 100).toFixed(0)}%. Konkret heißt das: die Detail-Verteilungen unten sind tendenziell konservativ — die echte Lage könnte breiter sein als hier ausgewiesen, weil ein guter Teil des Tages außerhalb der Einträge liegt.`
     );
   }
 
   if (top && k.productivePct < 35) {
     messages.push(
-      `Produktiv-Quote unter 35% — bei Top-Mandat <b>${esc(top.name)}</b> lohnt der Blick auf den Output-/Steuerungs-Mix.`
+      `Produktiver Anteil unter 35% bei <b>${esc(top.name)}</b> als Hauptmandant — Output-Aktivitäten (direkte Wertschöpfung) sind dünn gegenüber Steuerung/Verwaltung. Ist das so gewollt?`
     );
   }
 

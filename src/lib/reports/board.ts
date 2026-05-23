@@ -34,27 +34,37 @@ export function renderBoardBody(data: ReportData): string {
   heroRows.push(`<div class="board-hero-cell">
     <div class="board-hero-label">Auslastung</div>
     <div class="board-hero-value">${fmtHoursShort(k.avgPresenceMsPerDay)} <span style="font-size:14px;color:#888">/ Tag</span></div>
-    <div class="board-hero-sub">${k.workingDays} aktive Tage im Zeitraum, Ø ${fmtHoursShort(k.avgWallclockMsPerDay)} effektiv getrackt</div>
+    <div class="board-hero-sub">Anwesenheit zwischen erstem und letztem Eintrag im Schnitt, an ${k.workingDays} Arbeitstagen. Davon Ø ${fmtHoursShort(k.avgWallclockMsPerDay)} effektive Arbeit (Pausen-bereinigt).</div>
   </div>`);
 
   if (topSh && topProj) {
     heroRows.push(`<div class="board-hero-cell">
       <div class="board-hero-label">Schwerpunkte</div>
       <div class="board-hero-value">${topSh.pct.toFixed(0)}%</div>
-      <div class="board-hero-sub"><b>${esc(topSh.name)}</b> bindet die Hauptlast, Top-Projekt <b>${esc(topProj.name)}</b> bei ${topProj.pct.toFixed(0)}%</div>
+      <div class="board-hero-sub"><b>${esc(topSh.name)}</b> bindet den Hauptteil der Arbeitszeit, das größte Projekt <b>${esc(topProj.name)}</b> liegt bei ${topProj.pct.toFixed(0)}%.</div>
     </div>`);
   } else {
     heroRows.push(`<div class="board-hero-cell">
       <div class="board-hero-label">Schwerpunkte</div>
       <div class="board-hero-value">—</div>
-      <div class="board-hero-sub">Zu wenig Datenbasis für Aussage</div>
+      <div class="board-hero-sub">Zu wenig Datenbasis für eine Aussage.</div>
     </div>`);
   }
 
+  // Profil-Karte: Produktiv-Anteil, Datenqualität, ggf. Parallel-Index
+  const profilSubParts: string[] = [];
+  profilSubParts.push(
+    `${covPct.toFixed(0)}% des Tages lückenlos erfasst (Tracking-Genauigkeit).`
+  );
+  if (k.multiTaskingFactor > 1.2) {
+    profilSubParts.push(
+      `Pro echter Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(1)} Stunden Aufgaben an — Hinweis auf parallele Mandanten-Steuerung.`
+    );
+  }
   heroRows.push(`<div class="board-hero-cell">
     <div class="board-hero-label">Profil</div>
     <div class="board-hero-value">${k.productivePct.toFixed(0)}% Produktiv</div>
-    <div class="board-hero-sub">Datenbasis Coverage ${covPct.toFixed(0)}%${k.multiTaskingFactor > 1.2 ? `, Parallelitäts-Faktor ${k.multiTaskingFactor.toFixed(1)}x` : ''}</div>
+    <div class="board-hero-sub">Anteil direkt wertschöpfender Arbeit (gegenüber Verwaltung, Abstimmung, Meetings). ${profilSubParts.join(' ')}</div>
   </div>`);
 
   const heroHtml = `<div class="board-hero">
@@ -81,7 +91,7 @@ export function renderBoardBody(data: ReportData): string {
 
   // ── Disclaimer ───────────────────────────────────────────────────
   const disclaimer = `<div class="board-disclaimer">
-    Datenbasis Coverage ${covPct.toFixed(0)}% · Zeitraum ${esc(data.meta.range.label)} · Erstellt aus ${data.kpis.entriesCount} Einträgen
+    Tracking-Genauigkeit ${covPct.toFixed(0)}% · Zeitraum ${esc(data.meta.range.label)} · Erstellt aus ${data.kpis.entriesCount} Einträgen
   </div>`;
 
   return heroHtml + pies + `<div class="board-trend">${trendSentence}</div>` +

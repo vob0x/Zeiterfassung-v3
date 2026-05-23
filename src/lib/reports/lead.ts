@@ -50,15 +50,15 @@ function buildCockpit(data: ReportData): string {
   const hi = data.weekday.highLoadDaysCount;
   if (hi >= 3) {
     belastungClass = 'ampel-warn';
-    belastungValue = `${hi} Tage > 10h`;
-    belastungSub = `Belastungs-Muster sichtbar. Frage im 1:1: was treibt diese Spitzen — Deadline, Engpass, Auswahl?`;
+    belastungValue = `${hi} lange Tage`;
+    belastungSub = `An ${hi} Tagen lag zwischen erstem und letztem Eintrag mehr als 10 Stunden — überdurchschnittlich lange Tage. Im Gespräch fragen: was treibt diese Spitzen — Deadline, Personalengpass, oder Entscheidung der Person?`;
   } else if (hi >= 1) {
-    belastungValue = `${hi} Tag${hi === 1 ? '' : 'e'} > 10h`;
-    belastungSub = `Vereinzelte Spitzen, kein Muster. Im Auge behalten ohne Drama.`;
+    belastungValue = `${hi} lange${hi === 1 ? 'r' : ''} Tag${hi === 1 ? '' : 'e'}`;
+    belastungSub = `Vereinzelte lange Tage über 10 Stunden, aber kein Muster. Wert: notieren, nicht ansprechen.`;
   } else {
     belastungClass = 'ampel-ok';
     belastungValue = `Ø ${fmtHoursShort(k.avgPresenceMsPerDay)} / Tag`;
-    belastungSub = `Belastung im üblichen Bereich, keine Spitzen über 10 h.`;
+    belastungSub = `Belastung im normalen Bereich, keine Tage über 10 Stunden. Solide Routine.`;
   }
   cards.push(`<div class="lead-three-card ${belastungClass}">
     <div class="lead-three-h">Belastung</div>
@@ -75,16 +75,16 @@ function buildCockpit(data: ReportData): string {
     schwerpunktValue = `${top.pct.toFixed(0)}% ${esc(top.name)}`;
     if (top.pct >= 60) {
       schwerpunktClass = 'ampel-warn';
-      schwerpunktSub = `Klumpen-Risiko. Bewusst gewollt oder strategische Diversifikation überfällig?`;
+      schwerpunktSub = `Mehr als ${top.pct.toFixed(0)}% der Zeit fließen in einen einzigen Mandanten — Klumpen-Risiko. Wenn dieser Auftrag wegfällt, ändert sich die Auslastung schlagartig. Bewusste Großmandat-Strategie, oder Diversifikation überfällig?`;
     } else if (top.pct >= 35) {
-      schwerpunktSub = `Erkennbarer Schwerpunkt mit Portfolio drumherum. Tragend, aber nicht erdrückend.`;
+      schwerpunktSub = `${top.pct.toFixed(0)}% bei ${esc(top.name)} — ein klar erkennbarer Hauptmandant, daneben aber ein gesundes Portfolio anderer Themen. Stabile Mischung.`;
     } else {
       schwerpunktClass = 'ampel-ok';
-      schwerpunktSub = `Breit verteilt — keine Konzentrations-Frage akut.`;
+      schwerpunktSub = `Spitzenanteil unter ${top.pct.toFixed(0)}% — die Arbeitszeit verteilt sich breit über mehrere Mandanten. Kein akutes Klumpen-Thema.`;
     }
   } else {
     schwerpunktValue = '—';
-    schwerpunktSub = 'Zu wenig Datenbasis für Schwerpunkt-Aussage.';
+    schwerpunktSub = 'Zu wenig Datenbasis für eine Schwerpunkt-Aussage.';
   }
   cards.push(`<div class="lead-three-card ${schwerpunktClass}">
     <div class="lead-three-h">Schwerpunkt</div>
@@ -95,28 +95,28 @@ function buildCockpit(data: ReportData): string {
   // ── Datenqualität ────────────────────────────────────────────────
   const covPct = k.coverage * 100;
   let dqClass: 'ampel-warn' | 'ampel-ok' | '' = '';
-  let dqValue = `${covPct.toFixed(0)}% Coverage`;
+  let dqValue = `${covPct.toFixed(0)}% erfasst`;
   let dqSub: string;
   if (covPct >= 80) {
     dqClass = 'ampel-ok';
-    dqSub = 'Datenbasis trägt — 1:1-Aussagen belastbar.';
+    dqSub = `Vom Anwesenheitsfenster (erster bis letzter Eintrag des Tages) sind ${covPct.toFixed(0)}% lückenlos erfasst. Die Detail-Aussagen unten sind belastbar.`;
   } else if (covPct >= 60) {
-    dqSub = 'Datenbasis brauchbar mit kleineren Lücken.';
+    dqSub = `${covPct.toFixed(0)}% des Anwesenheitsfensters sind erfasst — brauchbar, aber mit kleineren Lücken im Tagesablauf. Tendenz-Aussagen sind belastbar, Minuten-genaue Vergleiche weniger.`;
   } else {
     dqClass = 'ampel-warn';
-    dqSub = 'Datenbasis schwach — Detail-Aussagen mit Vorbehalt führen.';
+    dqSub = `Nur ${covPct.toFixed(0)}% des Tages sind lückenlos erfasst — größere Lücken im Tagesablauf. Tendenzen stimmen, Detail-Aussagen (Mandant-Verteilung, Tätigkeit) mit Vorbehalt. Im Gespräch eher Tracking-Routine ansprechen als Inhalte.`;
   }
   if (data.drift) {
     const dCov = (data.drift.coverageSecond - data.drift.coverageFirst) * 100;
     if (Math.abs(dCov) >= 10) {
       dqValue += ` (${dCov > 0 ? '↑' : '↓'} ${Math.abs(dCov).toFixed(0)}pp)`;
       dqSub = dCov > 0
-        ? `Datenbasis verbessert sich — Tracking-Disziplin steigt.`
-        : `Tracking-Disziplin sinkt — ansprechen im 1:1.`;
+        ? `${covPct.toFixed(0)}% des Tages erfasst — Tracking-Disziplin steigt deutlich gegenüber der ersten Hälfte des Zeitraums.`
+        : `${covPct.toFixed(0)}% des Tages erfasst — Tracking-Disziplin sinkt in der zweiten Hälfte des Zeitraums um ${Math.abs(dCov).toFixed(0)}pp. Im Gespräch die Routine ansprechen, bevor die Datenbasis ganz wegbricht.`;
     }
   }
   cards.push(`<div class="lead-three-card ${dqClass}">
-    <div class="lead-three-h">Datenqualität</div>
+    <div class="lead-three-h">Tracking-Qualität</div>
     <div class="lead-three-v">${dqValue}</div>
     <div class="lead-three-s">${dqSub}</div>
   </div>`);
@@ -181,25 +181,25 @@ function buildDriftSection(data: ReportData): string {
 function buildFindingsSection(data: ReportData): string {
   const f = renderFindings(data.findings, 'lead');
   if (!f) return '';
-  return `<h2>Was im 1:1 Gewicht hat</h2>${f}`;
+  return `<h2>Was Aufmerksamkeit verdient</h2>${f}`;
 }
 
 /**
- * Drei Hebel fürs 1:1 — die konkreten Aktionen, die der Teamleader
- * mitnehmen soll. Datengetrieben aus den auffälligsten Mustern.
+ * Drei Hebel fürs 1:1 — die konkreten Themen, die der Teamleader im
+ * Mitarbeitergespräch ansprechen sollte. Datengetrieben.
  */
 function buildHebel(data: ReportData): string {
   const hebel: string[] = [];
 
-  // Konzentrations-Hebel
+  // Klumpen-Hebel
   const top = data.breakdowns.stakeholders[0];
   if (top && top.pct >= 50) {
     hebel.push(
-      `<b>${esc(top.name)}-Klumpen</b> bei ${top.pct.toFixed(0)}% — Fokussierung strategisch gewollt, oder Diversifikations-Auftrag?`
+      `<b>Klumpen-Risiko bei ${esc(top.name)}</b> — mehr als die Hälfte der Zeit fließt in einen einzigen Mandanten. Frage: ist diese Konzentration strategisch gewollt, oder ist Diversifikation ein Auftrag für die nächsten Wochen?`
     );
   }
 
-  // OOS-Hebel — auffälligster Stakeholder
+  // Auffälligster Mandant — Sammelhebel über mehrere Auffälligkeiten
   const oosSh = data.stakeholderProfiles
     .filter(
       (p) =>
@@ -208,48 +208,59 @@ function buildHebel(data: ReportData): string {
     .sort((a, b) => b.pct - a.pct)[0];
   if (oosSh) {
     const marker: string[] = [];
-    if (oosSh.microTaskPct >= 30) marker.push(`${oosSh.microTaskPct.toFixed(0)}% Mini-Slots`);
-    if (oosSh.nonprodPct >= 30) marker.push(`${oosSh.nonprodPct.toFixed(0)}% nicht-produktiv`);
-    if (oosSh.meetingHeavyPct >= 50) marker.push(`${oosSh.meetingHeavyPct.toFixed(0)}% Meetings`);
+    if (oosSh.microTaskPct >= 30)
+      marker.push(`${oosSh.microTaskPct.toFixed(0)}% kurze Einträge`);
+    if (oosSh.nonprodPct >= 30)
+      marker.push(`${oosSh.nonprodPct.toFixed(0)}% nicht-produktiv`);
+    if (oosSh.meetingHeavyPct >= 50)
+      marker.push(`${oosSh.meetingHeavyPct.toFixed(0)}% in Terminen`);
+    let frage = '';
+    if (oosSh.microTaskPct >= 30) {
+      frage = `Lässt sich ein Sammel-Termin etablieren (feste Sprechzeit), damit nicht jede Anfrage einzeln den Tag bricht?`;
+    } else if (oosSh.meetingHeavyPct >= 50) {
+      frage = `Welche dieser Termine wären als Mail / kurzes 1-Pager schneller — und für beide Seiten besser?`;
+    } else {
+      frage = `Geht hier viel Zeit in Verwaltung und Beziehungspflege — bewusst investiert, oder dehnt sich der Auftrag aus?`;
+    }
     hebel.push(
-      `<b>Mandat ${esc(oosSh.name)}</b> (${marker.join(', ')}): Triage-Layer oder Scope-Klärung?`
+      `<b>Mandat ${esc(oosSh.name)}</b> fällt mit ${marker.join(', ')} auf. ${frage}`
     );
   }
 
-  // Belastung
+  // Belastungs-Muster
   if (data.weekday.highLoadDaysCount >= 3) {
     hebel.push(
-      `<b>Belastungs-Muster</b>: ${data.weekday.highLoadDaysCount} Tage > 10h — was ist der Engpass, der diese Spitzen erzwingt?`
+      `<b>${data.weekday.highLoadDaysCount} besonders lange Tage</b> (über 10h Anwesenheit) im Zeitraum. Konkret heißt das: kein einmaliger Ausreißer, sondern ein wiederkehrendes Muster. Was ist der Engpass dahinter — fehlende Ressourcen, schlechte Priorisierung, oder bewusst gewählte Intensität?`
     );
   }
 
-  // Burst
+  // Lange Arbeitsphasen ohne Pause
   if (data.rhythm.burst.longBurstCount >= 3) {
     hebel.push(
-      `<b>${data.rhythm.burst.longBurstCount} Slot-Ketten > 3h ohne Pause</b> — Pausen-Disziplin oder strukturelle Frage?`
+      `<b>${data.rhythm.burst.longBurstCount} Arbeitsphasen über 3 Stunden ohne erfasste Pause</b>. Pausen sind nicht im Kalender, oder sie werden eingeplant aber nicht eingehalten? Beides hat andere Hebel.`
     );
   }
 
-  // Doku-Disziplin global
+  // Doku-Lücke global
   if (data.disziplin.notizCoverage < 30 && data.kpis.entriesCount >= 30) {
     hebel.push(
-      `<b>Doku-Lücke global</b>: nur ${data.disziplin.notizCoverage.toFixed(0)}% mit Notiz — im Review fehlt der Kontext. Eine 1-Wort-Disziplin einführen?`
+      `<b>Nur ${data.disziplin.notizCoverage.toFixed(0)}% der Einträge haben einen Kommentar</b>. Konkret heißt das: beim nächsten Review (in 4 Wochen, oder bei einer Übergabe) fehlt der Kontext zu den meisten Slots. Ein-Wort-Disziplin reicht oft — als Standard im Team setzen?`
     );
   }
 
-  // Coverage-Drift
+  // Tracking-Verschlechterung
   if (data.drift) {
     const dCov = (data.drift.coverageSecond - data.drift.coverageFirst) * 100;
     if (dCov <= -10) {
       hebel.push(
-        `<b>Datenqualität</b> fällt ab (Coverage ${(data.drift.coverageFirst * 100).toFixed(0)}% → ${(data.drift.coverageSecond * 100).toFixed(0)}%) — Tracking-Routine im 1:1 ansprechen.`
+        `<b>Tracking-Genauigkeit fällt ab</b> — von ${(data.drift.coverageFirst * 100).toFixed(0)}% in der ersten Hälfte auf ${(data.drift.coverageSecond * 100).toFixed(0)}% in der zweiten. Konkret heißt das: die Datenbasis für künftige Berichte wird schlechter, wenn der Trend so weitergeht. Tracking-Routine ansprechen, bevor das Werkzeug seinen Wert verliert.`
       );
     }
   }
 
   if (hebel.length === 0) {
     hebel.push(
-      `Keine roten Flaggen — gutes Signal. Frage zur Vorlage: welche zwei Stakeholder bekommen in der nächsten Periode bewusst mehr/weniger Anteil?`
+      `Keine roten Flaggen im Datenbild — gutes Signal. Im Gespräch ohne Krisen-Punkte arbeiten: welche zwei Mandanten sollen in der nächsten Periode bewusst mehr Gewicht bekommen, welche weniger?`
     );
   }
 
@@ -258,7 +269,7 @@ function buildHebel(data: ReportData): string {
     .map((h) => `<div class="lead-hebel-item">${h}</div>`)
     .join('');
   return `<div class="lead-hebel">
-    <h3>Drei Hebel fürs 1:1</h3>
+    <h3>Drei Themen fürs Mitarbeitergespräch</h3>
     ${items}
   </div>`;
 }
@@ -267,9 +278,9 @@ function buildHebel(data: ReportData): string {
 function buildKpiAnhang(data: ReportData): string {
   const k = data.kpis;
   return `<div class="lead-kpi-mini">
-    <div>Wallclock-Total <b>${fmtHours(k.totalWallclockMs)}</b></div>
-    <div>Präsenz-Total <b>${fmtHours(k.totalPresenceMs)}</b></div>
-    <div>Multi-Tasking <b>${k.multiTaskingFactor.toFixed(2)}x</b></div>
-    <div>Produktiv-Quote <b>${k.productivePct.toFixed(0)}%</b></div>
+    <div>Echte Arbeitszeit <b>${fmtHours(k.totalWallclockMs)}</b></div>
+    <div>Anwesenheit <b>${fmtHours(k.totalPresenceMs)}</b></div>
+    <div>Parallel-Faktor <b>${k.multiTaskingFactor.toFixed(2)}x</b></div>
+    <div>Produktiv-Anteil <b>${k.productivePct.toFixed(0)}%</b></div>
   </div>`;
 }

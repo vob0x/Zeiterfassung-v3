@@ -18,6 +18,7 @@ import type {
   ReportLens,
   StakeholderProfile,
 } from '../reportData';
+import { describeChangePointContext } from '../reportData';
 
 /* ─────────────────────────────────────────────────────────────────────
    Format-Helfer
@@ -110,33 +111,33 @@ export function renderStakeholderDossier(
   let leadQuestion = '';
   if (profile.microTaskPct >= 40) {
     tags.push(
-      `<span class="tag tag-warn">${profile.microTaskPct.toFixed(0)}% Mini-Slots</span>`
+      `<span class="tag tag-warn">${profile.microTaskPct.toFixed(0)}% kurze Einträge (&lt;15min)</span>`
     );
-    leadQuestion = `Wie schützt sich diese Person vor Ad-hoc-Strom?`;
+    leadQuestion = `Frage fürs Gespräch: dieser Mandant löst viele kleine Anfragen aus. Gibt es einen Sammel-Termin (z.B. feste Sprechzeit) — oder reagiert die Person auf jede einzelne sofort?`;
   }
   if (profile.nonprodPct >= 30) {
     tags.push(
       `<span class="tag tag-warn">${profile.nonprodPct.toFixed(0)}% nicht-produktiv</span>`
     );
     if (!leadQuestion)
-      leadQuestion = `Ist das Beziehungs-Investition oder Scope-Drift?`;
+      leadQuestion = `Frage fürs Gespräch: viel Zeit für Verwaltung / Abstimmung / Beziehungspflege bei diesem Mandanten. Bewusst investiert in eine wichtige Beziehung, oder dehnt sich der Auftrag stillschweigend aus?`;
   }
   if (profile.meetingHeavyPct >= 50) {
     tags.push(
-      `<span class="tag tag-info">${profile.meetingHeavyPct.toFixed(0)}% Meetings</span>`
+      `<span class="tag tag-info">${profile.meetingHeavyPct.toFixed(0)}% in Terminen</span>`
     );
     if (!leadQuestion)
-      leadQuestion = `Welche dieser Termine könnten async laufen?`;
+      leadQuestion = `Frage fürs Gespräch: über die Hälfte dieser Mandant-Zeit lief in Live-Terminen. Welche davon wären als Mail / kurze Notiz schneller erledigt?`;
   }
   if (profile.notizPct <= 25 && profile.entriesCount >= 8) {
     tags.push(
-      `<span class="tag tag-info">${profile.notizPct.toFixed(0)}% mit Notiz</span>`
+      `<span class="tag tag-info">nur ${profile.notizPct.toFixed(0)}% mit Notiz</span>`
     );
     if (!leadQuestion)
-      leadQuestion = `Wie wird der Kontext im Review nachvollziehbar?`;
+      leadQuestion = `Frage fürs Gespräch: Einträge bei diesem Mandanten haben selten eine Notiz. Beim Review oder Übergabe fehlt damit der Kontext — geht ein-Wort-Disziplin?`;
   }
   if (!leadQuestion) {
-    leadQuestion = `Wirkt unauffällig — kein konkreter Hebel im 1:1 nötig.`;
+    leadQuestion = `Wirkt unauffällig — kein konkreter Hebel fürs Gespräch nötig.`;
   }
 
   const inhalt: string[] = [];
@@ -168,23 +169,70 @@ export function renderStakeholderDossier(
    Welle 5a — Change-Point-Visualisierung
    ───────────────────────────────────────────────────────────────────── */
 
-/** Mapping ChangePointMetric → menschenlesbares Label + Einheits-Formatter. */
+/**
+ * Mapping ChangePointMetric → menschenlesbares Label, Einheits-Formatter
+ * und ein „konkret heißt das"-Erklärsatz (in Sprache, die jemand ohne
+ * Tracking-Hintergrund versteht).
+ */
 const CP_METRIC_INFO: Record<
   ChangePointMetric,
-  { label: string; format: (v: number) => string }
+  {
+    label: string;
+    format: (v: number) => string;
+    /** Erklärsatz, der erscheint, wenn der Wert „up"-Richtung kippt. */
+    upMeaning: string;
+    /** Erklärsatz, wenn er „down"-Richtung kippt. */
+    downMeaning: string;
+  }
 > = {
-  wallclock: { label: 'Wallclock-Volumen', format: (v) => `${v.toFixed(1)}h` },
-  meeting: { label: 'Meeting-Anteil', format: (v) => `${v.toFixed(0)}%` },
-  deepFocus: { label: 'Tiefenarbeit', format: (v) => `${v.toFixed(0)}%` },
+  wallclock: {
+    label: 'Arbeitsstunden pro Woche',
+    format: (v) => `${v.toFixed(1)}h`,
+    upMeaning:
+      'Du hast in dieser Woche substanziell mehr Stunden gearbeitet als in den Wochen davor.',
+    downMeaning:
+      'Substanziell weniger Stunden in dieser Woche — Urlaub, kurze Woche, oder ein Einbruch?',
+  },
+  meeting: {
+    label: 'Anteil Meetings und Calls',
+    format: (v) => `${v.toFixed(0)}%`,
+    upMeaning:
+      'Deine Woche wurde stark von Terminen geprägt — weniger Zeit für eigene Aufgaben am Stück.',
+    downMeaning:
+      'Weniger Termin-Last in dieser Woche — entweder Lücke im Kalender, oder du hast Termine bewusst gekürzt.',
+  },
+  deepFocus: {
+    label: 'Konzentrations-Anteil (Blöcke über 2h)',
+    format: (v) => `${v.toFixed(0)}%`,
+    upMeaning:
+      'Mehr Zeit am Stück ohne Unterbrechung — eine Qualitäts-Woche für Tiefe.',
+    downMeaning:
+      'Weniger Zeit am Stück, mehr Stückwerk. Termine oder Ad-hoc-Anfragen haben den Tag zerschnitten.',
+  },
   multiTasking: {
-    label: 'Multi-Tasking',
+    label: 'Parallel-Last (pro echte Stunde wieviel Aufgaben)',
     format: (v) => `${v.toFixed(2)}x`,
+    upMeaning:
+      'Mehr parallel laufende Themen pro Stunde — entweder bewusste Mehr-Mandanten-Steuerung oder Zerstreuung.',
+    downMeaning:
+      'Weniger Parallelität — du warst seriell unterwegs, ein Ding nach dem anderen.',
   },
   topStakeholder: {
-    label: 'Top-Stakeholder',
+    label: 'Anteil des größten Mandanten',
     format: (v) => `${v.toFixed(0)}%`,
+    upMeaning:
+      'Ein Mandant hat plötzlich deutlich mehr deiner Zeit gezogen — ein Großauftrag, ein Eskalations-Moment?',
+    downMeaning:
+      'Der bisherige Hauptmandant verliert Anteil — andere Themen rücken nach.',
   },
-  coverage: { label: 'Tracking-Coverage', format: (v) => `${v.toFixed(0)}%` },
+  coverage: {
+    label: 'Tracking-Genauigkeit',
+    format: (v) => `${v.toFixed(0)}%`,
+    upMeaning:
+      'Deine Tracking-Disziplin hat sich verbessert — du erfasst lückenloser als in den Wochen davor.',
+    downMeaning:
+      'Mehr Lücken zwischen erstem und letztem Eintrag des Tages — entweder eine besonders dichte Woche, oder das Tracken ist hinten runtergefallen.',
+  },
 };
 
 /** Sparkline über eine wöchentliche Metrik mit Markierung der Bruch-Woche. */
@@ -251,19 +299,79 @@ export function renderChangePointCard(
     }
   };
   const arrow = cp.deltaSign === 'up' ? '↑' : '↓';
-  const arrowColor = cp.deltaSign === 'up' ? '#D4706E' : '#3a8d6e';
-  // Bei 'meeting' / 'multiTasking' ist 'up' das warnende Signal,
-  // bei 'deepFocus' / 'coverage' ist 'down' das warnende.
+  // Farbcodierung: rot = das ist die warnende Richtung dieser Metrik
+  // (Meeting/MT up, DeepFocus/Coverage down). Grün = die positive.
+  const warningUp = cp.metric === 'meeting' || cp.metric === 'multiTasking';
+  const warningDown = cp.metric === 'deepFocus' || cp.metric === 'coverage';
+  const isWarning =
+    (warningUp && cp.deltaSign === 'up') ||
+    (warningDown && cp.deltaSign === 'down');
+  const arrowColor = isWarning ? '#D4706E' : '#3a8d6e';
+
   let label = info.label;
   if (cp.metric === 'topStakeholder') {
     const wk = weeks.find((w) => w.label === cp.weekLabel);
     if (wk?.topStakeholderName && wk.topStakeholderName !== '—') {
-      label = `Top-Stakeholder (${esc(wk.topStakeholderName)})`;
+      label = `Anteil des Mandanten ${esc(wk.topStakeholderName)}`;
     }
   }
+
+  const meaning =
+    cp.deltaSign === 'up' ? info.upMeaning : info.downMeaning;
+
+  // Delta in einer für Menschen direkt lesbaren Form
+  let deltaText = '';
+  switch (cp.metric) {
+    case 'wallclock':
+      deltaText = `${Math.abs(cp.deltaAbsolute).toFixed(1)}h Unterschied zum Schnitt der letzten ${cp.baselineWeekCount} Wochen`;
+      break;
+    case 'meeting':
+    case 'deepFocus':
+    case 'topStakeholder':
+    case 'coverage':
+      deltaText = `${Math.abs(cp.deltaAbsolute).toFixed(0)} Prozentpunkte Unterschied zum Schnitt der letzten ${cp.baselineWeekCount} Wochen`;
+      break;
+    case 'multiTasking':
+      deltaText = `Schnitt vorher ${cp.baselineValue.toFixed(2)}, jetzt ${cp.currentValue.toFixed(2)} — Vergleichsbasis ${cp.baselineWeekCount} Wochen`;
+      break;
+  }
+
+  // Kontext-Narrative: was sonst noch in dieser Woche kippte, ob es
+  // einmalig war, Wochen-Snapshot, Handlungs-Hinweis.
+  const narrative = describeChangePointContext(cp);
+
+  const persistenceTag =
+    cp.context.persistence === 'haelt-an'
+      ? `<span class="cp-persist-tag cp-persist-stay">hält an</span>`
+      : cp.context.persistence === 'einmalig'
+        ? `<span class="cp-persist-tag cp-persist-once">einmalig</span>`
+        : '';
+
+  const contextBlocks: string[] = [];
+  if (narrative.cooccurrence) {
+    contextBlocks.push(
+      `<div class="cp-card-cooccur"><b>Im Zusammenhang:</b> ${narrative.cooccurrence}</div>`
+    );
+  }
+  if (narrative.persistence) {
+    contextBlocks.push(
+      `<div class="cp-card-persist"><b>Bleibt das so?</b> ${narrative.persistence}</div>`
+    );
+  }
+  if (narrative.snapshot) {
+    contextBlocks.push(
+      `<div class="cp-card-snapshot"><b>Wie sah die Woche aus?</b> ${narrative.snapshot}</div>`
+    );
+  }
+  if (narrative.actionHint) {
+    contextBlocks.push(
+      `<div class="cp-card-action">${narrative.actionHint}</div>`
+    );
+  }
+
   return `<div class="cp-card">
     <div class="cp-card-h">
-      <span class="cp-card-week">${esc(cp.weekLabel)}</span>
+      <span class="cp-card-week">${esc(cp.weekLabel)} ${persistenceTag}</span>
       <span class="cp-card-label">${label}</span>
     </div>
     <div class="cp-card-body">
@@ -271,12 +379,14 @@ export function renderChangePointCard(
         ${renderWeekSparkline(weeks, getter, cp.weekLabel)}
       </div>
       <div class="cp-card-values">
-        <span class="cp-card-base">Ø ${info.format(cp.baselineValue)}</span>
+        <span class="cp-card-base">Schnitt ${info.format(cp.baselineValue)}</span>
         <span class="cp-card-arrow" style="color:${arrowColor}">${arrow}</span>
-        <span class="cp-card-curr">${info.format(cp.currentValue)}</span>
+        <span class="cp-card-curr">jetzt ${info.format(cp.currentValue)}</span>
       </div>
     </div>
-    <div class="cp-card-meta">Baseline aus ${cp.baselineWeekCount} Wochen · Detektor: ${cp.mode === 'zscore' ? `Z-Score ${cp.zScore.toFixed(1)}` : `${(cp.pctDelta * 100).toFixed(0)}% Abweichung`}</div>
+    <div class="cp-card-meaning">${meaning}</div>
+    ${contextBlocks.join('')}
+    <div class="cp-card-meta">${deltaText}</div>
   </div>`;
 }
 
@@ -340,20 +450,29 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .finding-info{background:#f0f8f4;border-left:3px solid #6EC49E}
 .finding-ok{background:#e8f4ff;border-left:3px solid #5BA4D9}
 
-/* Change-Points (Welle 5a) — Wochen-Brüche pro Metrik */
-.cp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
-.cp-card{background:white;border:1px solid #e5dfc8;border-left:3px solid #C9A962;border-radius:4px;padding:10px 14px}
+/* Change-Points (Welle 5a + Kontext-Pass) — Wochen-Brüche pro Metrik.
+   Karten sind jetzt einspaltig, weil sie Kontext-Sektionen tragen
+   und sonst zu schmal werden. */
+.cp-grid{display:flex;flex-direction:column;gap:14px;margin-top:8px}
+.cp-card{background:white;border:1px solid #e5dfc8;border-left:3px solid #C9A962;border-radius:4px;padding:12px 16px}
 .cp-card-h{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid #f0e8d2;padding-bottom:4px;margin-bottom:6px;gap:8px}
-.cp-card-week{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.05em;font-weight:600}
+.cp-card-week{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:inline-flex;align-items:center;gap:8px}
+.cp-persist-tag{font-size:9px;padding:1px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:0.04em;font-weight:600}
+.cp-persist-stay{background:#fff0e8;color:#D4706E;border:1px solid #f5d4c8}
+.cp-persist-once{background:#f0f8f4;color:#3a8d6e;border:1px solid #c8e4d6}
 .cp-card-label{font-size:12.5px;color:#6c5a2c;text-align:right}
-.cp-card-body{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0}
+.cp-card-body{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0}
 .cp-card-trend{flex:0 0 auto}
 .cp-sparkline{display:block}
 .cp-card-values{display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums;font-size:13px}
 .cp-card-base{color:#888}
 .cp-card-arrow{font-size:16px;font-weight:700}
 .cp-card-curr{color:#1c1a17;font-weight:600;font-size:14px}
-.cp-card-meta{font-size:10.5px;color:#aaa;margin-top:2px}
+.cp-card-meaning{font-size:13px;color:#1c1a17;line-height:1.55;margin-top:8px;padding:8px 10px;background:#fff8eb;border-radius:3px}
+.cp-card-cooccur,.cp-card-persist,.cp-card-snapshot{font-size:12.5px;color:#1c1a17;line-height:1.55;margin-top:8px;padding:6px 10px;background:#fdfbf6;border-left:2px solid #d8cfb6;border-radius:2px}
+.cp-card-cooccur b,.cp-card-persist b,.cp-card-snapshot b{color:#6c5a2c;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;display:block;margin-bottom:2px}
+.cp-card-action{font-size:12.5px;color:#1c1a17;line-height:1.55;margin-top:8px;padding:8px 10px;background:#f0f8f4;border-left:3px solid #3a8d6e;border-radius:2px;font-style:italic}
+.cp-card-meta{font-size:10.5px;color:#aaa;margin-top:8px;font-style:italic}
 .cp-inline{font-size:11px;color:#888;font-style:italic}
 
 /* Wiederverwendete Balken-Liste */
@@ -440,14 +559,16 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .board-disclaimer{font-size:11px;color:#888;text-align:center;margin-top:24px}
 
 @media (max-width:640px){
-  .coach-minikpi,.lead-three,.chef-matrix,.board-hero-row,.board-pies,.cp-grid{grid-template-columns:1fr}
+  .coach-minikpi,.lead-three,.chef-matrix,.board-hero-row,.board-pies{grid-template-columns:1fr}
   .prodbar-row{grid-template-columns:100px 1fr 60px}
+  .cp-card-body{flex-direction:column;align-items:flex-start;gap:6px}
 }
 @media print{
   body{background:white;max-width:none;padding:12mm;margin:0}
-  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.lead-hebel,.chef-closing,.lead-card-tags .tag,.coach-minikpi-tile,.board-trend,.cp-card{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.lead-hebel,.chef-closing,.lead-card-tags .tag,.coach-minikpi-tile,.board-trend,.cp-card,.cp-card-meaning,.cp-card-cooccur,.cp-card-persist,.cp-card-snapshot,.cp-card-action,.cp-persist-tag{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   h2{break-after:avoid}
   section{break-inside:avoid-page}
+  .cp-card{break-inside:avoid}
 }
 </style>`;
 
@@ -480,7 +601,12 @@ export function wrapAsDocument(
   </div>
   ${bodyHtml}
   <div class="footer">
-    Methodik: Naive-Summe (jede Aufgabe voll, Multi-Stakeholder voll auf jedem). Wallclock = vereinigte Tracker-Intervalle ohne Doppelzählung. Präsenz = erster bis letzter Eintrag eines Tages. Tracking-Coverage = Wallclock ÷ Präsenz. Multi-Tasking-Faktor = Naive ÷ Wallclock. Soll-Vergleiche werden bewusst nicht ausgewiesen.
+    <b>Methodik kurz erklärt:</b>
+    <i>Echte Arbeitszeit</i> = vereinigte Tracker-Zeit eines Tages ohne Doppelzählung (wenn zwei Tracker parallel liefen, zählt das nur einmal).
+    <i>Anwesenheit</i> = Zeit zwischen erstem und letztem Eintrag des Tages.
+    <i>Tracking-Genauigkeit</i> = wie viel Prozent der Anwesenheit lückenlos erfasst ist (echte Arbeit ÷ Anwesenheit).
+    <i>Parallel-Faktor</i> = wie viele Stunden Aufgaben pro echter Arbeitsstunde gezählt werden (1.0 = sauber sequenziell, höher = mehrere Themen gleichzeitig im Slot).
+    Soll-Vergleiche (Plan vs. Ist) sind bewusst nicht Teil dieses Berichts — die Daten beschreiben, was war, ohne Bewertung gegen ein Ziel.
   </div>
 </body>
 </html>`;

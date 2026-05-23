@@ -269,6 +269,51 @@ export type ChangePointMetric =
   | 'topStakeholder'
   | 'coverage';
 
+/**
+ * Welle 5a / Klartext+Kontext-Pass — zusätzlicher Kontext pro Change-
+ * Point, der bei der Interpretation hilft: was lief sonst noch in der
+ * Bruch-Woche, ist es einmalig oder hält es an, was sind konkrete
+ * Snapshot-Daten der Bruch-Woche.
+ */
+export interface ChangePointContext {
+  /**
+   * Andere Metriken, die in derselben Woche ebenfalls als Change-Point
+   * gefeuert haben — Hinweis auf zusammenhängende Verschiebung. Leer,
+   * wenn dieser Bruch alleinsteht.
+   */
+  coOccurringMetrics: Array<{
+    metric: ChangePointMetric;
+    deltaSign: 'up' | 'down';
+  }>;
+  /**
+   * Wert der direkten Folgewoche in derselben Metrik (gleiche Einheit
+   * wie baselineValue/currentValue). Null, wenn keine Folgewoche oder
+   * zu wenig Tracking. Hilft beim 'einmalig oder hält das an?'-Check.
+   */
+  nextWeekValue: number | null;
+  /**
+   * Persistenz-Einordnung basierend auf nextWeekValue:
+   * - 'einmalig': Folgewoche liegt näher an Baseline als am Bruch
+   * - 'haelt-an': Folgewoche liegt näher am Bruch als an Baseline
+   * - 'unklar': keine Folgewoche im Range, oder genau dazwischen
+   */
+  persistence: 'einmalig' | 'haelt-an' | 'unklar';
+  /**
+   * Snapshot der Bruch-Woche — wer/was dominierte sie, jenseits der
+   * Bruch-Metrik selbst. Hilft Lesern, sich die Woche konkret
+   * vorzustellen.
+   */
+  weekSnapshot: {
+    topStakeholderName: string;
+    topStakeholderShare: number;
+    meetingShare: number;
+    deepFocusShare: number;
+    multiTaskingFactor: number;
+    wallclockHours: number;
+    coverage: number;
+  };
+}
+
 export interface ChangePoint {
   metric: ChangePointMetric;
   weekLabel: string;
@@ -286,6 +331,8 @@ export interface ChangePoint {
   /** Bei 'percent' die relative Abweichung, sonst NaN. */
   pctDelta: number;
   baselineWeekCount: number;
+  /** Zusatz-Kontext für die Interpretation. */
+  context: ChangePointContext;
 }
 
 export interface ReportData {
@@ -1115,9 +1162,13 @@ function buildChangePoints(weeks: ReportData['weeks']): ChangePoint[] {
 
     if (best) {
       const baselineSlice = values.slice(0, best.idx);
+      const breakWeek = useable[best.idx];
+      const nextWeek = useable[best.idx + 1]; // kann undefined sein
+      const nextWeekValue = nextWeek ? spec.getValue(nextWeek) : null;
+
       result.push({
         metric: spec.metric,
-        weekLabel: useable[best.idx].label,
+        weekLabel: breakWeek.label,
         baselineValue: median(baselineSlice),
         currentValue: values[best.idx],
         deltaAbsolute: best.delta,
@@ -1126,8 +1177,59 @@ function buildChangePoints(weeks: ReportData['weeks']): ChangePoint[] {
         zScore: best.zScore,
         pctDelta: best.pctDelta,
         baselineWeekCount: baselineSlice.length,
+        context: {
+          // Wird im 2. Pass gefüllt — initial leer.
+          coOccurringMetrics: [],
+          nextWeekValue,
+          persistence: 'unklar',
+          weekSnapshot: {
+            topStakeholderName: breakWeek.topStakeholderName,
+            topStakeholderShare: breakWeek.topStakeholderShare,
+            meetingShare: breakWeek.meetingShare,
+            deepFocusShare: breakWeek.deepFocusShare,
+            multiTaskingFactor: breakWeek.multiTaskingFactor,
+            wallclockHours: breakWeek.wallclockMs / 3_600_000,
+            coverage: breakWeek.coverage,
+          },
+        },
       });
     }
+  }
+
+  // 2. Pass — Persistenz pro Change-Point. Vergleicht Folgewoche mit
+  // Baseline und Bruch-Wert: wenn die Folgewoche näher am Bruch liegt,
+  // hält der Bruch an; liegt sie näher an der Baseline, war's einmalig.
+  for (const cp of result) {
+    const nv = cp.context.nextWeekValue;
+    if (nv === null) {
+      cp.context.persistence = 'unklar';
+      continue;
+    }
+    const distToBaseline = Math.abs(nv - cp.baselineValue);
+    const distToBreak = Math.abs(nv - cp.currentValue);
+    if (distToBaseline < distToBreak * 0.7) {
+      cp.context.persistence = 'einmalig';
+    } else if (distToBreak < distToBaseline * 0.7) {
+      cp.context.persistence = 'haelt-an';
+    } else {
+      cp.context.persistence = 'unklar';
+    }
+  }
+
+  // 3. Pass — Co-Occurrence. Für jeden Change-Point: welche anderen
+  // Change-Points fielen in dieselbe Woche? Indikator für eine
+  // 'kollabierende Woche', in der mehrere Metriken gleichzeitig kippen.
+  const byWeek = new Map<string, ChangePoint[]>();
+  for (const cp of result) {
+    const list = byWeek.get(cp.weekLabel) || [];
+    list.push(cp);
+    byWeek.set(cp.weekLabel, list);
+  }
+  for (const cp of result) {
+    const sameWeek = byWeek.get(cp.weekLabel) || [];
+    cp.context.coOccurringMetrics = sameWeek
+      .filter((other) => other.metric !== cp.metric)
+      .map((other) => ({ metric: other.metric, deltaSign: other.deltaSign }));
   }
 
   // Sortierung: stärkster Bruch zuerst. Bei Z-Score-Modus über |zScore|,
@@ -1146,6 +1248,139 @@ function buildChangePoints(weeks: ReportData['weeks']): ChangePoint[] {
   });
 
   return result;
+}
+
+/**
+ * Welle 5a Kontext-Pass — generiert pro Change-Point vier optionale
+ * Kontext-Sätze in einfacher Sprache. Wird sowohl von der Findings-
+ * Emission als auch vom Renderer (Kartendarstellung) konsumiert.
+ *
+ * Liefert nur Sätze, die wirklich Mehrwert bringen — bei „unklarer"
+ * Persistenz und ohne Co-Occurrence bleibt z.B. `cooccurrence` leer.
+ */
+export interface ChangePointNarrative {
+  /** „Gleichzeitig kippte auch X und Y" — leerer String, wenn der Bruch alleinsteht. */
+  cooccurrence: string;
+  /** „Hält an" / „einmalig" — leer wenn unklar oder Folgewoche fehlt. */
+  persistence: string;
+  /** Konkreter Snapshot der Bruch-Woche (was dominierte sie). */
+  snapshot: string;
+  /** Konkreter Handlungs-Hinweis pro Metrik. */
+  actionHint: string;
+}
+
+function metricLabelDe(m: ChangePointMetric): string {
+  switch (m) {
+    case 'wallclock':
+      return 'die Arbeitsstunden';
+    case 'meeting':
+      return 'der Termin-Anteil';
+    case 'deepFocus':
+      return 'der Anteil konzentrierter Arbeit';
+    case 'multiTasking':
+      return 'die Parallel-Last';
+    case 'topStakeholder':
+      return 'der Anteil des Hauptmandanten';
+    case 'coverage':
+      return 'die Tracking-Genauigkeit';
+  }
+}
+
+export function describeChangePointContext(
+  cp: ChangePoint
+): ChangePointNarrative {
+  const ctx = cp.context;
+
+  // ── Co-Occurrence: andere Metriken in derselben Woche ────────────
+  let cooccurrence = '';
+  if (ctx.coOccurringMetrics.length > 0) {
+    const parts = ctx.coOccurringMetrics.map((co) => {
+      const lbl = metricLabelDe(co.metric);
+      const dir = co.deltaSign === 'up' ? 'stieg' : 'fiel';
+      return `${lbl} ${dir}`;
+    });
+    if (parts.length === 1) {
+      cooccurrence = `In derselben Woche bewegte sich ${parts[0]} ebenfalls deutlich — es war keine isolierte Verschiebung, sondern Teil eines größeren Bildes.`;
+    } else {
+      const last = parts.pop()!;
+      cooccurrence = `In derselben Woche kippten gleichzeitig mehrere Dinge: ${parts.join(', ')} und ${last}. Das deutet auf eine Woche hin, in der sich die Arbeitsweise grundsätzlich verändert hat — nicht nur ein einzelner Ausschlag.`;
+    }
+  }
+
+  // ── Persistenz: einmalig vs. hält an ─────────────────────────────
+  let persistence = '';
+  if (ctx.persistence === 'einmalig' && ctx.nextWeekValue !== null) {
+    persistence = `Schon in der Folgewoche ist der Wert wieder Richtung Schnitt zurückgekehrt — das war eher ein Einzelmoment als ein dauerhafter Wechsel.`;
+  } else if (ctx.persistence === 'haelt-an' && ctx.nextWeekValue !== null) {
+    persistence = `Das Muster hält an: auch die Folgewoche bleibt nahe am Bruch-Niveau. Es ist also nicht ein einmaliger Ausschlag, sondern ein neuer Zustand — falls das so weitergeht, lohnt es sich, das Thema strategisch einzuordnen.`;
+  }
+
+  // ── Snapshot der Bruch-Woche — was dominierte sie? ───────────────
+  const ws = ctx.weekSnapshot;
+  const snapshotBits: string[] = [];
+  if (ws.topStakeholderName && ws.topStakeholderName !== '—') {
+    snapshotBits.push(
+      `der größte Mandant war <b>${htmlEsc(ws.topStakeholderName)}</b> mit ${(ws.topStakeholderShare * 100).toFixed(0)}% der Wochenzeit`
+    );
+  }
+  snapshotBits.push(`insgesamt ${ws.wallclockHours.toFixed(1)}h Arbeitszeit`);
+  if (ws.meetingShare >= 0.25) {
+    snapshotBits.push(
+      `${(ws.meetingShare * 100).toFixed(0)}% in Terminen/Calls`
+    );
+  }
+  if (ws.deepFocusShare >= 0.25) {
+    snapshotBits.push(
+      `${(ws.deepFocusShare * 100).toFixed(0)}% in Blöcken über 2h`
+    );
+  }
+  const snapshot =
+    snapshotBits.length > 0
+      ? `Zur Einordnung der Woche selbst: ${snapshotBits.join(', ')}.`
+      : '';
+
+  // ── Handlungs-Hinweis pro Metrik ─────────────────────────────────
+  let actionHint = '';
+  switch (cp.metric) {
+    case 'wallclock':
+      actionHint =
+        cp.deltaSign === 'up'
+          ? `Was du tun könntest: in den Einträgen dieser Woche nachschauen, ob die Mehrarbeit zu einem konkreten Ergebnis geführt hat — oder ob sie sich auf vieles Kleines verteilt hat, das einzeln nicht erinnerungswürdig war.`
+          : `Was du tun könntest: prüfen, ob alles, was die Woche kosten sollte, tatsächlich passiert ist — falls geplant. Falls ungeplant: was hat dich weniger arbeiten lassen, war es Urlaub, weniger Anfragen, oder eine Pause aus Erschöpfung?`;
+      break;
+    case 'meeting':
+      actionHint =
+        cp.deltaSign === 'up'
+          ? `Was du tun könntest: durch die Termine dieser Woche scrollen und für jeden die Frage stellen: lag am Ende ein konkretes Ergebnis vor (Entscheidung, Mail, Dokument)? Die ohne klares Ergebnis sind die ersten Kandidaten, beim nächsten Mal abzusagen oder durch eine Mail zu ersetzen.`
+          : `Was du tun könntest: vergleichen, was in dieser termin-armen Woche an Output entstanden ist gegenüber einer durchschnittlichen Woche. Lässt sich das Muster (z.B. ein bewusster termin-freier Tag pro Woche) etablieren?`;
+      break;
+    case 'deepFocus':
+      actionHint =
+        cp.deltaSign === 'down'
+          ? `Was du tun könntest: im Kalender der Folgewochen einen 3-4-Stunden-Block ohne Termine reservieren — auch wenn er „leer" aussieht. Das ist die einzige Stelle, an der konzentrierte Arbeit praktisch entstehen kann.`
+          : `Was du tun könntest: festhalten, was diese Woche zusammenhängende Arbeit ermöglicht hat — leerer Kalender, bewusste Block-Planung, externer Schutz? Solche Bedingungen lassen sich teilweise reproduzieren.`;
+      break;
+    case 'multiTasking':
+      actionHint =
+        cp.deltaSign === 'up'
+          ? `Was du tun könntest: an einem Tag dieser Woche stichprobenartig schauen, ob mehrere Tracker tatsächlich gleichzeitig liefen, weil mehrere Themen parallel besprochen wurden — oder ob ein Tracker vergessen wurde zu stoppen. Beides hat andere Hebel.`
+          : `Was du tun könntest: nichts. Sequenzielle Arbeit ist meist gesünder als parallele — die Frage ist eher, ob sich das wiederholen lässt.`;
+      break;
+    case 'topStakeholder':
+      actionHint =
+        cp.deltaSign === 'up'
+          ? `Was du tun könntest: Mandanten-Gespräch oder Mandanten-Akte aus dieser Woche anschauen — was hat den Sprung ausgelöst (Großauftrag, Eskalation, neuer Scope)? Daraus folgt die Frage: ist das jetzt der neue Anteil, oder nur diese eine Woche?`
+          : `Was du tun könntest: schauen, welcher andere Mandant in dieser Woche den Platz übernommen hat. Bewusste Verschiebung — oder ist der bisherige Hauptmandant einfach in eine ruhigere Phase gerutscht?`;
+      break;
+    case 'coverage':
+      actionHint =
+        cp.deltaSign === 'down'
+          ? `Was du tun könntest: eine fixe Uhrzeit am Tagesende für Nacherfassung etablieren (z.B. 17:30, 5 Minuten) — verhindert, dass das Tracking weiter wegbröckelt.`
+          : `Was du tun könntest: festhalten, was den Anstoß für die bessere Disziplin gegeben hat — eine neue Routine, weniger hektische Woche, andere Aufgabenart? Damit lässt sich die Disziplin verteidigen.`;
+      break;
+  }
+
+  return { cooccurrence, persistence, snapshot, actionHint };
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -1502,12 +1737,11 @@ export function buildReportData(
     findings.push({
       level: 'info',
       audiences: ['coach', 'lead', 'chef'],
-      htmlMessage: `<b>${veryLongDays.length} Tag(e) mit &gt;14h Wallclock</b> (${examples}). Falls Nacherfassung mehrerer Tage in einem Schritt: für sauberere Kennzahlen auf die echten Tage rückverteilen.`,
+      htmlMessage: `<b>${veryLongDays.length} Tag(e) mit über 14h erfasster Arbeit</b> (${examples}). Konkret heißt das: an diesen Tagen wurden mehr Stunden eingebucht als ein normaler Arbeitstag faktisch lang ist — oft ein Hinweis darauf, dass mehrere Tage in einem Rutsch nacherfasst wurden. Für sauberere Statistiken die Einträge auf die echten Tage zurückverteilen.`,
     });
   }
 
-  // Konzentrations-Risiko: strategische Frage — Lead, Chef, Board. Coach
-  // bekommt das nicht: ist nichts, was die Person für sich „lösen" kann.
+  // Konzentrations-Risiko (Klumpen): Lead, Chef, Board.
   if (
     breakdowns.stakeholders.length > 0 &&
     breakdowns.stakeholders[0].pct > 35
@@ -1516,81 +1750,74 @@ export function buildReportData(
     findings.push({
       level: 'info',
       audiences: ['lead', 'chef', 'board'],
-      htmlMessage: `<b>Konzentrations-Risiko ${htmlEsc(top.name)}:</b> ${top.pct.toFixed(0)}% der Zeit auf einen Stakeholder. Falls dieser Stakeholder wegfällt oder das Hauptprojekt abgeschlossen wird, verschiebt sich das Profil schnell.`,
+      htmlMessage: `<b>Klumpen-Risiko bei ${htmlEsc(top.name)}:</b> ${top.pct.toFixed(0)}% der gesamten Arbeitszeit fließen in diesen einen Mandanten. Konkret heißt das: wenn dieser Auftrag wegfällt oder sich der Schwerpunkt verschiebt, ändert sich die Auslastung schlagartig — entweder bewusste Strategie (z.B. Großmandat) oder Hinweis, dass Diversifikation überfällig ist.`,
     });
   }
 
-  // Multi-Tasking sehr hoch: betrieblicher Steuerungs-Hinweis — Lead, Chef.
-  // Coach wäre zu Anklage-haft; Board ist zu detailliert.
+  // Multi-Tasking (Parallel-Arbeit) sehr hoch: Lead, Chef.
   if (mtFactor > 1.5) {
     findings.push({
       level: 'info',
       audiences: ['lead', 'chef'],
-      htmlMessage: `<b>Multi-Tasking sehr hoch (${mtFactor.toFixed(2)}x).</b> Entweder bewusste Parallel-Steuerung oder Hinweis auf vergessene Tracker. Prüfen lohnt sich.`,
+      htmlMessage: `<b>Auffällig viel Parallel-Arbeit:</b> pro echter Arbeitsstunde fielen ${mtFactor.toFixed(2)}h Aufgaben an. Konkret heißt das: oft liefen mehrere Themen gleichzeitig im selben Slot (z.B. mehrere Stakeholder gleichzeitig zugewiesen). Entweder bewusste Mehr-Mandanten-Steuerung — oder vergessene Tracker, die nicht gestoppt wurden. Lohnt sich, ein paar Stichproben zu prüfen.`,
     });
   }
 
-  // Nicht-Produktiv-Anteil hoch: operative Output-Frage — Lead, Chef.
-  // Coach würde das als Vorwurf lesen; das Thema gehört in den Lead-1:1.
+  // Nicht-Produktiv-Anteil hoch: Lead, Chef.
   const nonprodMs = taetBuckets.get('Nicht produktiv') || 0;
   const nonprodPct = totalNaiveMs > 0 ? (nonprodMs / totalNaiveMs) * 100 : 0;
   if (nonprodPct > 45) {
     findings.push({
       level: 'info',
       audiences: ['lead', 'chef'],
-      htmlMessage: `<b>Nicht-Produktiv-Anteil bei ${nonprodPct.toFixed(0)}%.</b> Welche der Top-Projekte dort sind wirklich nötig, welche könnten asynchron oder kürzer laufen?`,
+      htmlMessage: `<b>Knapp die Hälfte als „nicht produktiv" verbucht:</b> ${nonprodPct.toFixed(0)}% der Zeit. Konkret heißt das: Verwaltung, Abstimmung, Beziehungspflege, Wartezeit — Dinge, die nötig sind, aber kein direktes Ergebnis liefern. Welche der Top-Projekte in dieser Kategorie sind wirklich notwendig, welche könnten asynchron (per Mail / Tool) oder kürzer laufen?`,
     });
   }
 
-  // Coverage schwach (≥5 Tage <60%): Datenbasis-Hinweis. Coach (Doku-
-  // Disziplin), Lead (Belastbarkeit der 1:1-Daten), Chef (Vorbehalt im
-  // Bericht), Board (Disclaimer-Notiz).
+  // Tracking-Coverage schwach: alle Brillen (Datenqualitäts-Disclaimer).
   if (daysThin >= 5) {
     findings.push({
       level: 'info',
       audiences: ['coach', 'lead', 'chef', 'board'],
-      htmlMessage: `<b>${daysThin} Tage mit Tracking-Coverage unter 60%.</b> Auf den schwächsten Tagen ist die Detail-Verteilung weniger belastbar.`,
+      htmlMessage: `<b>${daysThin} Tage mit lückenhaftem Tracking</b> (unter 60% des Anwesenheitsfensters erfasst). Konkret heißt das: zwischen erstem und letztem Eintrag dieser Tage klaffen größere Lücken — die Detail-Verteilung (Mandant, Tätigkeit) ist an diesen Tagen weniger belastbar. Tendenzaussagen über den ganzen Zeitraum bleiben gültig.`,
     });
   }
 
-  // ── Out-of-Scope-Triage pro Top-Stakeholder ──────────────────────
-  // Reaktiv-Verdacht: gehört Coach (Selbst-Reflexion: was ist meine
-  // Schutz-Strategie) + Lead (Mandats-Hebel im 1:1).
+  // ── Pro-Stakeholder-Auffälligkeiten ──────────────────────────────
+  // Reaktiv-Muster: viele kleine Einträge deuten auf ad-hoc-Strom.
   for (const sp of stakeholderProfiles) {
     if (sp.microTaskPct >= 40 && sp.entriesCount >= 5) {
       findings.push({
         level: 'warn',
         audiences: ['coach', 'lead'],
-        htmlMessage: `<b>Reaktiv-Verdacht ${htmlEsc(sp.name)}:</b> ${sp.microTaskPct.toFixed(0)}% der Einträge sind unter 15 Minuten (Ø ${fmtHours(sp.avgEntryMs)}). Bei ${sp.pct.toFixed(0)}% Gesamtanteil deutet das auf ad-hoc-Aufträge hin. Triage-Layer (Mailbox / fixe Sprechzeiten) gibt Stunden zurück.`,
+        htmlMessage: `<b>${htmlEsc(sp.name)} ist ein Ad-hoc-Mandant:</b> ${sp.microTaskPct.toFixed(0)}% der Einträge sind unter 15 Minuten lang (Schnitt ${fmtHours(sp.avgEntryMs)} pro Eintrag), bei ${sp.pct.toFixed(0)}% Gesamtanteil. Konkret heißt das: dieser Mandant löst viele kleine, kurze Aktionen aus, die deine Konzentration unterbrechen. Ein Sammel-Termin (z.B. feste Stunde am Tag, in der man die Anfragen bündelt) gibt typischerweise mehrere Stunden Tiefenarbeit pro Woche zurück.`,
       });
     }
   }
 
-  // Out-of-Scope-Verdacht: rein Lead — Scope-Klärung ist Lead-Steuerung,
-  // nicht Selbst-Reflexion.
+  // Auftrag-außerhalb-des-Mandats-Verdacht (früher "Out-of-Scope"): Lead.
   for (const sp of stakeholderProfiles) {
     if (sp.nonprodPct >= 40 && sp.ms >= 2 * 60 * 60_000) {
       findings.push({
         level: 'warn',
         audiences: ['lead'],
-        htmlMessage: `<b>Out-of-Scope-Verdacht ${htmlEsc(sp.name)}:</b> ${sp.nonprodPct.toFixed(0)}% der gebundenen Zeit (${fmtHours(sp.ms)}) ist als „Nicht produktiv" verbucht. Beziehungspflege oder Scope-Drift?`,
+        htmlMessage: `<b>${htmlEsc(sp.name)}: viel Zeit außerhalb des eigentlichen Auftrags?</b> ${sp.nonprodPct.toFixed(0)}% der gebundenen Zeit (${fmtHours(sp.ms)}) ist als „nicht produktiv" verbucht — also Verwaltung, Abstimmung, Beziehungspflege. Konkret heißt das: bei diesem Mandanten gehst du nicht direkt am Ergebnis arbeiten, sondern an Drumherum. Bewusste Beziehungspflege bei einem strategischen Kunden, oder dehnt sich der Auftrag stillschweigend aus?`,
       });
     }
   }
 
-  // Meeting-lastiges Format: betriebliche Format-Frage — Lead + Chef.
+  // Meeting-lastiger Mandant: Lead + Chef.
   for (const sp of stakeholderProfiles) {
     if (sp.meetingHeavyPct >= 50 && sp.ms >= 2 * 60 * 60_000) {
       findings.push({
         level: 'info',
         audiences: ['lead', 'chef'],
-        htmlMessage: `<b>Meeting-lastiges Format ${htmlEsc(sp.name)}:</b> ${sp.meetingHeavyPct.toFixed(0)}% in synchronen Formaten. Welche Termine könnten als Mail/1-Pager komprimiert werden?`,
+        htmlMessage: `<b>${htmlEsc(sp.name)}: Mandant mit hohem Termin-Anteil.</b> ${sp.meetingHeavyPct.toFixed(0)}% der Zeit für diesen Mandanten lief in Meetings, Calls oder Workshops. Konkret heißt das: über die Hälfte der Arbeit findet in Live-Terminen statt, nicht in eigener stiller Arbeit. Welche dieser Termine wären als kurze Mail oder 1-Seiten-Notiz schneller erledigt?`,
       });
     }
   }
 
-  // Meetings ohne Output: konkretester Lead/Chef-Hinweis aller OOS-
-  // Indikatoren — explizite Output-Frage, kein Detail-Coach-Thema.
+  // Meetings-ohne-Output-Verdacht: Lead + Chef.
   for (const sp of stakeholderProfiles) {
     if (
       sp.meetingHeavyPct >= 30 &&
@@ -1600,77 +1827,69 @@ export function buildReportData(
       findings.push({
         level: 'warn',
         audiences: ['lead', 'chef'],
-        htmlMessage: `<b>Meetings ohne Output ${htmlEsc(sp.name)}:</b> ${sp.meetingHeavyPct.toFixed(0)}% Meeting-Anteil, davon ${sp.meetingNonprodPct.toFixed(0)}% Nicht-produktiv. Pro Termin eine Output-Frage — andernfalls Format-Wechsel.`,
+        htmlMessage: `<b>${htmlEsc(sp.name)}: viele Termine ohne klares Ergebnis.</b> ${sp.meetingHeavyPct.toFixed(0)}% Termin-Anteil, davon ${sp.meetingNonprodPct.toFixed(0)}% als „nicht produktiv" gebucht. Konkret heißt das: die Mehrzahl dieser Termine endet nicht mit einer konkreten Lieferung (Entscheidung, Dokument, Mail). Im 1:1 ansprechen: für jeden wiederkehrenden Termin eine Output-Frage stellen — was ist die Ergebnis-Erwartung, andernfalls Format-Wechsel oder Absage.`,
       });
     }
   }
 
-  // Doku-Lücke: Coach (Selbst-Reflexion „ich verliere Kontext") + Lead
-  // (Nachvollziehbarkeit für Review). NICHT Chef/Board — zu detailliert.
+  // Lückenhafte Dokumentation pro Mandant: Coach + Lead.
   for (const sp of stakeholderProfiles) {
     if (sp.notizPct <= 20 && sp.pct >= 15 && sp.entriesCount >= 8) {
       findings.push({
         level: 'info',
         audiences: ['coach', 'lead'],
-        htmlMessage: `<b>Doku-Lücke ${htmlEsc(sp.name)}:</b> Nur ${sp.notizPct.toFixed(0)}% der Einträge haben eine Notiz, bei ${sp.pct.toFixed(0)}% Gesamtanteil. Eine 1-Wort-Notiz pro Slot ist meist genug.`,
+        htmlMessage: `<b>Lückenhafte Notizen bei ${htmlEsc(sp.name)}:</b> nur ${sp.notizPct.toFixed(0)}% der Einträge tragen einen Kommentar, bei ${sp.pct.toFixed(0)}% Gesamtanteil. Konkret heißt das: in ein paar Monaten oder beim Review wirst du nicht mehr wissen, was du in den Slots „${htmlEsc(sp.name)}" eigentlich gemacht hast. Eine ein-Wort-Notiz pro Eintrag reicht meist schon (z.B. „Telefon Müller", „Konzept v2").`,
       });
     }
   }
 
-  // Hochlast (≥3 Tage ≥10h): Belastungs-Signal — Coach (Energie), Lead
-  // (Steuerung), Chef (Linie). Board nicht — zu Detail-orientiert.
+  // Belastungs-Spitzen: Coach (Energie), Lead (Steuerung), Chef (Linie).
   if (weekday.highLoadDaysCount >= 3) {
     findings.push({
       level: 'warn',
       audiences: ['coach', 'lead', 'chef'],
-      htmlMessage: `<b>${weekday.highLoadDaysCount} Tage mit ≥10h Präsenz</b> im Zeitraum. Bei vereinzelten Spitzen kein Drama — als Muster lohnt der Blick auf Belastungssteuerung.`,
+      htmlMessage: `<b>${weekday.highLoadDaysCount} besonders lange Tage</b> mit mindestens 10 Stunden Anwesenheit. Konkret heißt das: zwischen erstem und letztem Eintrag dieser Tage lagen mindestens 10 Stunden — das ist überdurchschnittlich lang. Ein einzelner solcher Tag ist kein Drama; drei oder mehr deuten auf ein Belastungs-Muster, das einen Blick auf die Steuerung verdient: Deadline-Stau, Personal-Engpass, oder einfach Phase.`,
     });
   }
 
-  // Wochenend-Anteil: persönlich (Coach — Grenzen-Frage) + Lead
-  // (strukturelle Frage „reicht die Wochentag-Kapazität?"). NICHT Chef/
-  // Board — als Linien-Aussage zu intim, als Strategie-Aussage irrelevant.
+  // Wochenend-Arbeit: Coach + Lead.
   if (weekday.weekendMs > 0 && totalWallMs > 0) {
     const weekendShare = (weekday.weekendMs / totalWallMs) * 100;
     if (weekendShare >= 8) {
       findings.push({
         level: 'info',
         audiences: ['coach', 'lead'],
-        htmlMessage: `<b>Wochenend-Anteil ${weekendShare.toFixed(0)}%</b> (${fmtHours(weekday.weekendMs)}). Bewusst geplant oder Indikator strukturell knapper Wochentag-Kapazität?`,
+        htmlMessage: `<b>${weekendShare.toFixed(0)}% der Arbeit am Wochenende</b> (${fmtHours(weekday.weekendMs)} Samstag/Sonntag). Konkret heißt das: ein knappes Zehntel der Stunden lag außerhalb der regulären Wochentage. Bewusst geplant (z.B. Großprojekt mit fixer Deadline), oder reichen die Wochentage strukturell nicht mehr aus?`,
       });
     }
   }
 
-  // Tiefen-Fokus zu gering (<20% deepFocusPct + ≥30 Slots): Coach-relevant
-  // (Fokus-Frage), Chef-relevant (Output-Effizienz).
+  // Wenig konzentrierte Arbeit: Coach + Chef.
   if (slotLength.totalCount >= 30 && slotLength.deepFocusPct < 20) {
     findings.push({
       level: 'info',
       audiences: ['coach', 'chef'],
-      htmlMessage: `<b>Wenig Tiefenarbeit:</b> Nur ${slotLength.deepFocusPct.toFixed(0)}% der Zeit fällt auf Slots über 2h — der Rest ist Stückwerk. Wo könnte ein 4h-Block ohne Kalendertermine geplant werden?`,
+      htmlMessage: `<b>Stückwerk-Muster:</b> nur ${slotLength.deepFocusPct.toFixed(0)}% der Arbeitszeit lief in zusammenhängenden Blöcken über 2 Stunden. Konkret heißt das: der größte Teil des Tages bestand aus kurzen Stücken (Termine, kleine Aufgaben, Unterbrechungen). Wo könnte ein 4-Stunden-Block ohne Kalendertermine im Wochenplan stehen — auch wenn er „leer" aussieht?`,
     });
   }
 
-  // Burst-Pattern (Kette >4h ohne Pause): Coach (Erholungs-Frage). Lead
-  // nur wenn ≥3 lange Bursts (dann strukturell). Nicht Chef/Board.
+  // Lange Arbeitsphasen ohne Pause: Coach.
   if (rhythm.burst.longestBurstMin >= 240) {
     findings.push({
       level: 'info',
       audiences: ['coach'],
-      htmlMessage: `<b>Längste Slot-Kette ${Math.round(rhythm.burst.longestBurstMin / 60)}h ohne Pause</b> am ${rhythm.burst.longestBurstDate}. Was hätte eine echte 15-Minuten-Pause dazwischen verändert?`,
+      htmlMessage: `<b>Längste Arbeitsphase am Stück: ${Math.round(rhythm.burst.longestBurstMin / 60)}h ohne erfasste Pause</b> am ${htmlEsc(rhythm.burst.longestBurstDate ?? '')}. Konkret heißt das: an diesem Tag lief mindestens ein Stück über 4 Stunden ohne sichtbare Unterbrechung. Vielleicht eine bewusste Tiefen-Phase — aber was hätte eine echte 15-Minuten-Pause dazwischen verändert (Klarheit, Energie für den Nachmittag)?`,
     });
   }
   if (rhythm.burst.longBurstCount >= 3) {
     findings.push({
       level: 'info',
       audiences: ['lead'],
-      htmlMessage: `<b>${rhythm.burst.longBurstCount} Slot-Ketten über 3h ohne Pause</b> — Belastungs-Pattern mit struktureller Komponente. Was bricht den Strom regelmäßig auf?`,
+      htmlMessage: `<b>${rhythm.burst.longBurstCount} Arbeitsphasen über 3h ohne Pause</b> im Zeitraum. Konkret heißt das: das ist kein einmaliger Großprojekt-Moment, sondern ein wiederkehrendes Belastungs-Muster. Was bricht den Strom regelmäßig nicht auf — sind Pausen im Kalender, werden sie nur nicht eingehalten, oder gibt es strukturell keine Pufferzeiten?`,
     });
   }
 
-  // Wochen-Inkonsistenz (CV ≥ 0.5): Chef + Board — strategische Frage
-  // („sind die Wochen planbar?"). Coach nicht — als persönliche Kritik
-  // unfair, oft strukturell bedingt.
+  // Stark schwankende Wochen: Chef + Board.
   if (
     rhythm.consistency.weekConsistencyCV !== null &&
     rhythm.consistency.weekConsistencyCV >= 0.5
@@ -1678,12 +1897,11 @@ export function buildReportData(
     findings.push({
       level: 'info',
       audiences: ['chef', 'board'],
-      htmlMessage: `<b>Stark schwankende Wochenlast</b> (CV ${rhythm.consistency.weekConsistencyCV.toFixed(2)}) — die Wochen unterscheiden sich substantiell in der Auslastung. Plan- oder Ressourcen-Schwankung?`,
+      htmlMessage: `<b>Wochen mit stark schwankender Auslastung.</b> Konkret heißt das: die einzelnen Wochen im Zeitraum unterscheiden sich substantiell in den Arbeitsstunden — eine Woche mit 30h kann neben einer mit 55h stehen. Das ist nicht zwingend ein Problem (Saisonalität, Projekt-Phasen), aber wenn das Muster bleibt: ist die Planung dem nicht angepasst, oder reagieren die Ressourcen zu langsam auf das, was reinkommt?`,
     });
   }
 
-  // Projekt-Lifecycle: Newcomers/Vanished — Chef (Linien-Trend) + Board
-  // (strategischer Wandel).
+  // Projekt-Bewegung (neu / ausgelaufen): Chef + Board.
   if (
     projektLifecycle.newcomers.length > 0 ||
     projektLifecycle.vanished.length > 0
@@ -1697,19 +1915,21 @@ export function buildReportData(
       .map((p) => `${htmlEsc(p.name)} (${fmtHours(p.ms)})`)
       .join(', ');
     const parts: string[] = [];
-    if (newNames) parts.push(`neu im Range: ${newNames}`);
-    if (goneNames) parts.push(`ausgelaufen: ${goneNames}`);
+    if (newNames) parts.push(`neu in der zweiten Hälfte aufgetaucht: ${newNames}`);
+    if (goneNames) parts.push(`in der zweiten Hälfte ausgelaufen: ${goneNames}`);
     findings.push({
       level: 'info',
       audiences: ['chef', 'board'],
-      htmlMessage: `<b>Projekt-Bewegung:</b> ${parts.join(' · ')}.`,
+      htmlMessage: `<b>Projekt-Bewegung im Zeitraum:</b> ${parts.join(' · ')}. Konkret heißt das: die Projekt-Liste am Ende der Periode unterscheidet sich substanziell von der am Anfang — neue Initiativen sind dazugekommen oder alte ausgelaufen. Gewollte Portfolio-Bewegung, oder zeigt sich hier, dass Projekte unkontrolliert starten/sterben?`,
     });
   }
 
   // Welle 5a — ChangePoint-Findings. Audiences-Mapping siehe Plan-Doku
   // docs/REPORT-PHASE-B-PLAN.md, Sektion A.
+  // Klartext-Pass: jeder Hinweis bekommt eine knappe Beschreibung
+  // ('was passiert ist') und einen 'konkret heißt das'-Zusatz mit der
+  // praktischen Bedeutung. Keine Z-Score- oder Baseline-Begriffe im Text.
   for (const cp of changePoints) {
-    const arrow = cp.deltaSign === 'up' ? '↑' : '↓';
     const cpAudiences: ReportLens[] = ((): ReportLens[] => {
       switch (cp.metric) {
         case 'wallclock':
@@ -1737,53 +1957,98 @@ export function buildReportData(
       }
     })();
 
-    let label: string;
-    let baseTxt: string;
-    let currTxt: string;
+    // Pro Metrik: ein Headline-Satz (was passiert ist) + ein
+    // Erklärsatz (konkret heißt das, was es bedeutet/wert sein könnte).
+    let headline = '';
+    let erklaerung = '';
+    const wkLabel = htmlEsc(cp.weekLabel);
+    const ago = `${cp.baselineWeekCount} Wochen davor`;
+
     switch (cp.metric) {
-      case 'wallclock':
-        label = 'Wallclock-Volumen';
-        baseTxt = `${cp.baselineValue.toFixed(1)}h`;
-        currTxt = `${cp.currentValue.toFixed(1)}h`;
-        break;
-      case 'meeting':
-        label = 'Meeting-Anteil';
-        baseTxt = `${cp.baselineValue.toFixed(0)}%`;
-        currTxt = `${cp.currentValue.toFixed(0)}%`;
-        break;
-      case 'deepFocus':
-        label = 'Tiefenarbeits-Anteil';
-        baseTxt = `${cp.baselineValue.toFixed(0)}%`;
-        currTxt = `${cp.currentValue.toFixed(0)}%`;
-        break;
-      case 'multiTasking':
-        label = 'Multi-Tasking-Faktor';
-        baseTxt = `${cp.baselineValue.toFixed(2)}x`;
-        currTxt = `${cp.currentValue.toFixed(2)}x`;
-        break;
-      case 'topStakeholder': {
-        const wk = weeks.find((w) => w.label === cp.weekLabel);
-        const name = wk?.topStakeholderName || 'Top-Stakeholder';
-        label = `Top-Stakeholder-Anteil (${htmlEsc(name)})`;
-        baseTxt = `${cp.baselineValue.toFixed(0)}%`;
-        currTxt = `${cp.currentValue.toFixed(0)}%`;
+      case 'wallclock': {
+        if (cp.deltaSign === 'up') {
+          headline = `<b>${wkLabel} war eine besonders lange Woche:</b> ${cp.currentValue.toFixed(1)}h gegenüber Schnitt ${cp.baselineValue.toFixed(1)}h in den ${ago}.`;
+          erklaerung = `Konkret heißt das ${Math.abs(cp.deltaAbsolute).toFixed(1)}h mehr als sonst — was war anders? Deadline, Eskalation, oder wurde Nacharbeit aus früheren Wochen jetzt erfasst?`;
+        } else {
+          headline = `<b>${wkLabel} war eine besonders kurze Woche:</b> nur ${cp.currentValue.toFixed(1)}h gegenüber Schnitt ${cp.baselineValue.toFixed(1)}h in den ${ago}.`;
+          erklaerung = `${Math.abs(cp.deltaAbsolute).toFixed(1)}h weniger als sonst — Urlaubstage, Krankheit, oder einfach eine ruhige Woche?`;
+        }
         break;
       }
-      case 'coverage':
-        label = 'Tracking-Coverage';
-        baseTxt = `${cp.baselineValue.toFixed(0)}%`;
-        currTxt = `${cp.currentValue.toFixed(0)}%`;
+      case 'meeting': {
+        if (cp.deltaSign === 'up') {
+          headline = `<b>${wkLabel} war eine Termin-Woche:</b> ${cp.currentValue.toFixed(0)}% der Arbeitszeit in Meetings und Calls — vorher waren es im Schnitt ${cp.baselineValue.toFixed(0)}%.`;
+          erklaerung = `Konkret heißt das deutlich weniger zusammenhängende Zeit für eigene Arbeit. Welche der Termine hätten als Mail oder kurzes 1-Pager funktioniert?`;
+        } else {
+          headline = `<b>${wkLabel} hatte ungewöhnlich wenig Termine:</b> ${cp.currentValue.toFixed(0)}% Anteil gegenüber Schnitt ${cp.baselineValue.toFixed(0)}%.`;
+          erklaerung = `Mehr Raum für eigene Arbeit — entweder eine ruhige Woche im Kalender, oder du hast Termine bewusst rausgeworfen.`;
+        }
         break;
-      default:
-        label = String(cp.metric);
-        baseTxt = String(cp.baselineValue);
-        currTxt = String(cp.currentValue);
+      }
+      case 'deepFocus': {
+        if (cp.deltaSign === 'down') {
+          headline = `<b>${wkLabel} war fragmentiert:</b> nur ${cp.currentValue.toFixed(0)}% der Zeit lief in Blöcken über zwei Stunden — vorher waren es ${cp.baselineValue.toFixed(0)}%.`;
+          erklaerung = `Konkret heißt das: die Woche bestand aus vielen kurzen Stücken statt zusammenhängender Arbeit. Termine, Unterbrechungen oder Ad-hoc-Anfragen haben den Tag zerschnitten.`;
+        } else {
+          headline = `<b>${wkLabel} hatte eine ungewöhnliche Tiefe:</b> ${cp.currentValue.toFixed(0)}% in Blöcken über zwei Stunden — gegenüber Schnitt ${cp.baselineValue.toFixed(0)}%.`;
+          erklaerung = `Mehr Zeit am Stück ohne Unterbrechung — eine Qualitäts-Woche. Was hat das ermöglicht, lässt sich das wiederholen?`;
+        }
+        break;
+      }
+      case 'multiTasking': {
+        if (cp.deltaSign === 'up') {
+          headline = `<b>${wkLabel} war besonders parallel:</b> du hast pro echter Arbeitsstunde ${cp.currentValue.toFixed(2)}h Aufgaben gezählt — Schnitt sonst ${cp.baselineValue.toFixed(2)}h.`;
+          erklaerung = `Konkret heißt das: mehrere Themen liefen gleichzeitig (z.B. mehrere Stakeholder im selben Slot). Bewusste Mehr-Mandanten-Steuerung oder Zerstreuung?`;
+        } else {
+          headline = `<b>${wkLabel} war seriell:</b> Parallel-Last ${cp.currentValue.toFixed(2)}h pro Arbeitsstunde, gegenüber Schnitt ${cp.baselineValue.toFixed(2)}h.`;
+          erklaerung = `Du hast ein Ding nach dem anderen gemacht — weniger Parallel-Verarbeitung als sonst.`;
+        }
+        break;
+      }
+      case 'topStakeholder': {
+        const wk = weeks.find((w) => w.label === cp.weekLabel);
+        const name = wk?.topStakeholderName || 'Hauptmandant';
+        if (cp.deltaSign === 'up') {
+          headline = `<b>${wkLabel}: ${htmlEsc(name)} hat plötzlich viel Raum eingenommen</b> — ${cp.currentValue.toFixed(0)}% der Woche, gegenüber Schnitt ${cp.baselineValue.toFixed(0)}% in den ${ago}.`;
+          erklaerung = `Konkret heißt das: ein einzelner Mandant hat in dieser Woche dominiert. Eskalation, Großauftrag, oder bewusst priorisiert?`;
+        } else {
+          headline = `<b>${wkLabel}: ${htmlEsc(name)} verliert Anteil</b> — ${cp.currentValue.toFixed(0)}% gegenüber Schnitt ${cp.baselineValue.toFixed(0)}%.`;
+          erklaerung = `Der bisherige Hauptmandant rückt in den Hintergrund — Projekt abgeschlossen, oder andere Themen drängen rein?`;
+        }
+        break;
+      }
+      case 'coverage': {
+        if (cp.deltaSign === 'down') {
+          headline = `<b>${wkLabel}: Tracking-Genauigkeit eingebrochen</b> — Erfassungs-Coverage ${cp.currentValue.toFixed(0)}% gegenüber Schnitt ${cp.baselineValue.toFixed(0)}% in den ${ago}.`;
+          erklaerung = `Konkret heißt das: zwischen dem ersten und letzten Eintrag eines Tages klaffen größere Lücken. Entweder eine sehr dichte Woche (wenig Zeit zum Tracken), oder die Disziplin ist hinten runtergefallen.`;
+        } else {
+          headline = `<b>${wkLabel}: Tracking-Genauigkeit verbessert</b> auf ${cp.currentValue.toFixed(0)}% (Schnitt ${cp.baselineValue.toFixed(0)}%).`;
+          erklaerung = `Du erfasst lückenloser als sonst — gute Disziplin in einer wahrscheinlich gut planbaren Woche.`;
+        }
+        break;
+      }
     }
+
+    // Welle 5a Kontext-Pass — zusätzliche Sätze, die helfen, den Bruch
+    // einzuordnen: was sonst noch in der Woche kippte, ob es einmalig
+    // war oder anhält, Wochen-Snapshot, konkreter Handlungs-Hinweis.
+    const narrative = describeChangePointContext(cp);
+    const extraSentences: string[] = [];
+    if (narrative.cooccurrence) extraSentences.push(narrative.cooccurrence);
+    if (narrative.persistence) extraSentences.push(narrative.persistence);
+    if (narrative.snapshot) extraSentences.push(narrative.snapshot);
+    if (narrative.actionHint) extraSentences.push(narrative.actionHint);
+
+    const fullMessage =
+      `${headline} ${erklaerung}` +
+      (extraSentences.length > 0
+        ? `<br><br>${extraSentences.join(' ')}`
+        : '');
 
     findings.push({
       level: 'info',
       audiences: cpAudiences,
-      htmlMessage: `<b>Bruch in ${cp.weekLabel}:</b> ${label} ${arrow} von ${baseTxt} auf ${currTxt} (Baseline aus ${cp.baselineWeekCount} Wochen). Was hat sich in dieser Woche verändert?`,
+      htmlMessage: fullMessage,
     });
   }
 
