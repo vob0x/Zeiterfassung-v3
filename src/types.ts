@@ -62,8 +62,35 @@ export interface MasterDataItem {
   updated_at: string;
 }
 
+/**
+ * Projekt-Kategorie für das Reaktivitäts-Modell (Welle 6, REPORT-PHASE-C).
+ *
+ * - `reaktiv`: Flowstopper, alles fallen lassen (Medienanfragen, BGÖ, Krise)
+ * - `planbar`: Eigen-Arbeit oder Auftrag mit planbarem Termin (Konzeption,
+ *   Newsletter, Sprechnotizen, Medienkonferenzen)
+ * - `routine`: operative Wiederkehr (Daily, Mailbox-Triage, Monitoring)
+ * - `fuehrung-admin`: Führung, Admin, Teamarbeit
+ * - `abwesenheit`: kommt aus der Tätigkeits-Achse, nicht Projekt — hier
+ *   nur für Vollständigkeit
+ * - `null` / undefined: nicht klassifiziert; im Bericht als „planbar"-
+ *   Default behandelt
+ */
+export type ProjectCategory =
+  | 'reaktiv'
+  | 'planbar'
+  | 'routine'
+  | 'fuehrung-admin'
+  | 'abwesenheit';
+
 export type Stakeholder = MasterDataItem;
-export type Project = MasterDataItem;
+/**
+ * Projekt hat optional eine Kategorie. Ist sie nicht gesetzt, fällt der
+ * Code auf die Heuristik aus dem Namen zurück (siehe
+ * `src/lib/projectClassifier.ts`).
+ */
+export interface Project extends MasterDataItem {
+  category?: ProjectCategory | null;
+}
 export type Activity = MasterDataItem;
 export type Format = MasterDataItem;
 

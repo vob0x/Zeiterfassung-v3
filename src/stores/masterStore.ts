@@ -29,6 +29,7 @@ import type {
   Activity,
   Format,
   MasterDataItem,
+  ProjectCategory,
 } from '@/types';
 
 /**
@@ -84,6 +85,13 @@ interface MasterState {
   removeProject: (id: string) => Promise<void>;
   removeActivity: (id: string) => Promise<void>;
   removeFormat: (id: string) => Promise<void>;
+
+  /**
+   * Setzt die Reaktivitäts-Kategorie eines Projekts (Welle 6). NULL setzt
+   * zurück auf Heuristik. Cascade über alle Team-Master-Rows mit dem
+   * gleichen Namen, wenn der User Admin ist — analog zu Rename.
+   */
+  setProjectCategory: (id: string, category: ProjectCategory | null) => Promise<void>;
 }
 
 /** Maps state-key to DB-table-name. */
@@ -106,6 +114,20 @@ async function decryptRow(row: any): Promise<any> {
     sort_order: row.sort_order || 0,
     created_at: row.created_at || '',
     updated_at: row.updated_at || '',
+  };
+}
+
+/**
+ * Projekt-Row dekodieren — wie generic decryptRow, aber zieht zusätzlich
+ * das `category`-Feld mit (Welle 6, REPORT-PHASE-C). Wert kommt im
+ * Klartext aus der DB (kein Encryption-Bedarf — Kategorie ist Metadaten,
+ * kein sensitiver Inhalt).
+ */
+async function decryptProjectRow(row: any): Promise<Project> {
+  const base = await decryptRow(row);
+  return {
+    ...base,
+    category: (row.category ?? null) as ProjectCategory | null,
   };
 }
 
@@ -354,7 +376,8 @@ export const useMasterStore = create<MasterState>((set) => ({
 
       const [stakeholders, projects, activities, formats] = await Promise.all([
         Promise.all((shRes.data || []).map(decryptRow)),
-        Promise.all((prRes.data || []).map(decryptRow)),
+        // Projekt-Rows tragen zusätzlich `category` für Welle 6
+        Promise.all((prRes.data || []).map(decryptProjectRow)),
         Promise.all((actRes.data || []).map(decryptRow)),
         Promise.all((fmtRes.data || []).map(decryptRow)),
       ]);
@@ -438,5 +461,59 @@ export const useMasterStore = create<MasterState>((set) => ({
   removeFormat: async (id) => {
     await removeItemServer(TABLES.formats, id);
     set((s) => ({ formats: s.formats.filter((x) => x.id !== id), error: null }));
+  },
+
+  // ───────────────────────────────────────────────────────────────────
+  // Welle 6 — Projekt-Kategorie setzen (Reaktivitäts-Klassifikation)
+  //
+  // category ist Klartext-Metadaten (kein Encryption-Bedarf). Setzen
+  // auf null setzt zurück auf Heuristik aus dem Projektnamen.
+  //
+  // Cascade-Logik analog Rename: Admin im Team setzt für alle Team-
+  // Master-Rows mit demselben Projekt-Namen; Solo / Mitarbeiter nur
+  // die eigene Row.
+  // ───────────────────────────────────────────────────────────────────
+
+  setProjectCategory: async (id, category) => {
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    const list = useMasterStore.getState().projects;
+    const own = list.find((p) => p.id === id);
+    if (!own) throw new Error('Projekt nicht gefunden');
+
+    const scope = getRenameScope();
+    const now = new Date().toISOString();
+
+    if (scope === 'team') {
+      // Admin-Cascade: alle Team-Projekte mit gleichem Namen taggen
+      const candidates = list.filter((p) => p.name === own.name);
+      const ids = candidates.map((p) => p.id);
+      const { error } = await supabase
+        .from('projects')
+        .update({ category, updated_at: now })
+        .in('id', ids);
+      if (error) throw new Error(error.message);
+      const idSet = new Set(ids);
+      set((s) => ({
+        projects: s.projects.map((p) =>
+          idSet.has(p.id) ? { ...p, category, updated_at: now } : p
+        ),
+        error: null,
+      }));
+    } else {
+      // Self-Scope: nur eigene Row
+      const { error } = await supabase
+        .from('projects')
+        .update({ category, updated_at: now })
+        .eq('id', id);
+      if (error) throw new Error(error.message);
+      set((s) => ({
+        projects: s.projects.map((p) =>
+          p.id === id ? { ...p, category, updated_at: now } : p
+        ),
+        error: null,
+      }));
+    }
   },
 }));
