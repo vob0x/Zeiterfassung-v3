@@ -25,7 +25,31 @@ import { useTeamStore } from '@/stores/teamStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useI18n } from '@/i18n';
 import { detectDataQualityIssues } from '@/lib/reportData';
-import type { MasterDataItem, TimeEntry } from '@/types';
+import {
+  CATEGORY_LABELS,
+  CATEGORY_SHORT_LABELS,
+  effectiveCategory,
+} from '@/lib/projectClassifier';
+import type {
+  MasterDataItem,
+  Project,
+  ProjectCategory,
+  TimeEntry,
+} from '@/types';
+
+/**
+ * Farb-Kodierung für Projekt-Kategorien — passend zum Reaktivitäts-Modell
+ * (Welle 6). Werte sind als CSS-Farben in Hexform, damit sie in
+ * Inline-Styles funktionieren.
+ */
+const CATEGORY_COLORS: Record<ProjectCategory | 'null', string> = {
+  reaktiv: '#D4706E', // rot — Flowstopper
+  planbar: '#6EC49E', // grün — kontrolliert/planbar
+  routine: '#888888', // grau — operative Wiederkehr
+  'fuehrung-admin': '#9B8EC4', // violett — Meta/Admin
+  abwesenheit: '#aaaaaa', // hellgrau
+  null: '#666666', // unklassifiziert
+};
 
 type Dim = 'stakeholder' | 'projekt' | 'taetigkeit' | 'format';
 
@@ -296,6 +320,7 @@ function Section({
                 item={item}
                 useCount={counter.get(item.name) || 0}
                 canEdit={canEdit}
+                isAdmin={isAdmin}
               />
             );
           })}
@@ -341,6 +366,7 @@ function ItemRow({
   item,
   useCount,
   canEdit,
+  isAdmin,
 }: {
   dim: Dim;
   item: MasterDataItem;
@@ -348,6 +374,8 @@ function ItemRow({
   /** Wenn false: keine Edit/Delete-Buttons (User darf das Item nicht
    *  ändern — z.B. Mitarbeiter sieht das Item eines Kollegen). */
   canEdit: boolean;
+  /** Steuert das Projekt-Kategorie-Picker-Recht. */
+  isAdmin: boolean;
 }) {
   const { t } = useI18n();
   const renameStakeholder = useMasterStore((s) => s.renameStakeholder);
@@ -488,6 +516,12 @@ function ItemRow({
           >
             {item.name}
           </span>
+          {dim === 'projekt' && (
+            <ProjectCategoryPicker
+              project={item as Project}
+              canEdit={isAdmin}
+            />
+          )}
           {useCount > 0 && (
             <span
               className="text-[10px] font-mono"
@@ -537,5 +571,104 @@ function ItemRow({
         </>
       )}
     </li>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Welle 6 — Projekt-Kategorie-Picker
+   ─────────────────────────────────────────────────────────────────────
+   Für jedes Projekt sichtbar: aktuelle Kategorie (Reaktiv / Planbar /
+   Routine / Führung / Abwesenheit). Stammt sie aus der Heuristik (kein
+   manueller Eintrag in projects.category), wird das mit „(auto)"
+   markiert. Admin kann sie explizit setzen — oder „auto" wählen, was
+   die Heuristik wieder greifen lässt (DB-Feld zurück auf NULL).
+   ───────────────────────────────────────────────────────────────────── */
+
+function ProjectCategoryPicker({
+  project,
+  canEdit,
+}: {
+  project: Project;
+  canEdit: boolean;
+}) {
+  const setProjectCategory = useMasterStore((s) => s.setProjectCategory);
+  const [busy, setBusy] = useState(false);
+  const effCat = effectiveCategory(project.category, project.name);
+  const isAuto = !project.category; // null / undefined → Heuristik aktiv
+
+  const dotColor = CATEGORY_COLORS[effCat ?? 'null'];
+  const shortLabel = effCat ? CATEGORY_SHORT_LABELS[effCat] : '—';
+  const longLabel = effCat ? CATEGORY_LABELS[effCat] : 'unklassifiziert';
+
+  if (!canEdit) {
+    // Nicht-Admins sehen nur den Badge zum Lesen.
+    return (
+      <span
+        className="text-[10px] uppercase tracking-widest inline-flex items-center gap-1 px-2 py-0.5 rounded"
+        style={{
+          color: dotColor,
+          background: 'rgba(255,255,255,0.04)',
+          border: `1px solid ${dotColor}55`,
+        }}
+        title={isAuto ? `Heuristik: ${longLabel}` : `Manuell: ${longLabel}`}
+      >
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: dotColor,
+            display: 'inline-block',
+          }}
+        />
+        {shortLabel}
+        {isAuto && <span style={{ opacity: 0.6 }}>·auto</span>}
+      </span>
+    );
+  }
+
+  const onChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setBusy(true);
+    try {
+      await setProjectCategory(
+        project.id,
+        val === 'auto' ? null : (val as ProjectCategory)
+      );
+    } catch (err: any) {
+      alert(err?.message || 'Fehler beim Speichern');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <select
+      value={isAuto ? 'auto' : (project.category as string)}
+      onChange={onChange}
+      disabled={busy}
+      className="text-[10px] uppercase tracking-widest rounded px-1.5 py-0.5 cursor-pointer"
+      style={{
+        color: dotColor,
+        background: 'rgba(255,255,255,0.04)',
+        border: `1px solid ${dotColor}66`,
+        appearance: 'none',
+        fontWeight: 600,
+      }}
+      title={
+        isAuto
+          ? `Aktuell aus Heuristik: ${longLabel}. Wähle einen Wert zum Überschreiben oder „auto" für Heuristik.`
+          : `Manuell gesetzt: ${longLabel}. „auto" gibt die Kontrolle der Heuristik zurück.`
+      }
+    >
+      <option value="auto">
+        auto{effCat ? ` (${CATEGORY_SHORT_LABELS[effCat]})` : ''}
+      </option>
+      <option value="reaktiv">Reaktiv</option>
+      <option value="planbar">Planbar</option>
+      <option value="routine">Routine</option>
+      <option value="fuehrung-admin">Führung</option>
+      <option value="abwesenheit">Abwesenheit</option>
+    </select>
   );
 }
