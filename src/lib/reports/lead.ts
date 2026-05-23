@@ -15,6 +15,7 @@ import {
   esc,
   fmtHours,
   fmtHoursShort,
+  renderChangePointSection,
   renderDriftArrow,
   renderFindings,
   renderStakeholderDossier,
@@ -23,6 +24,7 @@ import {
 export function renderLeadBody(data: ReportData): string {
   return `
     ${buildCockpit(data)}
+    ${renderChangePointSection(data, 4)}
     <h2>Mandanten-Dossiers</h2>
     ${buildDossiers(data)}
     ${buildDriftSection(data)}

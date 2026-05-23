@@ -11,6 +11,8 @@
 
 import type {
   BreakdownRow,
+  ChangePoint,
+  ChangePointMetric,
   Finding,
   ReportData,
   ReportLens,
@@ -162,6 +164,138 @@ export function renderStakeholderDossier(
   </div>`;
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+   Welle 5a — Change-Point-Visualisierung
+   ───────────────────────────────────────────────────────────────────── */
+
+/** Mapping ChangePointMetric → menschenlesbares Label + Einheits-Formatter. */
+const CP_METRIC_INFO: Record<
+  ChangePointMetric,
+  { label: string; format: (v: number) => string }
+> = {
+  wallclock: { label: 'Wallclock-Volumen', format: (v) => `${v.toFixed(1)}h` },
+  meeting: { label: 'Meeting-Anteil', format: (v) => `${v.toFixed(0)}%` },
+  deepFocus: { label: 'Tiefenarbeit', format: (v) => `${v.toFixed(0)}%` },
+  multiTasking: {
+    label: 'Multi-Tasking',
+    format: (v) => `${v.toFixed(2)}x`,
+  },
+  topStakeholder: {
+    label: 'Top-Stakeholder',
+    format: (v) => `${v.toFixed(0)}%`,
+  },
+  coverage: { label: 'Tracking-Coverage', format: (v) => `${v.toFixed(0)}%` },
+};
+
+/** Sparkline über eine wöchentliche Metrik mit Markierung der Bruch-Woche. */
+export function renderWeekSparkline(
+  weeks: ReportData['weeks'],
+  getValue: (w: ReportData['weeks'][number]) => number,
+  highlightLabel: string
+): string {
+  if (weeks.length < 2) return '';
+  const values = weeks.map(getValue);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const W = 140;
+  const H = 36;
+  const stepX = weeks.length > 1 ? W / (weeks.length - 1) : 0;
+  const points = values
+    .map((v, i) => {
+      const x = i * stepX;
+      const y = H - ((v - min) / span) * (H - 4) - 2;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  const highlightIdx = weeks.findIndex((w) => w.label === highlightLabel);
+  let marker = '';
+  if (highlightIdx >= 0) {
+    const x = highlightIdx * stepX;
+    const v = values[highlightIdx];
+    const y = H - ((v - min) / span) * (H - 4) - 2;
+    marker = `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="#D4706E" stroke="white" stroke-width="1.5"/>`;
+  }
+  return `<svg class="cp-sparkline" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" preserveAspectRatio="none">
+    <polyline points="${points}" fill="none" stroke="#888" stroke-width="1.5" />
+    ${marker}
+  </svg>`;
+}
+
+/**
+ * Karte für einen einzelnen Change-Point — mit Sparkline, Werten und
+ * narrativem Text. Verwendet hauptsächlich vom Lead-Renderer.
+ */
+export function renderChangePointCard(
+  cp: ChangePoint,
+  weeks: ReportData['weeks']
+): string {
+  const info = CP_METRIC_INFO[cp.metric];
+  // Selektor für die Sparkline: dieselbe Metrik-Funktion wie im Detektor
+  const getter = (w: ReportData['weeks'][number]): number => {
+    switch (cp.metric) {
+      case 'wallclock':
+        return w.wallclockMs / 3_600_000;
+      case 'meeting':
+        return w.meetingShare * 100;
+      case 'deepFocus':
+        return w.deepFocusShare * 100;
+      case 'multiTasking':
+        return w.multiTaskingFactor;
+      case 'topStakeholder':
+        return w.topStakeholderShare * 100;
+      case 'coverage':
+        return w.coverage * 100;
+      default:
+        return 0;
+    }
+  };
+  const arrow = cp.deltaSign === 'up' ? '↑' : '↓';
+  const arrowColor = cp.deltaSign === 'up' ? '#D4706E' : '#3a8d6e';
+  // Bei 'meeting' / 'multiTasking' ist 'up' das warnende Signal,
+  // bei 'deepFocus' / 'coverage' ist 'down' das warnende.
+  let label = info.label;
+  if (cp.metric === 'topStakeholder') {
+    const wk = weeks.find((w) => w.label === cp.weekLabel);
+    if (wk?.topStakeholderName && wk.topStakeholderName !== '—') {
+      label = `Top-Stakeholder (${esc(wk.topStakeholderName)})`;
+    }
+  }
+  return `<div class="cp-card">
+    <div class="cp-card-h">
+      <span class="cp-card-week">${esc(cp.weekLabel)}</span>
+      <span class="cp-card-label">${label}</span>
+    </div>
+    <div class="cp-card-body">
+      <div class="cp-card-trend">
+        ${renderWeekSparkline(weeks, getter, cp.weekLabel)}
+      </div>
+      <div class="cp-card-values">
+        <span class="cp-card-base">Ø ${info.format(cp.baselineValue)}</span>
+        <span class="cp-card-arrow" style="color:${arrowColor}">${arrow}</span>
+        <span class="cp-card-curr">${info.format(cp.currentValue)}</span>
+      </div>
+    </div>
+    <div class="cp-card-meta">Baseline aus ${cp.baselineWeekCount} Wochen · Detektor: ${cp.mode === 'zscore' ? `Z-Score ${cp.zScore.toFixed(1)}` : `${(cp.pctDelta * 100).toFixed(0)}% Abweichung`}</div>
+  </div>`;
+}
+
+/**
+ * Sektion "Wochen-Brüche" für den Lead-Renderer. Rendert bis zu N
+ * Change-Points als Kartenraster. Leerer String, wenn keine Brüche
+ * vorhanden.
+ */
+export function renderChangePointSection(
+  data: ReportData,
+  max = 4
+): string {
+  const cps = data.changePoints.slice(0, max);
+  if (cps.length === 0) return '';
+  const cards = cps.map((cp) => renderChangePointCard(cp, data.weeks)).join('');
+  return `<h2>Wochen-Brüche im Zeitraum</h2>
+    <div class="cp-grid">${cards}</div>`;
+}
+
 /**
  * Findings-Block mit Audience-Filter. Findings ohne audiences gelten für
  * alle Brillen.
@@ -205,6 +339,22 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .finding-warn{background:#fff0e8;border-left:3px solid #D4706E}
 .finding-info{background:#f0f8f4;border-left:3px solid #6EC49E}
 .finding-ok{background:#e8f4ff;border-left:3px solid #5BA4D9}
+
+/* Change-Points (Welle 5a) — Wochen-Brüche pro Metrik */
+.cp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.cp-card{background:white;border:1px solid #e5dfc8;border-left:3px solid #C9A962;border-radius:4px;padding:10px 14px}
+.cp-card-h{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid #f0e8d2;padding-bottom:4px;margin-bottom:6px;gap:8px}
+.cp-card-week{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.05em;font-weight:600}
+.cp-card-label{font-size:12.5px;color:#6c5a2c;text-align:right}
+.cp-card-body{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0}
+.cp-card-trend{flex:0 0 auto}
+.cp-sparkline{display:block}
+.cp-card-values{display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums;font-size:13px}
+.cp-card-base{color:#888}
+.cp-card-arrow{font-size:16px;font-weight:700}
+.cp-card-curr{color:#1c1a17;font-weight:600;font-size:14px}
+.cp-card-meta{font-size:10.5px;color:#aaa;margin-top:2px}
+.cp-inline{font-size:11px;color:#888;font-style:italic}
 
 /* Wiederverwendete Balken-Liste */
 .prodbars{display:flex;flex-direction:column;gap:8px;margin-top:4px}
@@ -290,12 +440,12 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .board-disclaimer{font-size:11px;color:#888;text-align:center;margin-top:24px}
 
 @media (max-width:640px){
-  .coach-minikpi,.lead-three,.chef-matrix,.board-hero-row,.board-pies{grid-template-columns:1fr}
+  .coach-minikpi,.lead-three,.chef-matrix,.board-hero-row,.board-pies,.cp-grid{grid-template-columns:1fr}
   .prodbar-row{grid-template-columns:100px 1fr 60px}
 }
 @media print{
   body{background:white;max-width:none;padding:12mm;margin:0}
-  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.lead-hebel,.chef-closing,.lead-card-tags .tag,.coach-minikpi-tile,.board-trend{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.lead-hebel,.chef-closing,.lead-card-tags .tag,.coach-minikpi-tile,.board-trend,.cp-card{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   h2{break-after:avoid}
   section{break-inside:avoid-page}
 }

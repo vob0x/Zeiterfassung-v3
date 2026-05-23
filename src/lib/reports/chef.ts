@@ -11,7 +11,7 @@
  * Slot-Längen-Histogramm im Detail.
  */
 
-import type { ReportData } from '../reportData';
+import type { ChangePointMetric, ReportData } from '../reportData';
 import {
   esc,
   fmtHours,
@@ -210,11 +210,41 @@ function buildDriftSection(data: ReportData): string {
     </tr>`;
   }
 
+  // Welle 5a — wenn Change-Points vorhanden, knappe Liste der Top-3
+  // unterhalb der Drift-Tabelle. Chef-Bericht bleibt damit kompakt.
+  let cpBlock = '';
+  if (data.changePoints.length > 0) {
+    const top3 = data.changePoints.slice(0, 3);
+    const lines = top3
+      .map((cp) => {
+        const arrow = cp.deltaSign === 'up' ? '↑' : '↓';
+        const color =
+          (cp.metric === 'meeting' && cp.deltaSign === 'up') ||
+          (cp.metric === 'multiTasking' && cp.deltaSign === 'up') ||
+          (cp.metric === 'deepFocus' && cp.deltaSign === 'down') ||
+          (cp.metric === 'coverage' && cp.deltaSign === 'down')
+            ? '#D4706E'
+            : '#888';
+        const labels: Record<ChangePointMetric, string> = {
+          wallclock: 'Wallclock',
+          meeting: 'Meeting-Anteil',
+          deepFocus: 'Tiefenarbeit',
+          multiTasking: 'Multi-Tasking',
+          topStakeholder: 'Top-Stakeholder',
+          coverage: 'Coverage',
+        };
+        return `<li><b>${esc(cp.weekLabel)}</b>: ${labels[cp.metric]} <span style="color:${color}">${arrow}</span> (${cp.baselineWeekCount} Wo. Baseline)</li>`;
+      })
+      .join('');
+    cpBlock = `<div class="cp-inline" style="margin-top:10px"><b>Wochen-Brüche:</b><ul style="margin:4px 0 0 18px;padding:0;font-size:12px;color:#555;list-style:disc">${lines}</ul></div>`;
+  }
+
   return `<h2>Verschiebung im Zeitraum</h2>
   <table class="chef-drift-table">
     <thead><tr><th>Achse</th><th class="num">1. Hälfte</th><th class="num">2. Hälfte</th><th class="num">Δ</th></tr></thead>
     <tbody>${rows.join('')}${lifecycleRow}</tbody>
-  </table>`;
+  </table>
+  ${cpBlock}`;
 }
 
 function buildFindingsSection(data: ReportData): string {

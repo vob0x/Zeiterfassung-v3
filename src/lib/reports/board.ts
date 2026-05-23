@@ -90,10 +90,22 @@ export function renderBoardBody(data: ReportData): string {
 }
 
 /**
- * Trend-Satz für Board. Bevorzugt Drift (Konzentrations-Verschiebung),
- * fällt zurück auf Lifecycle (neue Projekte) oder stabil.
+ * Trend-Satz für Board. Welle 5a: bevorzugt topStakeholder-ChangePoint
+ * (datierter Bruch ist präziser als Halbzeit-Drift). Fällt zurück auf
+ * Drift, dann Lifecycle, dann stabil.
  */
 function buildTrendSentence(data: ReportData): string {
+  // Welle 5a — datierter Bruch beim Top-Stakeholder, wenn vorhanden
+  const cpTop = data.changePoints.find((c) => c.metric === 'topStakeholder');
+  if (cpTop) {
+    const wk = data.weeks.find((w) => w.label === cpTop.weekLabel);
+    const shName = wk?.topStakeholderName ?? '—';
+    if (cpTop.deltaSign === 'up') {
+      return `<b>Konzentrations-Sprung in ${esc(cpTop.weekLabel)}:</b> <b>${esc(shName)}</b> springt von Ø ${cpTop.baselineValue.toFixed(0)}% auf ${cpTop.currentValue.toFixed(0)}% — gegenüber den vorherigen ${cpTop.baselineWeekCount} Wochen ein deutlicher Bruch.`;
+    }
+    return `<b>Konzentrations-Wechsel in ${esc(cpTop.weekLabel)}:</b> Spitzen-Anteil sinkt von Ø ${cpTop.baselineValue.toFixed(0)}% auf ${cpTop.currentValue.toFixed(0)}% — das Portfolio rebalanciert sich.`;
+  }
+
   if (data.drift) {
     const dTop = data.drift.top1ShareSecond - data.drift.top1ShareFirst;
     if (Math.abs(dTop) >= 5) {

@@ -176,6 +176,48 @@ function buildCoachParagraphs(data: ReportData): string {
     );
   }
 
+  // Welle 5a — Coach-spezifische ChangePoints in Prosa. Nur die ersten
+  // zwei coach-relevanten Brüche, narrativ formuliert. Wenn keine
+  // coach-Brüche im Datensatz: dieser Absatz fehlt einfach.
+  const coachCPs = data.changePoints
+    .filter((cp) => {
+      switch (cp.metric) {
+        case 'wallclock':
+        case 'multiTasking':
+          return cp.deltaSign === 'up';
+        case 'deepFocus':
+        case 'coverage':
+          return cp.deltaSign === 'down';
+        case 'meeting':
+          return cp.deltaSign === 'up';
+        default:
+          return false;
+      }
+    })
+    .slice(0, 2);
+  for (const cp of coachCPs) {
+    const wk = esc(cp.weekLabel);
+    let sentence = '';
+    switch (cp.metric) {
+      case 'wallclock':
+        sentence = `In ${wk} sind deine Wallclock-Stunden auf ${cp.currentValue.toFixed(1)}h gesprungen — gegenüber den vorherigen ${cp.baselineWeekCount} Wochen mit Ø ${cp.baselineValue.toFixed(1)}h. Was war in dieser Woche anders?`;
+        break;
+      case 'deepFocus':
+        sentence = `Auffällig: in ${wk} fiel dein Anteil tiefer Slots auf ${cp.currentValue.toFixed(0)}% — vorher lag er stabil bei ${cp.baselineValue.toFixed(0)}%. Was hat dich da unterbrochen?`;
+        break;
+      case 'multiTasking':
+        sentence = `Auch der Parallelitäts-Faktor ist in ${wk} hochgegangen (${cp.currentValue.toFixed(2)}x statt ${cp.baselineValue.toFixed(2)}x). Hattest du das Gefühl, an zu vielen Sachen gleichzeitig zu sitzen?`;
+        break;
+      case 'meeting':
+        sentence = `In ${wk} ist dein Meeting-Anteil deutlich gestiegen (${cp.currentValue.toFixed(0)}% gegenüber Ø ${cp.baselineValue.toFixed(0)}%). Bewusst oder von außen reingerutscht?`;
+        break;
+      case 'coverage':
+        sentence = `Die Tracking-Disziplin hat in ${wk} nachgelassen — Coverage ist von ${cp.baselineValue.toFixed(0)}% auf ${cp.currentValue.toFixed(0)}% gefallen. Vergessliche Tage, oder eine besonders dichte Woche?`;
+        break;
+    }
+    if (sentence) paras.push(sentence);
+  }
+
   return paras.map((p) => `<p class="coach-para">${p}</p>`).join('\n');
 }
 

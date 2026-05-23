@@ -255,6 +255,39 @@ export interface Finding {
   audiences?: ReportLens[];
 }
 
+/**
+ * Welle 5a — Change-Point: ein erkannter Bruch in einer wöchentlichen
+ * Zeitreihe. Detektor läuft hybrid (Z-Score wenn >=6 Wochen, %-Schwelle
+ * bei 3-5 Wochen, gar nicht bei <3). Pro Metrik wird höchstens ein
+ * Change-Point geliefert — derjenige mit dem stärksten Bruch.
+ */
+export type ChangePointMetric =
+  | 'wallclock'
+  | 'meeting'
+  | 'deepFocus'
+  | 'multiTasking'
+  | 'topStakeholder'
+  | 'coverage';
+
+export interface ChangePoint {
+  metric: ChangePointMetric;
+  weekLabel: string;
+  /** Median der Wochen VOR dem Bruch — im Einheits-System der Metrik. */
+  baselineValue: number;
+  /** Wert in der Bruch-Woche. */
+  currentValue: number;
+  /** currentValue - baselineValue. */
+  deltaAbsolute: number;
+  deltaSign: 'up' | 'down';
+  /** Detektor-Modus: 'zscore' (>=6 Wochen) oder 'percent' (3-5 Wochen). */
+  mode: 'zscore' | 'percent';
+  /** Bei 'zscore' der MAD-basierte Z-Score, sonst NaN. */
+  zScore: number;
+  /** Bei 'percent' die relative Abweichung, sonst NaN. */
+  pctDelta: number;
+  baselineWeekCount: number;
+}
+
 export interface ReportData {
   meta: {
     title: string;
@@ -285,13 +318,28 @@ export interface ReportData {
     taetigkeiten: BreakdownRow[];
     formate: BreakdownRow[];
   };
-  /** Pro-Woche-Aggregat, sortiert chronologisch. */
+  /**
+   * Pro-Woche-Aggregat, sortiert chronologisch. Welle 5a hat vier
+   * Felder additiv ergänzt — `meetingShare`, `deepFocusShare`,
+   * `multiTaskingFactor`, `topStakeholderShare`. Alte Renderer, die
+   * nur die Basis-Felder nutzen, sind nicht betroffen.
+   */
   weeks: Array<{
     label: string;
     activeDays: number;
     wallclockMs: number;
     presenceMs: number;
     coverage: number;
+    /** Anteil der Wallclock-Zeit in Meeting-Formaten (0..1). */
+    meetingShare: number;
+    /** Anteil der Wallclock-Zeit in Slots >= 120 Minuten (0..1). */
+    deepFocusShare: number;
+    /** naive / wallclock dieser Woche — Parallelitäts-Indikator. */
+    multiTaskingFactor: number;
+    /** Anteil des größten Stakeholders dieser Woche (0..1). */
+    topStakeholderShare: number;
+    /** Name des Top-Stakeholders — für Change-Point-Texte. */
+    topStakeholderName: string;
   }>;
   coverage: {
     daysGood: number; // >=80%
@@ -326,6 +374,12 @@ export interface ReportData {
   multitasking: MultiTaskingProfile;
   /** Projekt-Lebenszyklus 1. vs 2. Hälfte. Phase A. */
   projektLifecycle: ProjektLifecycle;
+  /**
+   * Welle 5a — erkannte Wochen-Brüche pro Metrik (max. 1 pro Metrik),
+   * sortiert nach Stärke des Bruchs absteigend. Leeres Array, wenn der
+   * Range zu kurz ist (< 3 verwertbare Wochen).
+   */
+  changePoints: ChangePoint[];
   /** Lens, mit der dieser Report generiert wurde (für den Dispatcher). */
   lens: ReportLens;
   absences: AbsenceCount[];
@@ -925,6 +979,179 @@ function buildMultiTaskingProfile(entries: TimeEntry[]): MultiTaskingProfile {
   };
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+   Welle 5a — Change-Point-Detection auf wöchentlichen Zeitreihen
+   ───────────────────────────────────────────────────────────────────── */
+
+/** Median einer Zahlen-Liste. Liefert 0 bei leerer Liste. */
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[mid]
+    : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/** Median Absolute Deviation. Robuster als StdDev gegen Ausreißer. */
+function mad(values: number[]): number {
+  if (values.length === 0) return 0;
+  const m = median(values);
+  return median(values.map((v) => Math.abs(v - m)));
+}
+
+/**
+ * Selektor für eine Wochen-Metrik. Liefert null, wenn die Woche für
+ * diese Metrik nicht zählt (z.B. weil zu wenig aktive Tage).
+ */
+interface CPMetricSpec {
+  metric: ChangePointMetric;
+  getValue: (w: ReportData['weeks'][number]) => number;
+  /** Relevanz-Schwelle: |current - baseline| muss mindestens so groß sein. */
+  minDelta: number;
+}
+
+const CP_METRIC_SPECS: CPMetricSpec[] = [
+  {
+    metric: 'wallclock',
+    getValue: (w) => w.wallclockMs / 3_600_000, // in Stunden
+    minDelta: 4, // mind. 4h Unterschied zur Baseline
+  },
+  {
+    metric: 'meeting',
+    getValue: (w) => w.meetingShare * 100, // in Prozentpunkten
+    minDelta: 10,
+  },
+  {
+    metric: 'deepFocus',
+    getValue: (w) => w.deepFocusShare * 100,
+    minDelta: 10,
+  },
+  {
+    metric: 'multiTasking',
+    getValue: (w) => w.multiTaskingFactor,
+    minDelta: 0.3,
+  },
+  {
+    metric: 'topStakeholder',
+    getValue: (w) => w.topStakeholderShare * 100,
+    minDelta: 15,
+  },
+  {
+    metric: 'coverage',
+    getValue: (w) => w.coverage * 100,
+    minDelta: 15,
+  },
+];
+
+/**
+ * Detektiert pro Metrik den schwerwiegendsten Wochen-Bruch.
+ * Hybrid-Strategie: Z-Score (MAD-basiert) bei >= 6 verwertbaren Wochen,
+ * %-Schwelle bei 3-5, gar keine Detection bei < 3.
+ *
+ * "Verwertbar" = activeDays >= 2 (sonst zu wenig Beobachtung).
+ */
+function buildChangePoints(weeks: ReportData['weeks']): ChangePoint[] {
+  const useable = weeks.filter((w) => w.activeDays >= 2);
+  if (useable.length < 3) return [];
+
+  const mode: 'zscore' | 'percent' =
+    useable.length >= 6 ? 'zscore' : 'percent';
+
+  const result: ChangePoint[] = [];
+
+  for (const spec of CP_METRIC_SPECS) {
+    const values = useable.map(spec.getValue);
+
+    let best: {
+      idx: number;
+      delta: number;
+      zScore: number;
+      pctDelta: number;
+    } | null = null;
+
+    if (mode === 'zscore') {
+      // Detektor läuft auf Positionen [2 .. len-2], damit baseline
+      // und Tail jeweils mindestens 2 Wochen umfassen.
+      for (let i = 2; i < values.length - 1; i++) {
+        const baseline = values.slice(0, i);
+        const med = median(baseline);
+        const m = mad(baseline);
+        // MAD von 0 (alle Baseline-Werte identisch) → keine Streuung →
+        // Z-Score unendlich. Fallback: prozentual rechnen.
+        if (m === 0) {
+          const delta = values[i] - med;
+          const pct = med !== 0 ? Math.abs(delta / med) : 1;
+          if (Math.abs(delta) >= spec.minDelta && pct >= 0.3) {
+            if (!best || Math.abs(delta) > Math.abs(best.delta)) {
+              best = { idx: i, delta, zScore: NaN, pctDelta: pct };
+            }
+          }
+          continue;
+        }
+        // 1.4826 = Konsistenz-Faktor MAD→σ unter Normalverteilung
+        const z = (values[i] - med) / (1.4826 * m);
+        const delta = values[i] - med;
+        if (Math.abs(z) >= 2.5 && Math.abs(delta) >= spec.minDelta) {
+          if (!best || Math.abs(z) > Math.abs(best.zScore)) {
+            best = { idx: i, delta, zScore: z, pctDelta: NaN };
+          }
+        }
+      }
+    } else {
+      // %-Schwellen-Modus für kürzere Reihen
+      for (let i = 1; i < values.length; i++) {
+        const baseline = values.slice(0, i);
+        const med = median(baseline);
+        const delta = values[i] - med;
+        const pct = med !== 0 ? Math.abs(delta / med) : delta !== 0 ? 1 : 0;
+        if (pct >= 0.3 && Math.abs(delta) >= spec.minDelta) {
+          if (!best || Math.abs(delta) > Math.abs(best.delta)) {
+            best = { idx: i, delta, zScore: NaN, pctDelta: pct };
+          }
+        }
+      }
+    }
+
+    if (best) {
+      const baselineSlice = values.slice(0, best.idx);
+      result.push({
+        metric: spec.metric,
+        weekLabel: useable[best.idx].label,
+        baselineValue: median(baselineSlice),
+        currentValue: values[best.idx],
+        deltaAbsolute: best.delta,
+        deltaSign: best.delta >= 0 ? 'up' : 'down',
+        mode,
+        zScore: best.zScore,
+        pctDelta: best.pctDelta,
+        baselineWeekCount: baselineSlice.length,
+      });
+    }
+  }
+
+  // Sortierung: stärkster Bruch zuerst. Bei Z-Score-Modus über |zScore|,
+  // bei Percent-Modus über |deltaAbsolute / minDelta| (normalisiert).
+  const specByMetric = new Map(CP_METRIC_SPECS.map((s) => [s.metric, s]));
+  result.sort((a, b) => {
+    if (a.mode === 'zscore' && b.mode === 'zscore') {
+      return Math.abs(b.zScore) - Math.abs(a.zScore);
+    }
+    const aSpec = specByMetric.get(a.metric)!;
+    const bSpec = specByMetric.get(b.metric)!;
+    return (
+      Math.abs(b.deltaAbsolute) / bSpec.minDelta -
+      Math.abs(a.deltaAbsolute) / aSpec.minDelta
+    );
+  });
+
+  return result;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Datenqualität
+   ───────────────────────────────────────────────────────────────────── */
+
 /**
  * Tippfehler-Detection für Tätigkeit. Wandert aus den Findings in die
  * dataQualityIssues — dort gehört es hin, weil es ein Disziplin-Issue
@@ -1071,29 +1298,87 @@ export function buildReportData(
     formate: buildBreakdown(nonAbsence, 'format'),
   };
 
-  // Wochen-Aggregat
+  // Wochen-Aggregat. Welle 5a erweitert: pro Woche werden zusätzlich
+  // Entries gesammelt, damit wir meetingShare/deepFocusShare/MT-Faktor/
+  // topStakeholderShare ableiten können.
   const weekMap = new Map<
     string,
-    { wallMs: number; presMs: number; days: Set<string> }
+    {
+      wallMs: number;
+      presMs: number;
+      days: Set<string>;
+      entries: TimeEntry[];
+    }
   >();
   for (const [d, es] of byDay) {
-    void es;
     const wk = isoWeek(d);
-    const cur = weekMap.get(wk) || { wallMs: 0, presMs: 0, days: new Set() };
+    const existing = weekMap.get(wk);
+    const cur: {
+      wallMs: number;
+      presMs: number;
+      days: Set<string>;
+      entries: TimeEntry[];
+    } = existing
+      ? existing
+      : { wallMs: 0, presMs: 0, days: new Set<string>(), entries: [] };
     cur.wallMs += dayWallMs.get(d) || 0;
     cur.presMs += dayPresMs.get(d) || 0;
     cur.days.add(d);
+    for (const e of es) cur.entries.push(e);
     weekMap.set(wk, cur);
   }
   const weeks = Array.from(weekMap.entries())
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([label, v]) => ({
-      label,
-      activeDays: v.days.size,
-      wallclockMs: v.wallMs,
-      presenceMs: v.presMs,
-      coverage: v.presMs > 0 ? v.wallMs / v.presMs : 1,
-    }));
+    .map(([label, v]) => {
+      // Meeting-Anteil: Wallclock-anteilige Berechnung — wir summieren
+      // duration_ms aller Meeting-Format-Einträge und teilen durch die
+      // Wochen-Wallclock. Approximation (kein echtes "Meeting-Wallclock"),
+      // aber konsistent mit dem bestehenden Format-Mix.
+      let meetingDurMs = 0;
+      let deepFocusDurMs = 0;
+      let naiveDurMs = 0;
+      const shMap = new Map<string, number>();
+      for (const e of v.entries) {
+        const d = e.duration_ms || 0;
+        naiveDurMs += d;
+        if (isMeetingFormat(e.format || '')) meetingDurMs += d;
+        if (d >= 120 * 60_000) deepFocusDurMs += d;
+        // Stakeholder-Verteilung (Multi-Stakeholder: voll auf jedem)
+        const list = Array.isArray(e.stakeholder)
+          ? e.stakeholder
+          : e.stakeholder
+            ? [e.stakeholder]
+            : [];
+        const targets = list.length === 0 ? ['—'] : list.map((s) => s || '—');
+        for (const t of targets) shMap.set(t, (shMap.get(t) || 0) + d);
+      }
+      const shStakeholderTotal = Array.from(shMap.values()).reduce(
+        (a, b) => a + b,
+        0
+      );
+      let topShName = '—';
+      let topShMs = 0;
+      shMap.forEach((ms, name) => {
+        if (ms > topShMs) {
+          topShMs = ms;
+          topShName = name;
+        }
+      });
+      const wallMs = v.wallMs;
+      return {
+        label,
+        activeDays: v.days.size,
+        wallclockMs: wallMs,
+        presenceMs: v.presMs,
+        coverage: v.presMs > 0 ? wallMs / v.presMs : 1,
+        meetingShare: wallMs > 0 ? meetingDurMs / wallMs : 0,
+        deepFocusShare: wallMs > 0 ? deepFocusDurMs / wallMs : 0,
+        multiTaskingFactor: wallMs > 0 ? naiveDurMs / wallMs : 1,
+        topStakeholderShare:
+          shStakeholderTotal > 0 ? topShMs / shStakeholderTotal : 0,
+        topStakeholderName: topShName,
+      };
+    });
 
   // Halbzeit-Trend (Stakeholder-Bewegung)
   const sortedDates = Array.from(byDay.keys()).sort();
@@ -1189,6 +1474,9 @@ export function buildReportData(
   const projektLifecycle = buildProjektLifecycle(firstEntries, secondEntries);
   const dataQualityIssues = detectDataQualityIssues(entries);
   const weekday = buildWeekdayProfile(dayWallMs, dayPresMs);
+
+  // Welle 5a — Change-Points auf der wöchentlichen Zeitreihe.
+  const changePoints = buildChangePoints(weeks);
 
   // ─── Findings (zielgruppen-klassifiziert) ──────────────────────────
   // Jedes Finding bekommt audiences[] mit. Begründung pro Klassifikation
@@ -1418,6 +1706,87 @@ export function buildReportData(
     });
   }
 
+  // Welle 5a — ChangePoint-Findings. Audiences-Mapping siehe Plan-Doku
+  // docs/REPORT-PHASE-B-PLAN.md, Sektion A.
+  for (const cp of changePoints) {
+    const arrow = cp.deltaSign === 'up' ? '↑' : '↓';
+    const cpAudiences: ReportLens[] = ((): ReportLens[] => {
+      switch (cp.metric) {
+        case 'wallclock':
+          return ['coach', 'lead', 'chef'];
+        case 'meeting':
+          return cp.deltaSign === 'up'
+            ? ['coach', 'lead', 'chef']
+            : ['lead', 'chef'];
+        case 'multiTasking':
+          return cp.deltaSign === 'up'
+            ? ['coach', 'lead', 'chef']
+            : ['lead'];
+        case 'deepFocus':
+          return cp.deltaSign === 'down'
+            ? ['coach', 'chef']
+            : ['coach'];
+        case 'topStakeholder':
+          return ['lead', 'chef', 'board'];
+        case 'coverage':
+          return cp.deltaSign === 'down'
+            ? ['coach', 'lead']
+            : ['coach'];
+        default:
+          return ['lead'];
+      }
+    })();
+
+    let label: string;
+    let baseTxt: string;
+    let currTxt: string;
+    switch (cp.metric) {
+      case 'wallclock':
+        label = 'Wallclock-Volumen';
+        baseTxt = `${cp.baselineValue.toFixed(1)}h`;
+        currTxt = `${cp.currentValue.toFixed(1)}h`;
+        break;
+      case 'meeting':
+        label = 'Meeting-Anteil';
+        baseTxt = `${cp.baselineValue.toFixed(0)}%`;
+        currTxt = `${cp.currentValue.toFixed(0)}%`;
+        break;
+      case 'deepFocus':
+        label = 'Tiefenarbeits-Anteil';
+        baseTxt = `${cp.baselineValue.toFixed(0)}%`;
+        currTxt = `${cp.currentValue.toFixed(0)}%`;
+        break;
+      case 'multiTasking':
+        label = 'Multi-Tasking-Faktor';
+        baseTxt = `${cp.baselineValue.toFixed(2)}x`;
+        currTxt = `${cp.currentValue.toFixed(2)}x`;
+        break;
+      case 'topStakeholder': {
+        const wk = weeks.find((w) => w.label === cp.weekLabel);
+        const name = wk?.topStakeholderName || 'Top-Stakeholder';
+        label = `Top-Stakeholder-Anteil (${htmlEsc(name)})`;
+        baseTxt = `${cp.baselineValue.toFixed(0)}%`;
+        currTxt = `${cp.currentValue.toFixed(0)}%`;
+        break;
+      }
+      case 'coverage':
+        label = 'Tracking-Coverage';
+        baseTxt = `${cp.baselineValue.toFixed(0)}%`;
+        currTxt = `${cp.currentValue.toFixed(0)}%`;
+        break;
+      default:
+        label = String(cp.metric);
+        baseTxt = String(cp.baselineValue);
+        currTxt = String(cp.currentValue);
+    }
+
+    findings.push({
+      level: 'info',
+      audiences: cpAudiences,
+      htmlMessage: `<b>Bruch in ${cp.weekLabel}:</b> ${label} ${arrow} von ${baseTxt} auf ${currTxt} (Baseline aus ${cp.baselineWeekCount} Wochen). Was hat sich in dieser Woche verändert?`,
+    });
+  }
+
   // OK-Fallback: nur wenn rein NICHTS auffällig war — alle Brillen.
   if (findings.length === 0) {
     findings.push({
@@ -1476,6 +1845,7 @@ export function buildReportData(
     disziplin,
     multitasking,
     projektLifecycle,
+    changePoints,
     lens,
     absences,
     findings,
