@@ -15,6 +15,7 @@ import type { ChangePointMetric, ReportData } from '../reportData';
 import {
   esc,
   fmtHours,
+  formatHalfRange,
   interpretReactiveShare,
   renderBars,
   renderCrisisBanner,
@@ -293,9 +294,17 @@ function buildDriftSection(data: ReportData): string {
     cpBlock = `<div class="cp-inline" style="margin-top:10px"><b>Auffällige Wochen-Brüche</b> (Details + Handlungs-Hinweise unter „Operative Hinweise"):<ul style="margin:4px 0 0 18px;padding:0;font-size:12px;color:#555;list-style:disc">${lines}</ul></div>`;
   }
 
-  return `<h2>Verschiebung im Zeitraum (1. vs. 2. Hälfte)</h2>
+  const rangeFirst = formatHalfRange(
+    data.trend.firstHalfFrom,
+    data.trend.firstHalfTo
+  );
+  const rangeSecond = formatHalfRange(
+    data.trend.secondHalfFrom,
+    data.trend.secondHalfTo
+  );
+  return `<h2>Verschiebung im Zeitraum (${rangeFirst} vs. ${rangeSecond})</h2>
   <table class="chef-drift-table">
-    <thead><tr><th>Achse</th><th class="num">1. Hälfte</th><th class="num">2. Hälfte</th><th class="num">Veränderung</th></tr></thead>
+    <thead><tr><th>Achse</th><th class="num">${rangeFirst}</th><th class="num">${rangeSecond}</th><th class="num">Veränderung</th></tr></thead>
     <tbody>${rows.join('')}${lifecycleRow}</tbody>
   </table>
   ${cpBlock}`;

@@ -521,6 +521,11 @@ export interface ReportData {
     secondHalfDays: number;
     growth: TrendChange[];
     decline: TrendChange[];
+    /** Datums-Anker für 1./2.-Hälfte (Welle 7). Null bei < 2 Tagen je Hälfte. */
+    firstHalfFrom: string | null;
+    firstHalfTo: string | null;
+    secondHalfFrom: string | null;
+    secondHalfTo: string | null;
   };
   /** Mandanten-Steckbriefe für alle Stakeholder mit >= 10% Gesamtanteil. */
   stakeholderProfiles: StakeholderProfile[];
@@ -2132,6 +2137,19 @@ export function buildReportData(
   });
   trendChanges.sort((a, b) => Math.abs(b.deltaPct) - Math.abs(a.deltaPct));
 
+  // Datums-Anker für 1./2.-Hälfte (Welle 7). Null bei < 2 Tagen je Hälfte —
+  // gleiche Schwelle wie für die Drift-Analyse, damit Tabellen-Header und
+  // Drift-Berechnung konsistent zum gleichen Zeitpunkt anker-fähig werden.
+  const firstSorted = Array.from(firstDates).sort();
+  const secondSorted = Array.from(secondDates).sort();
+  const enoughDates = firstDates.size >= 2 && secondDates.size >= 2;
+  const firstHalfFrom = enoughDates ? firstSorted[0] : null;
+  const firstHalfTo = enoughDates ? firstSorted[firstSorted.length - 1] : null;
+  const secondHalfFrom = enoughDates ? secondSorted[0] : null;
+  const secondHalfTo = enoughDates
+    ? secondSorted[secondSorted.length - 1]
+    : null;
+
   const trend = {
     firstHalfMs: firstTotal,
     secondHalfMs: secondTotal,
@@ -2139,6 +2157,10 @@ export function buildReportData(
     secondHalfDays: secondDates.size,
     growth: trendChanges.filter((t) => t.deltaPct > 0).slice(0, 5),
     decline: trendChanges.filter((t) => t.deltaPct < 0).slice(0, 5),
+    firstHalfFrom,
+    firstHalfTo,
+    secondHalfFrom,
+    secondHalfTo,
   };
 
   // Konzentrations-Drift: vergleicht Top-1-Anteil und Portfolio-Breite

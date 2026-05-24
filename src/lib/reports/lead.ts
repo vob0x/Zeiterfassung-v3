@@ -15,6 +15,7 @@ import {
   esc,
   fmtHours,
   fmtHoursShort,
+  formatHalfRange,
   interpretCoverage,
   interpretLeakPct,
   interpretParallelFactor,
@@ -204,9 +205,17 @@ function buildDriftSection(data: ReportData): string {
     </tr>`);
   }
 
-  return `<h2>Verschiebung im Zeitraum</h2>
+  const rangeFirst = formatHalfRange(
+    data.trend.firstHalfFrom,
+    data.trend.firstHalfTo
+  );
+  const rangeSecond = formatHalfRange(
+    data.trend.secondHalfFrom,
+    data.trend.secondHalfTo
+  );
+  return `<h2>Verschiebung im Zeitraum (${rangeFirst} vs. ${rangeSecond})</h2>
   <table class="lead-drift">
-    <thead><tr><th>Achse</th><th class="num">1. Hälfte</th><th class="num">2. Hälfte</th><th class="num">Δ</th></tr></thead>
+    <thead><tr><th>Achse</th><th class="num">${rangeFirst}</th><th class="num">${rangeSecond}</th><th class="num">Δ</th></tr></thead>
     <tbody>${rows.join('')}</tbody>
   </table>`;
 }

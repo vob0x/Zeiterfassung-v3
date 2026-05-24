@@ -25,6 +25,22 @@ import { describeChangePointContext } from '../reportData';
    Format-Helfer
    ───────────────────────────────────────────────────────────────────── */
 
+/**
+ * Formatiert einen ISO-Datums-Bereich (yyyy-mm-dd) kompakt deutsch.
+ * Selber Monat: "01.–14.05." — verschiedene Monate: "28.04.–11.05."
+ * Eine null/leerer Wert → "—".
+ */
+export function formatHalfRange(
+  from: string | null,
+  to: string | null
+): string {
+  if (!from || !to) return '—';
+  const [fy, fm, fd] = from.split('-');
+  const [ty, tm, td] = to.split('-');
+  if (fm === tm && fy === ty) return `${fd}.–${td}.${fm}.`;
+  return `${fd}.${fm}.–${td}.${tm}.`;
+}
+
 export function esc(s: string | undefined | null): string {
   if (!s) return '';
   return String(s)
