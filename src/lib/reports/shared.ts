@@ -221,8 +221,8 @@ export function interpretReactiveShare(pct: number): ScaleAssessment {
   if (pct < 40)
     return {
       level: 'normal',
-      label: 'normaler Betrieb',
-      hint: '20 – 40 % reaktive Arbeit — gesundes Verhältnis von eigener und fremdgetriebener Arbeit.',
+      label: 'Mischbetrieb',
+      hint: '20 – 40 % reaktive Arbeit — rund jede vierte bis fünfte Stunde fremdgetrieben. Eigenarbeit muss diesen Anteil aushalten; ob das geht, zeigt der Belastungs-Block.',
     };
   if (pct < 60)
     return {
