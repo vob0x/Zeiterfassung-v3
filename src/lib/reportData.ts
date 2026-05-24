@@ -154,6 +154,8 @@ export interface WeekdayProfile {
   longestDay: { date: string; ms: number } | null;
   shortestDay: { date: string; ms: number } | null;
   highLoadDaysCount: number; // Tage mit >= 10h Präsenz
+  /** Liste aller Tage mit ≥ 10h Präsenz, sortiert chronologisch. */
+  highLoadDays: Array<{ date: string; ms: number }>;
 }
 
 /**
@@ -845,12 +847,17 @@ function buildWeekdayProfile(
   let longestDay: { date: string; ms: number } | null = null;
   let shortestDay: { date: string; ms: number } | null = null;
   let highLoadCount = 0;
+  const highLoadDays: Array<{ date: string; ms: number }> = [];
   dayPresMs.forEach((ms, date) => {
     if (ms <= 0) return;
     if (!longestDay || ms > longestDay.ms) longestDay = { date, ms };
     if (!shortestDay || ms < shortestDay.ms) shortestDay = { date, ms };
-    if (ms >= HIGH_LOAD_DAY_MS) highLoadCount += 1;
+    if (ms >= HIGH_LOAD_DAY_MS) {
+      highLoadCount += 1;
+      highLoadDays.push({ date, ms });
+    }
   });
+  highLoadDays.sort((a, b) => a.date.localeCompare(b.date));
 
   return {
     byDay,
@@ -860,6 +867,7 @@ function buildWeekdayProfile(
     longestDay,
     shortestDay,
     highLoadDaysCount: highLoadCount,
+    highLoadDays,
   };
 }
 
@@ -2383,26 +2391,28 @@ export function buildReportData(
     }
   }
 
-  // Belastungs-Spitzen: personalisiert. Statt fixer 10h-Schwelle:
-  // baseline.dayPresenceMs.p90 (mindestens 8h absolut, damit das auch
-  // bei Teilzeit-Personen sinnvoll bleibt). Fallback: 10h fest.
-  const highLoadThresholdMs = baseline.isReliable
-    ? Math.max(8 * 60 * 60_000, baseline.dayPresenceMs.p90)
-    : 10 * 60 * 60_000;
-  let personalizedHighLoadCount = 0;
-  dayPresMs.forEach((ms) => {
-    if (ms >= highLoadThresholdMs) personalizedHighLoadCount += 1;
-  });
-  const highLoadHoursLabel = `${Math.round(highLoadThresholdMs / 3_600_000)}`;
-  if (personalizedHighLoadCount >= 3) {
-    const baselineSentence = baseline.isReliable
-      ? ` Zur Einordnung: das ist deine persönliche Schwelle — der typische Tag liegt bei ${fmtHours(baseline.dayPresenceMs.median)} Anwesenheit, die längsten 10% bei mindestens ${fmtHours(baseline.dayPresenceMs.p90)}.`
-      : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 10 Stunden gesetzt.`;
+  // Belastungs-Flag: Arbeitsvertrag-relativ statt personalisiert.
+  // User-Spec: 8.24h/Tag Vertrag, 9h normal, 1×10h/Wo. knapp akzeptabel.
+  // Flag wenn Anteil 10h+-Tage > 20% UND absolute Zahl >= 2.
+  // Wenn zusätzlich reaktive Periode (>= 20% reactivePct): Stau-Sentence
+  // anhängen — reaktive Unterbrechungen + lange Tage drücken Eigenarbeit
+  // nach hinten.
+  const highLoadCount = weekday.highLoadDaysCount;
+  const longDayRatio = workingDays > 0 ? highLoadCount / workingDays : 0;
+  if (highLoadCount >= 2 && longDayRatio > 0.20) {
+    const dateList = weekday.highLoadDays
+      .map((d) => `${d.date} (${fmtHours(d.ms)})`)
+      .join(', ');
+    const ratioPct = Math.round(longDayRatio * 100);
+    const stauSentence =
+      reactivePct >= 20
+        ? ` Zusammen mit ${reactivePct.toFixed(0)}% reaktiver Arbeit deutet das auf Stau-Dynamik: Anfragen unterbrechen, Eigenarbeit verlagert sich in die langen Tage.`
+        : '';
     findings.push({
       level: 'warn',
       kind: 'high-load-days',
       audiences: ['coach', 'lead', 'chef'],
-      htmlMessage: `<b>${personalizedHighLoadCount} besonders lange Tage</b> mit mindestens ${highLoadHoursLabel} Stunden Anwesenheit. Konkret heißt das: zwischen erstem und letztem Eintrag dieser Tage lagen mindestens ${highLoadHoursLabel} Stunden — für diese Person überdurchschnittlich lang. Ein einzelner solcher Tag ist kein Drama; drei oder mehr deuten auf ein Belastungs-Muster, das einen Blick auf die Steuerung verdient: Deadline-Stau, Personal-Engpass, oder einfach Phase.${baselineSentence}`,
+      htmlMessage: `<b>${highLoadCount} Tage über 10 Stunden</b> bei ${workingDays} Arbeitstagen — das sind ${ratioPct}% (über der Schwelle von einem 10-h-Tag pro Woche). Konkret heißt das: ${dateList}. Der Arbeitsvertrag sieht 8.24 h/Tag vor; bis zu einem langen Tag pro Woche ist Toleranz, darüber wird's ein Belastungs-Muster.${stauSentence}`,
     });
   }
 

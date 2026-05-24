@@ -276,7 +276,10 @@ function buildHebel(data: ReportData): string {
   }
 
   // Belastungs-Muster
-  if (data.weekday.highLoadDaysCount >= 3) {
+  const longDayRatioLead = data.kpis.workingDays > 0
+    ? data.weekday.highLoadDaysCount / data.kpis.workingDays
+    : 0;
+  if (data.weekday.highLoadDaysCount >= 2 && longDayRatioLead > 0.20) {
     hebel.push(
       `<b>${data.weekday.highLoadDaysCount} besonders lange Tage</b> (über 10h Anwesenheit) im Zeitraum. Konkret heißt das: kein einmaliger Ausreißer, sondern ein wiederkehrendes Muster. Was ist der Engpass dahinter — fehlende Ressourcen, schlechte Priorisierung, oder bewusst gewählte Intensität?`
     );

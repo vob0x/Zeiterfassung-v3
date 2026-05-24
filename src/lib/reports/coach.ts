@@ -379,7 +379,10 @@ function buildStrengthsBlock(data: ReportData): string {
 function buildReflectionQuestions(data: ReportData): string {
   const fragen: string[] = [];
 
-  if (data.weekday.highLoadDaysCount >= 2) {
+  const longDayRatioCoach = data.kpis.workingDays > 0
+    ? data.weekday.highLoadDaysCount / data.kpis.workingDays
+    : 0;
+  if (data.weekday.highLoadDaysCount >= 2 && longDayRatioCoach > 0.20) {
     fragen.push(
       `${data.weekday.highLoadDaysCount} Tage hatten über 10 Stunden zwischen erstem und letztem Eintrag — das sind sehr lange Arbeitstage. Was hat dich an diesen Tagen so lange gehalten, und kam am Ende der Output dabei raus, den du erwartet hast?`
     );
