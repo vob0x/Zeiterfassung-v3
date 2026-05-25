@@ -284,7 +284,8 @@ export type FindingKind =
   | 'many-bursts'
   | 'week-volatility'
   | 'project-movement'
-  | 'change-point';
+  | 'change-point'
+  | 'strukturelles-stau-muster';
 
 export interface Finding {
   level: 'warn' | 'info' | 'ok';
@@ -2777,6 +2778,34 @@ export function buildReportData(
     nonAbsence,
     effectiveWorkloadPct
   );
+
+  // Welle 8.5 — Strukturelles Stau-Muster. Wenn ein Projekt sowohl die
+  // Überstunden dominiert (≥ 40 % der Attribution) als auch zu einem
+  // reaktiven Stakeholder gehört oder selbst reaktiv klassifiziert ist,
+  // und Überstunden überhaupt strukturell sind (≥ 15 % des Vertrags-
+  // Solls), dann ist das kein Einzelfall, sondern ein Steuerungs-Thema.
+  const overtimeRatio = contractMs > 0 ? overtimeMs / contractMs : 0;
+  const topOvertimeProj = overtimeAttribution[0];
+  if (
+    overtimeRatio >= 0.15 &&
+    topOvertimeProj &&
+    topOvertimeProj.share >= 0.4
+  ) {
+    const cat = effectiveCategoryWithDefault(
+      projCatMap.get(topOvertimeProj.projekt) ?? null,
+      topOvertimeProj.projekt
+    );
+    const isReactive = cat === 'reaktiv';
+    const reaktivSentence = isReactive
+      ? ' Das Projekt ist als reaktiv klassifiziert — Anfragen-Last, die strukturell zur Überstunde wird.'
+      : '';
+    findings.push({
+      level: 'warn',
+      kind: 'strukturelles-stau-muster',
+      audiences: ['coach', 'lead', 'chef'],
+      htmlMessage: `<b>Strukturelles Muster bei „${htmlEsc(topOvertimeProj.projekt)}":</b> ${(topOvertimeProj.share * 100).toFixed(0)} % der Überstunden flossen dort hinein, die gesamte Mehrarbeit liegt bei ${(overtimeRatio * 100).toFixed(0)} % über dem Vertragssoll.${reaktivSentence} Steuerungs-Frage: Was an diesem Projekt lässt sich nicht in der regulären Arbeitszeit abwickeln — Volumen, Anforderung, Schnittstellen, Erwartung?`,
+    });
+  }
 
   // Welle 5c — Composite-Findings über den jetzt fertigen findings[].
   const composites = buildComposites({
