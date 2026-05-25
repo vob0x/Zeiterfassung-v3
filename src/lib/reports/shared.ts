@@ -230,8 +230,8 @@ export function interpretLeakPct(pct: number): ScaleAssessment {
   if (pct < 40)
     return {
       level: 'elevated',
-      label: 'merklich',
-      hint: '25 – 40 % als versickert markiert — substanzieller Anteil verlorener Zeit.',
+      label: 'auffällig',
+      hint: '25 – 40 % als versickert markiert — jede dritte bis vierte Stunde als verloren eingestuft.',
     };
   return {
     level: 'low', // semantisch negativ: viel Versickerung → rotes Badge
@@ -264,7 +264,7 @@ export function interpretReactiveShare(pct: number): ScaleAssessment {
     return {
       level: 'elevated',
       label: 'belebte Phase',
-      hint: '40 – 60 % reaktive Arbeit — Anfragen-Last spürbar, Eigen-Arbeit unter Druck.',
+      hint: '40 – 60 % reaktive Arbeit — mehr als jede dritte Stunde fremdgetrieben, Eigenarbeit muss diesen Anteil mittragen.',
     };
   return {
     level: 'high',
@@ -277,7 +277,7 @@ export function interpretReactiveShare(pct: number): ScaleAssessment {
  * Welle 8 — Überstunden-Skala, ausgedrückt als Mehrarbeit-Quote
  * (overtimeMs / contractMs).
  *   < 5 %: 'im Rahmen' (innerhalb der üblichen Schwankung)
- *   5 – 15 %: 'auffällig' (spürbare Zusatzbelastung, kann strukturell werden)
+ *   5 – 15 %: 'auffällig' (Zusatzbelastung über dem Vertragssoll, kann strukturell werden)
  *   > 15 %: 'strukturell' (Vertragszeit reicht nicht aus, Steuerungs-Thema)
  *
  * Bei contractMs ≤ 0 (kein Arbeitstag im Range) wird ein neutrales
@@ -306,7 +306,7 @@ export function interpretOvertime(
     return {
       level: 'elevated',
       label: 'auffällig',
-      hint: '5 – 15 % Mehrarbeit über dem Vertragssoll — spürbare Zusatzbelastung, die strukturell werden kann.',
+      hint: '5 – 15 % Mehrarbeit über dem Vertragssoll — eine Periode lässt sich so überbrücken, mehrere hintereinander werden strukturell.',
     };
   }
   return {
@@ -585,9 +585,9 @@ const CP_METRIC_INFO: Record<
     label: 'Arbeitsstunden pro Woche',
     format: (v) => `${v.toFixed(1)}h`,
     upMeaning:
-      'Du hast in dieser Woche substanziell mehr Stunden gearbeitet als in den Wochen davor.',
+      'Du hast in dieser Woche klar mehr Stunden gearbeitet als in den Wochen davor.',
     downMeaning:
-      'Substanziell weniger Stunden in dieser Woche — Urlaub, kurze Woche, oder ein Einbruch?',
+      'Klar weniger Stunden in dieser Woche — Urlaub, kurze Woche, oder ein Einbruch?',
   },
   meeting: {
     label: 'Anteil Meetings und Calls',

@@ -1779,7 +1779,7 @@ function buildComposites(input: CompositeBuildInput): CompositeFinding[] {
       id: 'reaktive-phase',
       level: 'warn',
       diagnosis:
-        'Hohe Aktivität, aber Aktivität ohne neue Linien: das ist ein reaktives Muster, nicht ein gestaltendes. Du arbeitest viel an dem, was reinkommt, aber nichts substanziell Neues hat in diesem Zeitraum den Boden berührt.',
+        'Hohe Aktivität, aber Aktivität ohne neue Linien: das ist ein reaktives Muster, nicht ein gestaltendes. Du arbeitest viel an dem, was reinkommt, aber keine neue eigene Initiative ist in diesem Zeitraum dazugekommen.',
       hebel:
         'Welcher Mandant löst am meisten Ad-hoc-Slots aus? Ein Sammel-Termin (feste Sprechzeit pro Woche, Mail-Triage am Tagesende) gibt typischerweise mehrere Stunden pro Woche zurück — Zeit, in der dann wirklich Neues angeschoben werden kann.',
       evidenceFindings: [...reactiveIdx, ...burstIdx],
@@ -2370,7 +2370,7 @@ export function buildReportData(
       level: 'info',
       kind: 'very-long-day',
       audiences: ['coach', 'lead', 'chef'],
-      htmlMessage: `<b>${veryLongDays.length} außergewöhnlich lange${veryLongDays.length === 1 ? 'r' : ''} Tag${veryLongDays.length === 1 ? '' : 'e'}</b> (${examples}). An diesen Tagen wurde substanziell mehr Arbeit erfasst, als selbst deine längsten gewöhnlichen Tage haben. Häufige Ursache: mehrere Tage wurden in einem Rutsch nacherfasst — für saubere Statistik auf die echten Tage zurückverteilen.${baselineSentence}`,
+      htmlMessage: `<b>${veryLongDays.length} außergewöhnlich lange${veryLongDays.length === 1 ? 'r' : ''} Tag${veryLongDays.length === 1 ? '' : 'e'}</b> (${examples}). An diesen Tagen wurde mehr Arbeit erfasst, als selbst deine längsten gewöhnlichen Tage tragen. Häufige Ursache: mehrere Tage wurden in einem Rutsch nacherfasst — für saubere Statistik auf die echten Tage zurückverteilen.${baselineSentence}`,
     });
   }
 
@@ -2563,7 +2563,7 @@ export function buildReportData(
     : 240;
   if (rhythm.burst.longestBurstMin >= burstThresholdMinPers) {
     const baselineSentence = baseline.isReliable
-      ? ` Zur Einordnung: deine typische Slot-Länge ist ${fmtHours(baseline.slotLengthMs.median)}, die längsten 10% deiner Slots gehen bis ${fmtHours(baseline.slotLengthMs.p90)} — die ${Math.round(rhythm.burst.longestBurstMin / 60)}h-Phase ist also auch für dich substanziell lang.`
+      ? ` Zur Einordnung: deine typische Slot-Länge ist ${fmtHours(baseline.slotLengthMs.median)}, die längsten 10% deiner Slots gehen bis ${fmtHours(baseline.slotLengthMs.p90)} — die ${Math.round(rhythm.burst.longestBurstMin / 60)}h-Phase liegt also auch für dich weit über deinen typischen Slots.`
       : ` Mit weniger als 10 erfassten Tagen ist die persönliche Vergleichsbasis dünn — die Schwelle ist hier fix auf 4 Stunden gesetzt.`;
     findings.push({
       level: 'info',
@@ -2590,7 +2590,7 @@ export function buildReportData(
       level: 'info',
       kind: 'week-volatility',
       audiences: ['chef', 'board'],
-      htmlMessage: `<b>Wochen mit stark schwankender Auslastung.</b> Die einzelnen Wochen im Zeitraum unterscheiden sich substanziell in den Arbeitsstunden — eine Woche mit 30 h kann neben einer mit 55 h stehen. Das ist nicht zwingend ein Problem (Saisonalität, Projekt-Phasen), aber wenn das Muster bleibt: ist die Planung dem nicht angepasst, oder reagieren die Ressourcen zu langsam auf das, was reinkommt?`,
+      htmlMessage: `<b>Wochen mit stark schwankender Auslastung.</b> Die Wochen-Stunden im Zeitraum schwanken weit — eine Woche mit 30 h kann neben einer mit 55 h stehen. Das ist nicht zwingend ein Problem (Saisonalität, Projekt-Phasen), aber wenn das Muster bleibt: ist die Planung dem nicht angepasst, oder reagieren die Ressourcen zu langsam auf das, was reinkommt?`,
     });
   }
 
@@ -2614,7 +2614,7 @@ export function buildReportData(
       level: 'info',
       kind: 'project-movement',
       audiences: ['chef', 'board'],
-      htmlMessage: `<b>Projekt-Bewegung im Zeitraum:</b> ${parts.join(' · ')}. Die Projekt-Liste am Ende der Periode unterscheidet sich substanziell von der am Anfang — neue Initiativen sind dazugekommen oder alte ausgelaufen. Gewollte Portfolio-Bewegung, oder zeigt sich hier, dass Projekte unkontrolliert starten oder sterben?`,
+      htmlMessage: `<b>Projekt-Bewegung im Zeitraum:</b> ${parts.join(' · ')}. Die Projekt-Liste am Ende der Periode hat sich klar verschoben — neue Initiativen sind dazugekommen oder alte ausgelaufen. Gewollte Portfolio-Bewegung, oder zeigt sich hier, dass Projekte unkontrolliert starten oder sterben?`,
     });
   }
 

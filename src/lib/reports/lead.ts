@@ -62,7 +62,7 @@ function buildNextAction(data: ReportData): string {
       sentence = `Im nächsten 1:1: die langen Tage benennen und die Stau-Frage stellen — welche Anfragen drücken Eigenarbeit in die Spitzen-Tage, was lässt sich vorab abräumen oder bündeln?`;
       break;
     case 'leak-high':
-      sentence = `Im nächsten 1:1 nachhaken, wo der Versickerungs-Anteil von ${(a.value ?? 0).toFixed(0)} % konkret entsteht — welches Projekt, welcher Kontext? Selbsteinschätzung als „nicht produktiv" ist ein direkter Hebel-Hinweis, wenn man die Quelle kennt.`;
+      sentence = `Im nächsten 1:1 nachhaken, wo der Versickerungs-Anteil von ${(a.value ?? 0).toFixed(0)} % konkret entsteht — welches Projekt, welcher Kontext? Selbsteinschätzung als „nicht produktiv" benennt die Quelle, wenn man sie gemeinsam ansieht.`;
       break;
     case 'reactive-high':
       sentence = `Im nächsten 1:1 fragen: bei ${(a.value ?? 0).toFixed(0)} % reaktiver Arbeit — was ist von der Eigenarbeit auf der Strecke geblieben, und braucht das gemeinsam Schutzraum?`;
@@ -186,7 +186,7 @@ function buildCockpit(data: ReportData): string {
   if (k.reactivePct >= 60) {
     reactSub = `Über ${k.reactivePct.toFixed(0)}% der Arbeitszeit lief in reaktiven Projekten (Anfragen, BGÖ, Krise). <b>Im Gespräch fragen:</b> War das eine Eskalations-Phase oder dauerhafter Zustand? Welche Eigen-Vorhaben sind dabei liegengeblieben?`;
   } else if (k.reactivePct >= 40) {
-    reactSub = `${k.reactivePct.toFixed(0)}% in reaktiven Projekten — belebte Phase mit spürbarer Anfragen-Last. <b>Im Gespräch fragen:</b> Welche reaktiven Themen waren die größten Treiber? Gibt es etwas, das proaktiv geklärt werden könnte?`;
+    reactSub = `${k.reactivePct.toFixed(0)}% in reaktiven Projekten — jede dritte bis zweite Stunde war fremdgetrieben. <b>Im Gespräch fragen:</b> Welche reaktiven Themen waren die größten Treiber? Gibt es etwas, das proaktiv geklärt werden könnte?`;
   } else if (k.reactivePct >= 20) {
     reactSub = `${k.reactivePct.toFixed(0)}% reaktive Arbeit — gesundes Verhältnis von Eigen- und Anfragen-Arbeit. <b>Im Gespräch:</b> Routine trägt, kein Hebel akut nötig.`;
   } else {
@@ -308,7 +308,7 @@ function buildDriftSection(data: ReportData): string {
 function buildFindingsSection(data: ReportData): string {
   const f = renderFindingsBlock(data, 'lead');
   if (!f) return '';
-  return `<h2>Was Aufmerksamkeit verdient</h2>${f}`;
+  return `<h2>Stellen, an denen sich Nachfragen lohnt</h2>${f}`;
 }
 
 /**

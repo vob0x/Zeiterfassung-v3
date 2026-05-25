@@ -226,5 +226,5 @@ function buildTrendSentence(data: ReportData): string {
     const v = data.projektLifecycle.vanished[0];
     return `<b>Portfolio in Bewegung:</b> Projekt <b>${esc(v.name)}</b> ist in der zweiten Hälfte ausgelaufen.`;
   }
-  return `<b>Stabile Verteilung</b> über den Zeitraum — keine substanzielle Verschiebung der Schwerpunkte.`;
+  return `<b>Stabile Verteilung</b> über den Zeitraum — die Schwerpunkte haben sich nicht verschoben.`;
 }

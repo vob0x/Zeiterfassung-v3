@@ -58,9 +58,9 @@ function buildHeadlines(data: ReportData): string {
   } else if (k.leakPct < 25) {
     outputHead = `<b>Geringe Versickerung:</b> ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Üblicher Anteil — leichtes Grundrauschen, kein Steuerungs-Thema.`;
   } else if (k.leakPct < 40) {
-    outputHead = `<b>Merklicher Versickerungs-Anteil:</b> ${k.leakPct.toFixed(0)} % der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Eine substanzielle Selbsteinschätzung als verlorene Zeit — wo sammelt sich das? Welches Projekt, welcher Kontext?`;
+    outputHead = `<b>Auffälliger Versickerungs-Anteil:</b> ${k.leakPct.toFixed(0)} % der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Die Person markiert diesen Anteil selbst als verloren — die Frage ist, wo sich das sammelt: welches Projekt, welcher Kontext, welche Tageszeit?`;
   } else {
-    outputHead = `<b>Versickerung dominiert:</b> ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Über 40 % Selbsteinschätzung als verschwendet ist ein Alarmsignal — operativer Schnitt überfällig.`;
+    outputHead = `<b>Versickerung dominiert:</b> ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Über 40 % selbst als verschwendet markiert: bevor weiter operativ gesteuert wird, identifizieren, welches Projekt oder welcher Kontext-Wechsel den größten Anteil trägt.`;
   }
   heads.push(outputHead);
 
@@ -70,9 +70,9 @@ function buildHeadlines(data: ReportData): string {
   const reactScale = interpretReactiveShare(k.reactivePct);
   let reactHead: string;
   if (k.reactivePct >= 60) {
-    reactHead = `<b>Reaktiv-Last dominiert die Periode:</b> ${k.reactivePct.toFixed(0)}% der Arbeitszeit (${fmtHours(k.reactiveMs)}) lief in reaktiven Projekten — Medienanfragen, BGÖ, Bürger, Krise, politische Geschäfte. Eigen-Arbeit hatte kaum Raum. Strategie-Themen sollten in der nächsten Periode bewusst geblockt werden, sonst geht das System.`;
+    reactHead = `<b>Reaktiv-Last dominiert die Periode:</b> ${k.reactivePct.toFixed(0)}% der Arbeitszeit (${fmtHours(k.reactiveMs)}) lief in reaktiven Projekten — Medienanfragen, BGÖ, Bürger, Krise, politische Geschäfte. Eigen-Arbeit hatte kaum Raum. Strategie-Themen für die nächste Periode bewusst blocken — sonst läuft die Reaktiv-Last weiter alles andere mit weg.`;
   } else if (k.reactivePct >= 40) {
-    reactHead = `<b>Belebte Reaktiv-Phase:</b> ${k.reactivePct.toFixed(0)}% der Arbeitszeit (${fmtHours(k.reactiveMs)}) in reaktiven Projekten. Spürbare Anfragen-Last bei noch erhaltbarer Eigen-Arbeit. Konkret prüfen: gibt es Trigger, die proaktiv geklärt werden könnten?`;
+    reactHead = `<b>Belebte Reaktiv-Phase:</b> ${k.reactivePct.toFixed(0)}% der Arbeitszeit (${fmtHours(k.reactiveMs)}) in reaktiven Projekten — jede dritte bis zweite Stunde fremdgetrieben. Eigen-Arbeit kommt noch durch. Konkret prüfen: gibt es Trigger, die proaktiv geklärt werden könnten?`;
   } else if (k.reactivePct >= 20) {
     reactHead = `<b>Normaler Betrieb:</b> ${k.reactivePct.toFixed(0)} % reaktive Arbeit (${fmtHours(k.reactiveMs)}) — gesundes Verhältnis von eigener und fremdgetriebener Arbeit. Die Person konnte sowohl auf Anfragen reagieren als auch eigene Themen vorantreiben.`;
   } else {
@@ -429,7 +429,7 @@ function pickPriorityAction(data: ReportData): string {
 
   // 4. Multi-Tasking auffällig — Hygiene oder bewusste Wahl
   if (k.multiTaskingFactor > 1.5) {
-    return `Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} ist substantiell. Konkret: Tracker-Hygiene prüfen (vergessene laufende Tracker bei Wechseln) — falls die Disziplin steht, bewusste Mehr-Mandanten-Steuerung im Team-Standard verankern.`;
+    return `Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} — pro echter Arbeitsstunde wurden über 1.5 h Aufgaben gebucht. Konkret: Tracker-Hygiene prüfen (vergessene laufende Tracker bei Wechseln) — falls die Disziplin steht, bewusste Mehr-Mandanten-Steuerung im Team-Standard verankern.`;
   }
 
   // 5. Hoher Versickerungs-Anteil (Welle 6) — wenn die Person selbst

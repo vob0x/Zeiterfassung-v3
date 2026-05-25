@@ -82,7 +82,7 @@ function buildNextAction(data: ReportData): string {
       sentence = `Such dir in der nächsten Woche eine einzige Stunde, die nicht reaktiv läuft, und block sie bewusst — was würdest du in dieser Stunde tun, wenn nichts reinkäme?`;
       break;
     case 'klumpen-risiko':
-      sentence = `Beim nächsten Wochen-Start: welcher der anderen Mandanten verdient eine bewusste Aufmerksamkeits-Stunde — auch wenn <b>${esc(a.subject || '—')}</b> drückt?`;
+      sentence = `Beim nächsten Wochen-Start: welcher der anderen Mandanten braucht diese Woche eine bewusste Stunde von dir — auch wenn <b>${esc(a.subject || '—')}</b> drückt?`;
       break;
     case 'routine':
       sentence = `Eine ruhige Periode — nimm dir für die nächste Woche eine Sache vor, die nicht reagieren ist, sondern gestalten. Was wäre das konkret?`;
@@ -118,19 +118,19 @@ function buildTagline(data: ReportData): string {
 
   // Reihenfolge: die menschlich wichtigste Beobachtung zuerst.
   if (hi >= 3) {
-    return `Diese ${data.kpis.workingDays} Tage trugen ${hi} Tage über 10 Stunden — eine substanzielle Wegstrecke. Was hat dich getragen, was hat dir gefehlt?`;
+    return `An ${hi} von ${data.kpis.workingDays} Arbeitstagen warst du über zehn Stunden im Tracker. Was hat dich an diesen Tagen so lange gehalten — und was ist davon liegen geblieben?`;
   }
   if (we > 0 && k.totalWallclockMs > 0) {
     const wePct = (we / k.totalWallclockMs) * 100;
     if (wePct >= 10) {
-      return `Auf das Wochenende fielen ${wePct.toFixed(0)}% deiner Stunden — das verdient einen kurzen Moment der Bewusstmachung.`;
+      return `${wePct.toFixed(0)}% deiner Stunden fielen aufs Wochenende. War das gewollt — oder reichten die Wochentage nicht?`;
     }
   }
   if (deep >= 50) {
-    return `Mehr als die Hälfte deiner Zeit lief in tiefen Slots über zwei Stunden — eine seltene und wertvolle Qualität.`;
+    return `Über die Hälfte deiner Zeit lief in Blöcken über zwei Stunden — viel zusammenhängende Tiefe. Was hat die langen Slots möglich gemacht?`;
   }
   if (deep < 20 && data.slotLength.totalCount >= 30) {
-    return `Deine Stunden verteilen sich auf viele kurze Slots — Tiefe war diesmal Mangelware, der Tag war fragmentiert.`;
+    return `Deine Stunden verteilen sich auf viele kurze Slots — kaum Blöcke über zwei Stunden. Wo könnte im Wochenplan ein freier Vormittag stehen?`;
   }
   if (rhythm === 'fix') {
     return `Dein Tagesablauf trug einen festen Rhythmus — Start- und Endzeiten lagen eng beieinander.`;
@@ -208,7 +208,7 @@ function buildCoachParagraphs(data: ReportData): string {
       top.pct >= 50
         ? `Dein Kopf war diese Periode klar bei <b>${esc(top.name)}</b> — ${top.pct.toFixed(0)}% deiner erfassten Zeit. Das ist Fokus mit Preis: andere Themen bekamen wenig Raum.`
         : top.pct >= 30
-          ? `Dein Hauptmandat <b>${esc(top.name)}</b> nahm ${top.pct.toFixed(0)}% — getragen, aber nicht erdrückend. Daneben hattest du ein erkennbares Portfolio.`
+          ? `Dein Hauptmandat <b>${esc(top.name)}</b> nahm ${top.pct.toFixed(0)}% — klar erkennbar, aber kein Monopol. Daneben hattest du ein eigenes Portfolio.`
           : `Du hast breit verteilt — <b>${esc(top.name)}</b> an der Spitze, aber nur mit ${top.pct.toFixed(0)}%. Viele Mandanten teilen sich deine Aufmerksamkeit.`;
     paras.push(seg);
   }
@@ -228,7 +228,7 @@ function buildCoachParagraphs(data: ReportData): string {
   if (data.slotLength.totalCount >= 20) {
     if (deep >= 50) {
       paras.push(
-        `Was auffällt: ${deep.toFixed(0)}% deiner Zeit fielen auf Slots über zwei Stunden — du hast dir Tiefe geleistet. Das ist eine Qualität, die viele in der gleichen Rolle nicht haben.`
+        `Was auffällt: ${deep.toFixed(0)}% deiner Zeit fielen auf Slots über zwei Stunden — du hast dir Tiefe geleistet. In einer Periode mit vielen Anfragen und kurzen Terminen kein Selbstläufer.`
       );
     } else if (deep < 25) {
       paras.push(
@@ -277,11 +277,11 @@ function buildCoachParagraphs(data: ReportData): string {
       : '';
     if (otScaleCoach.level === 'high') {
       paras.push(
-        `Eine harte Zahl: du hast in dieser Periode <b>${fmtHours(data.kpis.overtimeMs)}</b> über dem Vertrags-Soll gearbeitet (${otRatioPct.toFixed(0)} % Mehrarbeit). Das ist nicht mehr Schwankung, das ist strukturell — Vertragszeit reicht für diesen Arbeitsanfall nicht aus.${attrSentence} Frag dich beim nächsten Spaziergang ehrlich: trägt dich das, oder nimmt es schon Substanz?`
+        `Eine harte Zahl: du hast in dieser Periode <b>${fmtHours(data.kpis.overtimeMs)}</b> über dem Vertrags-Soll gearbeitet (${otRatioPct.toFixed(0)} % Mehrarbeit). Das ist nicht mehr Schwankung, das ist strukturell — Vertragszeit reicht für diesen Arbeitsanfall nicht aus.${attrSentence} Geht das auf Dauer, oder fehlt dir am Wochenende schon die Erholung für die nächste Woche?`
       );
     } else if (otScaleCoach.level === 'elevated') {
       paras.push(
-        `Zur Einordnung: rund <b>${fmtHours(data.kpis.overtimeMs)}</b> Mehrarbeit gegenüber dem Vertrags-Soll (${otRatioPct.toFixed(0)} %). Noch im Bereich, der sich aushalten lässt — aber ein spürbarer Mehrbedarf, der über die Wochen Energie kostet.${attrSentence} Hat es sich angefühlt wie eine vorübergehende Phase, oder wie das neue Normal?`
+        `Zur Einordnung: rund <b>${fmtHours(data.kpis.overtimeMs)}</b> Mehrarbeit gegenüber dem Vertrags-Soll (${otRatioPct.toFixed(0)} %). Eine Periode lässt sich so überbrücken, mehrere hintereinander zehren an der Reserve.${attrSentence} War das eine vorübergehende Phase, oder das neue Normal?`
       );
     } else if (data.kpis.undertimeMs > 30 * 60 * 60_000) {
       // > 30 h unter Soll — meist Urlaub/Krankheit, einmal kurz benennen
@@ -292,7 +292,7 @@ function buildCoachParagraphs(data: ReportData): string {
   }
 
   // Welle 6 — Versickerungs-Block. Erscheint nur, wenn der Anteil
-  // bewusst markierter „nicht produktiver" Zeit substanziell ist. Coach-
+  // bewusst markierter „nicht produktiver" Zeit über 25 % liegt. Coach-
   // Ton: deine Bewertung, nicht die der Daten — also was war es?
   if (data.kpis.leakPct >= 25) {
     const topNonprodSh = data.stakeholderProfiles
@@ -360,7 +360,7 @@ function buildCoachParagraphs(data: ReportData): string {
       // Falls der Bruch nicht einmalig war, das anhängen — als Person
       // ist die Frage 'einmalig oder neuer Zustand' relevant.
       if (cp.context.persistence === 'haelt-an') {
-        sentence += ` Und das war nicht nur diese eine Woche — die Folgewoche hat das Muster mitgetragen, also ist es schon ein Stück weit ein neuer Zustand, kein Ausreißer.`;
+        sentence += ` Und das war nicht nur diese eine Woche — auch die Folgewoche lag im selben Muster. Eher der neue Zustand als ein Ausreißer.`;
       } else if (cp.context.persistence === 'einmalig') {
         sentence += ` Tröstlich: schon in der Folgewoche ging es Richtung deines üblichen Schnitts zurück.`;
       }
@@ -401,7 +401,7 @@ function buildStrengthsBlock(data: ReportData): string {
   // Doku-Disziplin
   if (notizCov >= 60 && data.kpis.entriesCount >= 20) {
     items.push(
-      `<b>Doku-Disziplin trägt:</b> ${notizCov.toFixed(0)}% deiner Einträge haben eine Notiz. In drei Monaten weißt du noch, was du an jedem Slot gemacht hast — das ist mehr wert, als es im Moment aussieht.`
+      `<b>Doku-Disziplin trägt:</b> ${notizCov.toFixed(0)}% deiner Einträge haben eine Notiz. In drei Monaten weißt du noch, was du an jedem Slot gemacht hast — beim nächsten Review oder bei einer Übergabe ist das der Unterschied zwischen Rekonstruktion und Nachlesen.`
     );
   }
 
@@ -410,28 +410,28 @@ function buildStrengthsBlock(data: ReportData): string {
     items.push(
       rhythm === 'fix'
         ? `<b>Verlässlicher Rhythmus:</b> deine Start- und Endzeiten lagen eng beieinander. Das gibt dem Tag eine Form, an der du dich orientieren kannst — und anderen ein Zeitfenster, in dem du erreichbar bist.`
-        : `<b>Rhythmischer Tagesablauf:</b> du hast wiedererkennbare Phasen, kein chaotisches Hin und Her. Solche Strukturen tragen, ohne dass man sie merkt.`
+        : `<b>Rhythmischer Tagesablauf:</b> du hast wiedererkennbare Phasen, kein chaotisches Hin und Her.`
     );
   }
 
   // Tracking-Disziplin
   if (covPct >= 80 && data.kpis.entriesCount >= 30) {
     items.push(
-      `<b>Tracking-Routine sitzt:</b> ${covPct.toFixed(0)}% des Tages lückenlos erfasst. Das macht jede spätere Auswertung erst möglich — die Mühe, die niemand sieht, zahlt sich hier ein.`
+      `<b>Tracking-Routine sitzt:</b> ${covPct.toFixed(0)}% des Tages lückenlos erfasst. Damit tragen die Detail-Aussagen in diesem Bericht — Drift-Pfeile, Slot-Längen, Wochen-Brüche.`
     );
   }
 
   // Keine Überlast-Tage — Bahnen halten ist ebenso eine Leistung
   if (hi === 0 && data.kpis.workingDays >= 10) {
     items.push(
-      `<b>Bahnen gehalten:</b> kein einziger Tag über 10 Stunden — du hast dir die Grenze bewusst oder unbewusst gesetzt. In Phasen mit Druck ist das nicht selbstverständlich.`
+      `<b>Bahnen gehalten:</b> kein einziger Tag über 10 Stunden — die Grenze hat in dieser Periode gehalten.`
     );
   }
 
   // Wochenende geschützt
   if (we === 0 && k.totalWallclockMs > 0 && data.kpis.workingDays >= 10) {
     items.push(
-      `<b>Wochenende geschützt:</b> null erfasste Arbeitszeit am Wochenende. Das ist ein Beitrag zur Tragfähigkeit der Woche — die Erholung lädt nach, was die Wochentage abrufen.`
+      `<b>Wochenende geschützt:</b> null erfasste Arbeitszeit am Wochenende — Samstag und Sonntag waren in dieser Periode wirklich frei.`
     );
   }
 
