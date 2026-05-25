@@ -580,6 +580,18 @@ export interface ReportData {
    * ein starker Befund mit Diagnose + Hebel). Sortiert nach Severity.
    */
   composites: CompositeFinding[];
+  /**
+   * Welle 8.4 — Überstunden-Attribution nach Projekten. Pro Tag wird
+   * chronologisch durchgegangen; alles, was nach Stunde 8.24 erfasst
+   * wurde, dem laufenden Projekt zugeschrieben. Top 5 Projekte mit
+   * absoluter Mehrarbeit und Anteil am Gesamt-Overflow. Leeres Array,
+   * wenn es im Range keine Mehrarbeit gab.
+   *
+   * Methodisch unsauber (die Reihenfolge der Slots ist nicht kausal),
+   * aber ein nützlicher Indikator: zeigt, welches Projekt am Tagesende
+   * noch lief, wenn die Vertragszeit schon erreicht war.
+   */
+  overtimeAttribution: Array<{ projekt: string; ms: number; share: number }>;
   /** Lens, mit der dieser Report generiert wurde (für den Dispatcher). */
   lens: ReportLens;
   absences: AbsenceCount[];
@@ -1864,6 +1876,68 @@ export function detectDataQualityIssues(entries: TimeEntry[]): DataQualityIssue[
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+   Welle 8.4 — Überstunden-Attribution
+   ───────────────────────────────────────────────────────────────────── */
+
+/**
+ * Schätzt, welche Projekte die Überstunden eines Tages generiert
+ * haben. Methode: pro Tag chronologisch durchgehen, alles, was nach
+ * 8.24 h × workloadPct/100 erfasst wurde, dem laufenden Projekt
+ * zuschreiben.
+ *
+ * Methodisch unsauber — die Reihenfolge der Slots ist nicht kausal,
+ * man könnte ebenso gut die ersten 8.24 h als „Überzeit" deklarieren
+ * und den Rest als Vertrag. Aber als Indikator gibt das hier eine
+ * brauchbare Antwort: was lief am Tagesende noch, als das Soll
+ * längst erreicht war? Genau das, was sich nicht in die normale
+ * Arbeitszeit reindrücken ließ.
+ */
+function buildOvertimeAttribution(
+  entries: TimeEntry[],
+  workloadPct: number
+): Array<{ projekt: string; ms: number; share: number }> {
+  const threshold = CONTRACT_MS_PER_DAY * (workloadPct / 100);
+  const byProject = new Map<string, number>();
+
+  const byDay = new Map<string, TimeEntry[]>();
+  for (const e of entries) {
+    if (isAbsenceEntry(e)) continue;
+    if (!e.date) continue;
+    const list = byDay.get(e.date);
+    if (list) list.push(e);
+    else byDay.set(e.date, [e]);
+  }
+
+  for (const [, slots] of byDay) {
+    // Chronologisch sortieren — start_time ist HH:MM, also lexikographisch
+    // OK. Slots ohne start_time landen vorn (leerer String).
+    slots.sort((a, b) =>
+      (a.start_time || '').localeCompare(b.start_time || '')
+    );
+    let cumul = 0;
+    for (const s of slots) {
+      const dur = s.duration_ms || 0;
+      if (dur <= 0) continue;
+      const wallclockBeforeThis = cumul;
+      cumul += dur;
+      if (cumul <= threshold) continue;
+      // Anteil dieses Slots, der über der Schwelle liegt.
+      const overflowMs = cumul - Math.max(threshold, wallclockBeforeThis);
+      if (overflowMs <= 0) continue;
+      const projekt = (s.projekt || '—').trim() || '—';
+      byProject.set(projekt, (byProject.get(projekt) || 0) + overflowMs);
+    }
+  }
+
+  const total = Array.from(byProject.values()).reduce((a, b) => a + b, 0);
+  if (total === 0) return [];
+  return Array.from(byProject.entries())
+    .map(([projekt, ms]) => ({ projekt, ms, share: ms / total }))
+    .sort((a, b) => b.ms - a.ms)
+    .slice(0, 5);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
    Hauptfunktion
    ───────────────────────────────────────────────────────────────────── */
 
@@ -2696,6 +2770,14 @@ export function buildReportData(
     });
   }
 
+  // Welle 8.4 — Überstunden-Attribution. Wir berechnen sie hier, weil
+  // sie die fertigen non-absence entries braucht und sowohl in den
+  // Brillen-Renderern als auch im 8.5-Cross-Finding referenziert wird.
+  const overtimeAttribution = buildOvertimeAttribution(
+    nonAbsence,
+    effectiveWorkloadPct
+  );
+
   // Welle 5c — Composite-Findings über den jetzt fertigen findings[].
   const composites = buildComposites({
     findings,
@@ -2769,6 +2851,7 @@ export function buildReportData(
     changePoints,
     baseline,
     composites,
+    overtimeAttribution,
     lens,
     absences,
     findings,

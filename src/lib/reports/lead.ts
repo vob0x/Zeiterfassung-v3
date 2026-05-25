@@ -81,11 +81,21 @@ function buildCockpit(data: ReportData): string {
       : k.overtimeMs > 0
         ? `Mehrarbeit ${otScaleLead.label} (+${fmtHours(k.overtimeMs)} auf ${fmtHours(k.contractMs)} Sollzeit).`
         : `Unter dem Vertrags-Soll (${fmtHours(k.contractMs)}), Differenz ${fmtHours(k.undertimeMs)}.`;
+  // Welle 8.4 — Attribution als zweite Zeile in der Karte (kursiv,
+  // klein, mit Methoden-Hinweis). Nur bei tatsächlicher Mehrarbeit.
+  let attributionLine = '';
+  if (k.overtimeMs > 0 && data.overtimeAttribution.length > 0) {
+    const top = data.overtimeAttribution.slice(0, 2);
+    const parts = top
+      .map((r) => `${esc(r.projekt)} (${fmtHours(r.ms)})`)
+      .join(', ');
+    attributionLine = ` <i>Mehrarbeit lief vor allem in: ${parts} — nach Tagesreihenfolge zugeordnet.</i>`;
+  }
   if (otScaleLead.level === 'high' || hi >= 3) {
     belastungClass = 'ampel-warn';
-    belastungSub = `${otSentence} ${longDaySentence} <b>Im Gespräch fragen:</b> Was treibt diese Mehrarbeit — Deadline, Personalengpass, eine bewusste Entscheidung? Trägt der Rhythmus, oder zehrt er?`;
+    belastungSub = `${otSentence} ${longDaySentence}${attributionLine} <b>Im Gespräch fragen:</b> Was treibt diese Mehrarbeit — Deadline, Personalengpass, eine bewusste Entscheidung? Trägt der Rhythmus, oder zehrt er?`;
   } else if (otScaleLead.level === 'elevated' || hi >= 1) {
-    belastungSub = `${otSentence} ${longDaySentence} <b>Kurz anhaken:</b> War an diesen Tagen etwas Besonderes (Abgabe, Workshop, Reise), oder verdichtet sich das Muster?`;
+    belastungSub = `${otSentence} ${longDaySentence}${attributionLine} <b>Kurz anhaken:</b> War an diesen Tagen etwas Besonderes (Abgabe, Workshop, Reise), oder verdichtet sich das Muster?`;
   } else {
     belastungClass = 'ampel-ok';
     belastungSub = `${otSentence} ${longDaySentence} <b>Verstärker-Frage:</b> Was hilft dabei, diesen Rhythmus zu halten — und wo steckt die Reserve für besondere Phasen?`;

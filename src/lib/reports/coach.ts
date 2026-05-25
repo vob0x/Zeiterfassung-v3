@@ -223,7 +223,9 @@ function buildCoachParagraphs(data: ReportData): string {
   // Welle 8 — Überstunden-Narrativ. Persönlicher Bezug auf den
   // Energiehaushalt, nicht buchhalterische Aussage. Erscheint, wenn
   // ein Vertrags-Soll vorhanden ist UND die Mehrarbeit auffällig ist
-  // (mind. 5 %), sowie spiegelnd auch bei deutlicher Unterzeit.
+  // (mind. 5 %), sowie spiegelnd auch bei deutlicher Unterzeit. Welle
+  // 8.4 — Attribution wird dezent angehängt, mit Methoden-Hinweis bei
+  // der ersten Nennung im Coach-Bericht.
   if (data.kpis.contractMs > 0) {
     const otScaleCoach = interpretOvertime(
       data.kpis.overtimeMs,
@@ -231,13 +233,17 @@ function buildCoachParagraphs(data: ReportData): string {
     );
     const otRatioPct =
       (data.kpis.overtimeMs / data.kpis.contractMs) * 100;
+    const topOt = data.overtimeAttribution[0];
+    const attrSentence = topOt
+      ? ` Nach Stunde 8.24 lief vor allem <b>${esc(topOt.projekt)}</b> — das ist auch das Projekt, das in den langen Tagen dominierte. <i>(nach Tagesreihenfolge der Slots zugeordnet.)</i>`
+      : '';
     if (otScaleCoach.level === 'high') {
       paras.push(
-        `Eine harte Zahl: du hast in dieser Periode <b>${fmtHours(data.kpis.overtimeMs)}</b> über dem Vertrags-Soll gearbeitet (${otRatioPct.toFixed(0)} % Mehrarbeit). Das ist nicht mehr Schwankung, das ist strukturell — Vertragszeit reicht für diesen Arbeitsanfall nicht aus. Frag dich beim nächsten Spaziergang ehrlich: trägt dich das, oder nimmt es schon Substanz?`
+        `Eine harte Zahl: du hast in dieser Periode <b>${fmtHours(data.kpis.overtimeMs)}</b> über dem Vertrags-Soll gearbeitet (${otRatioPct.toFixed(0)} % Mehrarbeit). Das ist nicht mehr Schwankung, das ist strukturell — Vertragszeit reicht für diesen Arbeitsanfall nicht aus.${attrSentence} Frag dich beim nächsten Spaziergang ehrlich: trägt dich das, oder nimmt es schon Substanz?`
       );
     } else if (otScaleCoach.level === 'elevated') {
       paras.push(
-        `Zur Einordnung: rund <b>${fmtHours(data.kpis.overtimeMs)}</b> Mehrarbeit gegenüber dem Vertrags-Soll (${otRatioPct.toFixed(0)} %). Noch im Bereich, der sich aushalten lässt — aber ein spürbarer Mehrbedarf, der über die Wochen Energie kostet. Hat es sich angefühlt wie eine vorübergehende Phase, oder wie das neue Normal?`
+        `Zur Einordnung: rund <b>${fmtHours(data.kpis.overtimeMs)}</b> Mehrarbeit gegenüber dem Vertrags-Soll (${otRatioPct.toFixed(0)} %). Noch im Bereich, der sich aushalten lässt — aber ein spürbarer Mehrbedarf, der über die Wochen Energie kostet.${attrSentence} Hat es sich angefühlt wie eine vorübergehende Phase, oder wie das neue Normal?`
       );
     } else if (data.kpis.undertimeMs > 30 * 60 * 60_000) {
       // > 30 h unter Soll — meist Urlaub/Krankheit, einmal kurz benennen

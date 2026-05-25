@@ -102,7 +102,13 @@ export function renderBoardBody(data: ReportData): string {
       k.workloadPct < 100
         ? ` Bei ${k.workloadPct.toFixed(0)} % Beschäftigungsgrad anteilig gerechnet.`
         : '';
-    otSub = `Mehrarbeit gegenüber dem Vertrags-Soll von ${fmtHours(k.contractMs)} (${k.workloadPct.toFixed(0)} % × 8.24 h × ${k.workingDays} Arbeitstage), entspricht ${otRatioPct.toFixed(0)} %.${wlNote} ${esc(otScale.hint)}`;
+    // Welle 8.4 — Beleg: in welches Projekt floss die Mehrarbeit?
+    // Methoden-Hinweis dezent (kursiv eingeklammert).
+    const topOt = data.overtimeAttribution[0];
+    const attrNote = topOt
+      ? ` Dominantes Projekt in der Überzeit: <b>${esc(topOt.projekt)}</b> (${fmtHours(topOt.ms)}) — <i>nach Tagesreihenfolge zugeordnet.</i>`
+      : '';
+    otSub = `Mehrarbeit gegenüber dem Vertrags-Soll von ${fmtHours(k.contractMs)} (${k.workloadPct.toFixed(0)} % × 8.24 h × ${k.workingDays} Arbeitstage), entspricht ${otRatioPct.toFixed(0)} %.${wlNote}${attrNote}`;
   } else {
     otValue = `−${fmtHours(k.undertimeMs)}`;
     otSub = `Unter dem Vertrags-Soll von ${fmtHours(k.contractMs)} — die Periode war ${fmtHours(k.undertimeMs)} kürzer (Urlaub, Krankheit, ruhige Phase?).`;

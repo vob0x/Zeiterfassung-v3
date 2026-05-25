@@ -124,6 +124,23 @@ function buildHeadlines(data: ReportData): string {
   }
   heads.push(otHead);
 
+  // Welle 8.4 — Attribution: in welche Projekte floss die Mehrarbeit?
+  // Erscheint nur bei vorhandener Überzeit. Methoden-Hinweis bei der
+  // ersten Nennung in der Brille (eingeklammert, kursiv).
+  if (k.overtimeMs > 0 && data.overtimeAttribution.length > 0) {
+    const top = data.overtimeAttribution.slice(0, 3);
+    const parts = top.map((r) => `<b>${esc(r.projekt)}</b> (${fmtHours(r.ms)})`);
+    const list =
+      parts.length === 1
+        ? parts[0]
+        : parts.length === 2
+          ? `${parts[0]} und ${parts[1]}`
+          : `${parts.slice(0, -1).join(', ')} und ${parts[parts.length - 1]}`;
+    heads.push(
+      `<b>Mehrarbeit floss vor allem in:</b> ${list}. <span class="cp-inline">(nach Tagesreihenfolge der Slots zugeordnet)</span>`
+    );
+  }
+
   // Tracking-Datenqualität
   const covPct = k.coverage * 100;
   let covHead: string;
