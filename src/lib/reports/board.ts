@@ -64,7 +64,7 @@ export function renderBoardBody(data: ReportData): string {
   );
   if (k.multiTaskingFactor > 1.2) {
     profilSubParts.push(
-      `Pro getrackter Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(1)} Stunden Aufgaben an — Hinweis auf parallele Mandanten-Steuerung.`
+      `Pro erfasster Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(1)} Stunden Aufgaben an — Hinweis auf parallele Mandanten-Steuerung.`
     );
   }
   const leakScale = interpretLeakPct(k.leakPct);

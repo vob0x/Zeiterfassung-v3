@@ -266,7 +266,7 @@ function buildHebel(data: ReportData): string {
     } else if (oosSh.microTaskPct >= 30) {
       frage = `Lässt sich ein Sammel-Termin etablieren (feste Sprechzeit), damit nicht jede Anfrage einzeln den Tag bricht?`;
     } else if (oosSh.meetingHeavyPct >= 50) {
-      frage = `Welche dieser Termine wären als Mail / kurzes 1-Pager schneller — und für beide Seiten besser?`;
+      frage = `Welche dieser Termine wären als Mail oder kurzes Ein-Pager schneller — und für beide Seiten besser?`;
     } else {
       frage = `Geht hier viel Zeit in Verwaltung und Beziehungspflege — bewusst investiert, oder dehnt sich der Auftrag aus?`;
     }
@@ -281,7 +281,7 @@ function buildHebel(data: ReportData): string {
     : 0;
   if (data.weekday.highLoadDaysCount >= 2 && longDayRatioLead > 0.20) {
     hebel.push(
-      `<b>${data.weekday.highLoadDaysCount} besonders lange Tage</b> (über 10h Anwesenheit) im Zeitraum. Konkret heißt das: kein einmaliger Ausreißer, sondern ein wiederkehrendes Muster. Was ist der Engpass dahinter — fehlende Ressourcen, schlechte Priorisierung, oder bewusst gewählte Intensität?`
+      `<b>${data.weekday.highLoadDaysCount} besonders lange Tage</b> (über 10 h Anwesenheit) im Zeitraum. Kein einmaliger Ausreißer, sondern ein wiederkehrendes Muster. Was ist der Engpass dahinter — fehlende Ressourcen, schlechte Priorisierung, oder bewusst gewählte Intensität?`
     );
   }
 
@@ -295,7 +295,7 @@ function buildHebel(data: ReportData): string {
   // Doku-Lücke global
   if (data.disziplin.notizCoverage < 30 && data.kpis.entriesCount >= 30) {
     hebel.push(
-      `<b>Nur ${data.disziplin.notizCoverage.toFixed(0)}% der Einträge haben einen Kommentar</b>. Konkret heißt das: beim nächsten Review (in 4 Wochen, oder bei einer Übergabe) fehlt der Kontext zu den meisten Slots. Ein-Wort-Disziplin reicht oft — als Standard im Team setzen?`
+      `<b>Nur ${data.disziplin.notizCoverage.toFixed(0)} % der Einträge haben einen Kommentar</b>. Beim nächsten Review (in vier Wochen, oder bei einer Übergabe) fehlt der Kontext zu den meisten Slots. Ein-Wort-Disziplin reicht oft — als Standard im Team setzen?`
     );
   }
 
@@ -304,7 +304,7 @@ function buildHebel(data: ReportData): string {
     const dCov = (data.drift.coverageSecond - data.drift.coverageFirst) * 100;
     if (dCov <= -10) {
       hebel.push(
-        `<b>Tracking-Genauigkeit fällt ab</b> — von ${(data.drift.coverageFirst * 100).toFixed(0)}% in der ersten Hälfte auf ${(data.drift.coverageSecond * 100).toFixed(0)}% in der zweiten. Konkret heißt das: die Datenbasis für künftige Berichte wird schlechter, wenn der Trend so weitergeht. Tracking-Routine ansprechen, bevor das Werkzeug seinen Wert verliert.`
+        `<b>Tracking-Genauigkeit fällt ab</b> — von ${(data.drift.coverageFirst * 100).toFixed(0)} % in der ersten Hälfte auf ${(data.drift.coverageSecond * 100).toFixed(0)} % in der zweiten. Die Datenbasis für künftige Berichte wird schlechter, wenn der Trend so weitergeht. Tracking-Routine ansprechen, bevor das Werkzeug seinen Wert verliert.`
       );
     }
   }

@@ -54,7 +54,7 @@ function buildHeadlines(data: ReportData): string {
   } else if (k.leakPct < 25) {
     outputHead = `<b>Geringe Versickerung:</b> ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Üblicher Anteil — leichtes Grundrauschen, kein Steuerungs-Thema.`;
   } else if (k.leakPct < 40) {
-    outputHead = `<b>Merklicher Versickerungs-Anteil:</b> ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Konkret heißt das: substanzielle Selbsteinschätzung als verlorene Zeit — wo sammelt sich das? Welches Projekt, welcher Kontext?`;
+    outputHead = `<b>Merklicher Versickerungs-Anteil:</b> ${k.leakPct.toFixed(0)} % der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Eine substanzielle Selbsteinschätzung als verlorene Zeit — wo sammelt sich das? Welches Projekt, welcher Kontext?`;
   } else {
     outputHead = `<b>Versickerung dominiert:</b> ${k.leakPct.toFixed(0)}% der Zeit (${fmtHours(k.leakMs)}) wurden als „nicht produktiv" markiert. Über 40 % Selbsteinschätzung als verschwendet ist ein Alarmsignal — operativer Schnitt überfällig.`;
   }
@@ -70,7 +70,7 @@ function buildHeadlines(data: ReportData): string {
   } else if (k.reactivePct >= 40) {
     reactHead = `<b>Belebte Reaktiv-Phase:</b> ${k.reactivePct.toFixed(0)}% der Arbeitszeit (${fmtHours(k.reactiveMs)}) in reaktiven Projekten. Spürbare Anfragen-Last bei noch erhaltbarer Eigen-Arbeit. Konkret prüfen: gibt es Trigger, die proaktiv geklärt werden könnten?`;
   } else if (k.reactivePct >= 20) {
-    reactHead = `<b>Normaler Betrieb:</b> ${k.reactivePct.toFixed(0)}% reaktive Arbeit (${fmtHours(k.reactiveMs)}) — gesundes Verhältnis von eigener und fremdgetriebener Arbeit. Konkret heißt das: die Person konnte sowohl auf Anfragen reagieren als auch eigene Themen vorantreiben.`;
+    reactHead = `<b>Normaler Betrieb:</b> ${k.reactivePct.toFixed(0)} % reaktive Arbeit (${fmtHours(k.reactiveMs)}) — gesundes Verhältnis von eigener und fremdgetriebener Arbeit. Die Person konnte sowohl auf Anfragen reagieren als auch eigene Themen vorantreiben.`;
   } else {
     reactHead = `<b>Strategiephase:</b> nur ${k.reactivePct.toFixed(0)}% reaktive Arbeit (${fmtHours(k.reactiveMs)}) — die Periode hatte Raum für Eigen-Vorhaben. Konkret prüfen: ist dieser Raum produktiv genutzt worden, oder bleibt er ungefüllt? Skala-Einordnung: ${esc(reactScale.hint)}`;
   }
@@ -81,20 +81,20 @@ function buildHeadlines(data: ReportData): string {
   if (top) {
     let concHead: string;
     if (top.pct >= 50) {
-      concHead = `<b>Klare Konzentration auf einen Mandanten:</b> <b>${esc(top.name)}</b> bindet ${top.pct.toFixed(0)}% der Zeit. Konkret heißt das Klumpen-Risiko: wenn dieser Auftrag wegfällt, ändert sich die Auslastung schlagartig. ${data.breakdowns.stakeholders.length} Mandanten und ${data.breakdowns.projekte.length} Projekte im Bewegungsfeld.`;
+      concHead = `<b>Klare Konzentration auf einen Mandanten:</b> <b>${esc(top.name)}</b> bindet ${top.pct.toFixed(0)} % der Zeit. Das ist ein Klumpen-Risiko: wenn dieser Auftrag wegfällt, ändert sich die Auslastung schlagartig. ${data.breakdowns.stakeholders.length} Mandanten und ${data.breakdowns.projekte.length} Projekte im Bewegungsfeld.`;
     } else if (top.pct >= 30) {
-      concHead = `<b>Klar erkennbarer Hauptmandant:</b> <b>${esc(top.name)}</b> mit ${top.pct.toFixed(0)}% Anteil, daneben ein Portfolio von ${data.breakdowns.stakeholders.length} aktiven Mandanten und ${data.breakdowns.projekte.length} Projekten. Stabile Mischung, kein Klumpen.`;
+      concHead = `<b>Klar erkennbarer Hauptmandant:</b> <b>${esc(top.name)}</b> mit ${top.pct.toFixed(0)} % Anteil, daneben ein Portfolio von ${data.breakdowns.stakeholders.length} aktiven Mandanten und ${data.breakdowns.projekte.length} Projekten. Stabile Mischung, kein Klumpen.`;
     } else {
-      concHead = `<b>Breit verteilte Arbeitszeit:</b> der größte Mandant (${esc(top.name)}) liegt bei nur ${top.pct.toFixed(0)}%. Konkret heißt das: ${data.breakdowns.stakeholders.length} aktive Mandanten teilen sich die Aufmerksamkeit. Kein akutes Klumpen-Thema, aber eventuell Hinweis auf zu breite Streuung.`;
+      concHead = `<b>Breit verteilte Arbeitszeit:</b> der größte Mandant (${esc(top.name)}) liegt bei nur ${top.pct.toFixed(0)} %. ${data.breakdowns.stakeholders.length} aktive Mandanten teilen sich die Aufmerksamkeit. Kein akutes Klumpen-Thema, aber eventuell ein Hinweis auf zu breite Streuung.`;
     }
     heads.push(concHead);
   }
 
   // Parallel-Arbeit (Multi-Tasking)
   if (k.multiTaskingFactor > 1.4) {
-    heads.push(`<b>Hohe Parallel-Last:</b> pro getrackter Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(2)}h Aufgaben an. Konkret heißt das: oft liefen mehrere Themen gleichzeitig im selben Slot — bewusste Mehr-Mandanten-Steuerung, oder Hinweis auf parallel laufende Tracker, die nicht gestoppt wurden. Stichprobe lohnt sich.`);
+    heads.push(`<b>Hohe Parallel-Last:</b> pro erfasster Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(2)} h Aufgaben an. Heißt: oft liefen mehrere Themen gleichzeitig im selben Slot — bewusste Mehr-Mandanten-Steuerung, oder Hinweis auf parallel laufende Tracker, die nicht gestoppt wurden. Eine Stichprobe lohnt sich.`);
   } else if (k.multiTaskingFactor > 1.15) {
-    heads.push(`<b>Moderate Parallel-Last:</b> pro getrackter Arbeitsstunde rund ${k.multiTaskingFactor.toFixed(2)}h Aufgaben gebucht. Üblicher Anteil paralleler Arbeit, z.B. wenn Mandanten in einem gemeinsamen Slot besprochen werden.`);
+    heads.push(`<b>Moderate Parallel-Last:</b> pro erfasster Arbeitsstunde rund ${k.multiTaskingFactor.toFixed(2)} h Aufgaben gebucht. Üblicher Anteil paralleler Arbeit, etwa wenn Mandanten in einem gemeinsamen Slot besprochen werden.`);
   } else {
     heads.push(`<b>Sequenzielle Arbeit:</b> Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} — die Person macht ein Ding nach dem anderen, kaum Mehrfachzuordnung pro Slot.`);
   }

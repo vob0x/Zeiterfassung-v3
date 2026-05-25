@@ -243,7 +243,7 @@ export function interpretDeepFocus(pct: number): ScaleAssessment {
     return {
       level: 'low',
       label: 'fragmentiert',
-      hint: 'Unter 20 % in Slots über 2h = wenig zusammenhängende Tiefe.',
+      hint: 'Unter 20 % in Slots über 2 h = wenig zusammenhängende Tiefe.',
     };
   if (pct < 40)
     return {
@@ -328,7 +328,7 @@ export function renderStakeholderDossier(
     tags.push(
       `<span class="tag tag-warn">${profile.microTaskPct.toFixed(0)}% kurze Einträge (&lt;15min)</span>`
     );
-    leadQuestion = `Frage fürs Gespräch: dieser Mandant löst viele kleine Anfragen aus. Gibt es einen Sammel-Termin (z.B. feste Sprechzeit) — oder reagiert die Person auf jede einzelne sofort?`;
+    leadQuestion = `Frage fürs Gespräch: dieser Mandant löst viele kleine Anfragen aus. Gibt es einen Sammel-Termin (etwa eine feste Sprechzeit) — oder reagiert die Person auf jede einzelne sofort?`;
   } else if (profile.microTaskPct >= 40 && isReactiveDominant) {
     tags.push(
       `<span class="tag tag-info">${profile.microTaskPct.toFixed(0)}% Triage-Slots</span>`
@@ -354,7 +354,7 @@ export function renderStakeholderDossier(
       `<span class="tag tag-info">nur ${profile.notizPct.toFixed(0)}% mit Notiz</span>`
     );
     if (!leadQuestion)
-      leadQuestion = `Frage fürs Gespräch: Einträge bei diesem Mandanten haben selten eine Notiz. Beim Review oder Übergabe fehlt damit der Kontext — geht ein-Wort-Disziplin?`;
+      leadQuestion = `Frage fürs Gespräch: Einträge bei diesem Mandanten haben selten eine Notiz. Beim Review oder bei einer Übergabe fehlt damit der Kontext — geht Ein-Wort-Disziplin?`;
   }
   if (!leadQuestion) {
     leadQuestion = `Wirkt unauffällig — kein konkreter Hebel fürs Gespräch nötig.`;
@@ -422,7 +422,7 @@ const CP_METRIC_INFO: Record<
       'Weniger Termin-Last in dieser Woche — entweder Lücke im Kalender, oder du hast Termine bewusst gekürzt.',
   },
   deepFocus: {
-    label: 'Konzentrations-Anteil (Blöcke über 2h)',
+    label: 'Konzentrations-Anteil (Blöcke über 2 h)',
     format: (v) => `${v.toFixed(0)}%`,
     upMeaning:
       'Mehr Zeit am Stück ohne Unterbrechung — eine Qualitäts-Woche für Tiefe.',

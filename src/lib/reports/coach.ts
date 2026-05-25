@@ -245,16 +245,16 @@ function buildCoachParagraphs(data: ReportData): string {
     let sentence = '';
     switch (cp.metric) {
       case 'wallclock':
-        sentence = `In ${wk} bist du auf ${cp.currentValue.toFixed(1)} Arbeitsstunden gekommen — gegenüber Schnitt ${cp.baselineValue.toFixed(1)}h in den ${cp.baselineWeekCount} Wochen davor. Das sind rund ${Math.abs(cp.deltaAbsolute).toFixed(0)} Stunden mehr als sonst. Was war in dieser Woche anders — Deadline, Krise, oder nachgeholte Arbeit aus vorherigen Tagen?`;
+        sentence = `In ${wk} bist du auf ${cp.currentValue.toFixed(1)} Arbeitsstunden gekommen — gegenüber Schnitt ${cp.baselineValue.toFixed(1)} h in den ${cp.baselineWeekCount} Wochen davor. Das sind rund ${Math.abs(cp.deltaAbsolute).toFixed(0)} Stunden mehr als sonst. Was war in dieser Woche anders — Deadline, Krise, oder nachgeholte Arbeit aus vorherigen Tagen?`;
         break;
       case 'deepFocus':
-        sentence = `Auffällig: in ${wk} fiel der Anteil deiner konzentrierten Arbeit (Blöcke über 2 Stunden am Stück) auf ${cp.currentValue.toFixed(0)}% — sonst lag er bei ${cp.baselineValue.toFixed(0)}%. Konkret heißt das: die Woche war fragmentierter, mehr Stückwerk statt zusammenhängender Arbeit. Was hat dich da unterbrochen — Termine, Anfragen, oder eine grundsätzlich andere Aufgabenstellung?`;
+        sentence = `Auffällig: in ${wk} fiel der Anteil deiner konzentrierten Arbeit (Blöcke über zwei Stunden am Stück) auf ${cp.currentValue.toFixed(0)} % — sonst lag er bei ${cp.baselineValue.toFixed(0)} %. Die Woche war fragmentierter, mehr Stückwerk statt zusammenhängender Arbeit. Was hat dich da unterbrochen — Termine, Anfragen, oder eine grundsätzlich andere Aufgabenstellung?`;
         break;
       case 'multiTasking':
         sentence = `Auch die Parallel-Last ist in ${wk} hochgegangen — pro Arbeitsstunde fielen ${cp.currentValue.toFixed(2)}h Aufgaben an statt sonst ${cp.baselineValue.toFixed(2)}h. Das heißt: mehrere Themen liefen öfter gleichzeitig im selben Slot. Hattest du das Gefühl, an zu vielen Sachen gleichzeitig zu sitzen — oder war das eine bewusste Mehr-Mandanten-Woche?`;
         break;
       case 'meeting':
-        sentence = `In ${wk} ist dein Termin-Anteil deutlich gestiegen — ${cp.currentValue.toFixed(0)}% der Arbeitszeit in Meetings und Calls (gegenüber Ø ${cp.baselineValue.toFixed(0)}%). Konkret heißt das: weniger Zeit für eigene stille Arbeit. Hast du die Termine selbst gewollt, oder sind sie von außen reingerutscht?`;
+        sentence = `In ${wk} ist dein Termin-Anteil deutlich gestiegen — ${cp.currentValue.toFixed(0)} % der Arbeitszeit in Meetings und Calls (gegenüber Ø ${cp.baselineValue.toFixed(0)} %). Weniger Zeit für eigene stille Arbeit. Hast du die Termine selbst gewollt, oder sind sie von außen reingerutscht?`;
         break;
       case 'coverage':
         sentence = `Die Tracking-Disziplin hat in ${wk} nachgelassen — nur ${cp.currentValue.toFixed(0)}% des Tages waren lückenlos erfasst, sonst ${cp.baselineValue.toFixed(0)}%. Eine vergessliche Woche, eine besonders dichte Woche ohne Tracking-Pause, oder fehlt der Tag-Anfang/das Tag-Ende?`;
@@ -404,7 +404,7 @@ function buildReflectionQuestions(data: ReportData): string {
       (data.weekday.weekendMs / data.kpis.totalWallclockMs) * 100;
     if (wePct >= 8) {
       fragen.push(
-        `${wePct.toFixed(0)}% deiner Arbeitszeit lag am Wochenende. Konkret heißt das: ein knappes Zehntel der Stunden ist außerhalb der Wochentage geschehen. Bewusst geplant — oder zeigt sich hier, dass die Wochentage zu eng werden? Was müsste sich ändern, damit du das in der Woche unterbringen könntest?`
+        `${wePct.toFixed(0)} % deiner Arbeitszeit lagen am Wochenende. Ein knappes Zehntel der Stunden ist außerhalb der Wochentage geschehen. Bewusst geplant — oder zeigt sich hier, dass die Wochentage zu eng werden? Was müsste sich ändern, damit du das in der Woche unterbringen könntest?`
       );
     }
   }
@@ -437,7 +437,7 @@ function buildReflectionQuestions(data: ReportData): string {
   // Wenig konzentrierte Arbeit
   if (data.slotLength.totalCount >= 30 && data.slotLength.deepFocusPct < 20) {
     fragen.push(
-      `Nur ${data.slotLength.deepFocusPct.toFixed(0)}% deiner Zeit lag in Blöcken über zwei Stunden — der Rest war Stückwerk. Wo im Kalender könntest du einen Vier-Stunden-Block freihalten, auch wenn er „leer" aussieht?`
+      `Nur ${data.slotLength.deepFocusPct.toFixed(0)} % deiner Zeit lagen in Blöcken über zwei Stunden — der Rest war Stückwerk. Wo im Kalender könntest du einen Vier-Stunden-Block freihalten, auch wenn er „leer" aussieht?`
     );
   }
 
