@@ -1140,7 +1140,7 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 
 /* BOARD-spezifisch — Hero, One-Pager, sehr knapp */
 .board-hero{background:linear-gradient(135deg,#fff8eb 0%,#fdfbf6 100%);border:1px solid #d8cfb6;border-radius:8px;padding:32px 28px;margin:20px 0 28px}
-.board-hero-row{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+.board-hero-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px}
 .board-hero-cell{}
 .board-hero-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px}
 .board-hero-value{font-size:24px;font-weight:700;color:#6c5a2c;font-variant-numeric:tabular-nums;line-height:1.1;margin-bottom:4px}
