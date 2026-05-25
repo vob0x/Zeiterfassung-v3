@@ -388,14 +388,29 @@ function buildClosing(data: ReportData): string {
  * Wählt die wichtigste operative Konsequenz aus dem Datenbild aus.
  * Genau eine Empfehlung, damit der Closing-Block nicht zur Wiederholung
  * der Headlines verkommt.
+ *
+ * Welle 8.6 — das strukturelle Stau-Muster (Cross-Finding aus 8.5)
+ * gewinnt vor allen anderen Heuristiken, weil es die Synthese-Aussage
+ * ist: dort steht, was sich nicht in normaler Arbeitszeit erledigen
+ * lässt, und das ist die zentrale Steuerungs-Frage.
  */
 function pickPriorityAction(data: ReportData): string {
   const k = data.kpis;
   const top = data.breakdowns.stakeholders[0];
 
+  // 0. Welle 8.6 — strukturelles Stau-Muster gewinnt vor allem.
+  const stauFinding = data.findings.find(
+    (f) => f.kind === 'strukturelles-stau-muster'
+  );
+  if (stauFinding) {
+    const topOt = data.overtimeAttribution[0];
+    const projekt = topOt ? esc(topOt.projekt) : 'das treibende Projekt';
+    return `Steuerungs-Gespräch zu <b>${projekt}</b>: was lässt sich am Auftrags-Volumen ändern, was an der Ressourcen-Zuordnung? Solange dieses Projekt strukturell die Mehrarbeit treibt, schiebt jede andere Maßnahme nur Symptome.`;
+  }
+
   // 1. Datenqualität — wenn das nicht steht, tragen die Detail-Schlüsse nicht.
   if (k.coverage < 0.6) {
-    return `Tracking-Routine als erstes stabilisieren — die Datenbasis ist mit ${(k.coverage * 100).toFixed(0)}% zu dünn für belastbare Detail-Schlüsse aus diesem Bericht. Erst Erfassung in den Griff bekommen, dann inhaltlich steuern.`;
+    return `Tracking-Routine als erstes stabilisieren — die Datenbasis ist mit ${(k.coverage * 100).toFixed(0)} % zu dünn für belastbare Detail-Schlüsse aus diesem Bericht. Erst die Erfassung in den Griff bekommen, dann inhaltlich steuern.`;
   }
 
   // 2. Composite-Befunde — diese fassen mehrere Schwächen zusammen

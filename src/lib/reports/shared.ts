@@ -344,6 +344,103 @@ export function interpretDeepFocus(pct: number): ScaleAssessment {
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+   Welle 8.6 — Konkrete Handlung pro Brille (Priority-Stack)
+   ─────────────────────────────────────────────────────────────────────
+   Jede Brille schließt mit EINER konkreten Aktion. Die Priority-Liste
+   liefert den stärksten Befund; jede Brille formuliert ihn im eigenen
+   Register (Coach=Frage, Lead=1:1, Chef=Steuerung, Board=Hebel).
+
+   Ergebnis ist eine semantische Datenstruktur — die Brillen-Wrapper
+   bauen daraus ihren Satz. Wenn nichts greift, kommt 'routine' zurück
+   und die Brille nutzt ihre Fallback-Formulierung.
+   ───────────────────────────────────────────────────────────────────── */
+
+export type NextActionKind =
+  | 'strukturelles-stau-muster'
+  | 'high-load-days-stau'
+  | 'leak-high'
+  | 'reactive-high'
+  | 'klumpen-risiko'
+  | 'routine';
+
+export interface NextActionData {
+  kind: NextActionKind;
+  /** Hauptobjekt für die Formulierung (Projektname, Mandantenname, etc.). */
+  subject?: string;
+  /** Numerischer Beleg-Wert (z. B. Prozentanteil), für Sätze. */
+  value?: number;
+  /** Zweiter Beleg-Wert (z. B. Stunden), für Sätze. */
+  secondaryValue?: number;
+}
+
+/**
+ * Bündelt die Daten-Heuristik für die „nächste Handlung" einer Brille.
+ * Reihenfolge entscheidet — der erste Treffer gewinnt.
+ *   1. strukturelles-stau-muster  (Cross-Finding aus 8.5)
+ *   2. high-load-days mit Stau-Sentence  (≥ 20 % reaktiv plus lange Tage)
+ *   3. leakPct ≥ 40 %
+ *   4. reactivePct ≥ 60 %
+ *   5. Klumpen-Risiko (Top-Stakeholder ≥ 50 %)
+ *   6. Fallback: Routine
+ */
+export function buildNextActionData(data: ReportData): NextActionData {
+  // 1. Strukturelles Stau-Muster (Welle 8.5)
+  const stau = data.findings.find(
+    (f) => f.kind === 'strukturelles-stau-muster'
+  );
+  if (stau) {
+    const topOt = data.overtimeAttribution[0];
+    return {
+      kind: 'strukturelles-stau-muster',
+      subject: topOt?.projekt,
+      value: topOt ? topOt.share * 100 : undefined,
+      secondaryValue:
+        data.kpis.contractMs > 0
+          ? (data.kpis.overtimeMs / data.kpis.contractMs) * 100
+          : undefined,
+    };
+  }
+
+  // 2. high-load-days, wenn parallel reactivePct ≥ 20 (Stau-Dynamik)
+  const highLoad = data.findings.find((f) => f.kind === 'high-load-days');
+  if (highLoad && data.kpis.reactivePct >= 20) {
+    return {
+      kind: 'high-load-days-stau',
+      value: data.weekday.highLoadDaysCount,
+      secondaryValue: data.kpis.reactivePct,
+    };
+  }
+
+  // 3. leakPct ≥ 40 %
+  if (data.kpis.leakPct >= 40) {
+    return {
+      kind: 'leak-high',
+      value: data.kpis.leakPct,
+    };
+  }
+
+  // 4. reactivePct ≥ 60 %
+  if (data.kpis.reactivePct >= 60) {
+    return {
+      kind: 'reactive-high',
+      value: data.kpis.reactivePct,
+    };
+  }
+
+  // 5. Klumpen-Risiko (Top-Stakeholder ≥ 50 %)
+  const top = data.breakdowns.stakeholders[0];
+  if (top && top.pct >= 50) {
+    return {
+      kind: 'klumpen-risiko',
+      subject: top.name,
+      value: top.pct,
+    };
+  }
+
+  return { kind: 'routine' };
+}
+
+/* ─────────────────────────────────────────────────────────────────────
    Wiederverwendete Bausteine
    ───────────────────────────────────────────────────────────────────── */
 

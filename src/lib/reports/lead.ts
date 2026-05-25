@@ -12,6 +12,7 @@
 
 import type { ReportData } from '../reportData';
 import {
+  buildNextActionData,
   esc,
   fmtHours,
   formatHalfRange,
@@ -39,8 +40,44 @@ export function renderLeadBody(data: ReportData): string {
     ${buildDriftSection(data)}
     ${buildFindingsSection(data)}
     ${buildHebel(data)}
+    ${buildNextAction(data)}
     ${buildKpiAnhang(data)}
   `;
+}
+
+/**
+ * Welle 8.6 — eine konkrete 1:1-Frage, dialogisch formuliert. Liest
+ * den Priority-Stack aus shared.buildNextActionData und wickelt das
+ * Ergebnis in das Lead-Sprachregister (dialogisch, Frage statt
+ * Anweisung).
+ */
+function buildNextAction(data: ReportData): string {
+  const a = buildNextActionData(data);
+  let sentence = '';
+  switch (a.kind) {
+    case 'strukturelles-stau-muster':
+      sentence = `Im nächsten 1:1 mit der Person über <b>${esc(a.subject || '—')}</b> sprechen: was lässt sich am Auftrag konkret ändern (Volumen, Schnittstelle, Erwartung), damit dieses Projekt nicht weiter strukturell die Mehrarbeit treibt?`;
+      break;
+    case 'high-load-days-stau':
+      sentence = `Im nächsten 1:1: die langen Tage benennen und die Stau-Frage stellen — welche Anfragen drücken Eigenarbeit in die Spitzen-Tage, was lässt sich vorab abräumen oder bündeln?`;
+      break;
+    case 'leak-high':
+      sentence = `Im nächsten 1:1 nachhaken, wo der Versickerungs-Anteil von ${(a.value ?? 0).toFixed(0)} % konkret entsteht — welches Projekt, welcher Kontext? Selbsteinschätzung als „nicht produktiv" ist ein direkter Hebel-Hinweis, wenn man die Quelle kennt.`;
+      break;
+    case 'reactive-high':
+      sentence = `Im nächsten 1:1 fragen: bei ${(a.value ?? 0).toFixed(0)} % reaktiver Arbeit — was ist von der Eigenarbeit auf der Strecke geblieben, und braucht das gemeinsam Schutzraum?`;
+      break;
+    case 'klumpen-risiko':
+      sentence = `Im nächsten 1:1 mit der Person über die Konzentration auf <b>${esc(a.subject || '—')}</b> sprechen (${(a.value ?? 0).toFixed(0)} % der Zeit) — strategisch gewollt, oder Diversifikation als Auftrag?`;
+      break;
+    case 'routine':
+      sentence = `Im 1:1 ohne Krisen-Punkte: welche zwei Mandanten sollen in der nächsten Periode bewusst mehr Gewicht bekommen, welche weniger?`;
+      break;
+  }
+  return `<div class="lead-hebel" style="margin-top:18px">
+    <h3>Frage fürs nächste 1:1</h3>
+    <div class="lead-hebel-item">${sentence}</div>
+  </div>`;
 }
 
 /**

@@ -12,6 +12,7 @@
 
 import type { ReportData } from '../reportData';
 import {
+  buildNextActionData,
   esc,
   fmtHours,
   fmtHoursShort,
@@ -146,10 +147,49 @@ export function renderBoardBody(data: ReportData): string {
     Tracking-Genauigkeit ${covPct.toFixed(0)}% · Zeitraum ${esc(data.meta.range.label)} · Erstellt aus ${data.kpis.entriesCount} Einträgen
   </div>`;
 
+  // Welle 8.6 — strategischer Hebel als Headline-Zeile am Schluss.
+  // Kein Absatz, kein Block — eine Aussage, eine Zeile.
+  const nextAction = buildNextActionLine(data);
+
   return renderCrisisBanner(data) +
     heroHtml + pies + `<div class="board-trend">${trendSentence}</div>` +
     (findings ? `<h2>Strategischer Hinweis</h2>${findings}` : '') +
+    nextAction +
     disclaimer;
+}
+
+/**
+ * Welle 8.6 — strategische Hebel-Zeile für die kommende Periode.
+ * Eine Headline, kein Absatz. Liest den Priority-Stack aus shared
+ * und wickelt das Ergebnis ins Board-Register (kurz, abstrakt,
+ * strategisch).
+ */
+function buildNextActionLine(data: ReportData): string {
+  const a = buildNextActionData(data);
+  let sentence = '';
+  switch (a.kind) {
+    case 'strukturelles-stau-muster':
+      sentence = `Auftrags-Volumen und Ressourcen-Zuordnung bei <b>${esc(a.subject || '—')}</b> auf den Prüfstand.`;
+      break;
+    case 'high-load-days-stau':
+      sentence = `Eigenarbeit gegen Reaktiv-Druck schützen — wiederkehrende Belastungs-Spitzen begrenzen.`;
+      break;
+    case 'leak-high':
+      sentence = `Versickerungs-Quellen identifizieren und an der Quelle eindämmen.`;
+      break;
+    case 'reactive-high':
+      sentence = `Strategie-Räume gegen die Reaktiv-Last reservieren.`;
+      break;
+    case 'klumpen-risiko':
+      sentence = `Diversifikation neben <b>${esc(a.subject || '—')}</b> als Mandat für die kommende Periode setzen.`;
+      break;
+    case 'routine':
+      sentence = `Routine — kein akuter Steuerungs-Bedarf, weiter beobachten.`;
+      break;
+  }
+  return `<div class="board-trend" style="background:#fff8eb;border-left:4px solid #C9A962">
+    <b>Strategischer Hebel für die kommende Periode:</b> ${sentence}
+  </div>`;
 }
 
 /**

@@ -12,6 +12,7 @@
 
 import type { ReportData } from '../reportData';
 import {
+  buildNextActionData,
   esc,
   fmtHours,
   fmtHoursShort,
@@ -33,6 +34,7 @@ export function renderCoachBody(data: ReportData): string {
   const paragraphs = buildCoachParagraphs(data);
   const topTimeFlow = buildTopTimeFlow(data);
   const questions = buildReflectionQuestions(data);
+  const nextAction = buildNextAction(data);
   const disclaimer = buildDisclaimer(data);
 
   // Composite-Block wurde entfernt — er überlappte mit den narrativen
@@ -52,8 +54,44 @@ export function renderCoachBody(data: ReportData): string {
     <div class="coach-narrative">${paragraphs}</div>
     ${topTimeFlow}
     ${questions}
+    ${nextAction}
     ${disclaimer}
   `;
+}
+
+/**
+ * Welle 8.6 — eine konkrete Sache für die nächste Woche, persönlich
+ * formuliert (du, fragend statt befehlend). Liest den Priority-Stack
+ * aus shared.buildNextActionData und wickelt das Ergebnis in das
+ * Coach-Sprachregister (persönlich, Frage statt Anweisung).
+ */
+function buildNextAction(data: ReportData): string {
+  const a = buildNextActionData(data);
+  let sentence = '';
+  switch (a.kind) {
+    case 'strukturelles-stau-muster':
+      sentence = `Frag dich für <b>${esc(a.subject || '—')}</b>: was an diesem Projekt würde sich ändern, wenn du nur die reguläre Arbeitszeit dafür hättest — und mit wem im Team kannst du diese Frage konkret in der nächsten Woche besprechen?`;
+      break;
+    case 'high-load-days-stau':
+      sentence = `Frag dich vor der nächsten Woche: welcher der langen Tage war wirklich nötig — und welcher hat sich nur ergeben, weil Anfragen zwischendurch dazwischen kamen?`;
+      break;
+    case 'leak-high':
+      sentence = `Greif dir in der nächsten Woche einen Slot, den du im Nachhinein als „nicht produktiv" markiert hast, und probier aus: was hätte ihn von vornherein vermeidbar gemacht — eine Absage, eine kurze Mail, ein Format-Wechsel?`;
+      break;
+    case 'reactive-high':
+      sentence = `Such dir in der nächsten Woche eine einzige Stunde, die nicht reaktiv läuft, und block sie bewusst — was würdest du in dieser Stunde tun, wenn nichts reinkäme?`;
+      break;
+    case 'klumpen-risiko':
+      sentence = `Beim nächsten Wochen-Start: welcher der anderen Mandanten verdient eine bewusste Aufmerksamkeits-Stunde — auch wenn <b>${esc(a.subject || '—')}</b> drückt?`;
+      break;
+    case 'routine':
+      sentence = `Eine ruhige Periode — nimm dir für die nächste Woche eine Sache vor, die nicht reagieren ist, sondern gestalten. Was wäre das konkret?`;
+      break;
+  }
+  return `<div class="coach-questions">
+    <h3>Eine Sache für nächste Woche</h3>
+    <div class="coach-q-item">${sentence}</div>
+  </div>`;
 }
 
 /**
