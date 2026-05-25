@@ -69,6 +69,42 @@ export function fmtHoursShort(ms: number): string {
   return `${h}h${String(m).padStart(2, '0')}`;
 }
 
+/**
+ * Welle 8.2 — formatiert eine Dauer mit zusätzlichem Prozent-Suffix.
+ * Beispiel: `45 h (32 %)` — kompakt für Breakdown-Listen, in denen
+ * sowohl die absolute Stundenzahl als auch der Anteil sichtbar sein
+ * sollen. Beantwortet die Frage „Wo geht die Zeit hin?" konkret in
+ * Stunden statt nur in Prozent.
+ */
+export function fmtHoursWithPct(ms: number, pct: number): string {
+  return `${fmtHours(ms)} (${pct.toFixed(0)} %)`;
+}
+
+/**
+ * Welle 8.2 — Top-3-Zeitfresser-Block. Liefert einen Satz wie
+ * „In dieser Periode sind 28 h in <b>Projekt X</b>, 22 h in <b>Y</b>
+ * und 18 h in <b>Z</b> geflossen." Leerer String, wenn keine Rows da.
+ *
+ * Bewusst HTML-fettige Namen — der Satz steht meist als ganzer
+ * Paragraf, die Hervorhebung trägt visuell.
+ */
+export function renderTop3TimeFlow(
+  rows: Array<{ name: string; ms: number }>
+): string {
+  const top3 = rows.slice(0, 3);
+  if (top3.length === 0) return '';
+  const parts = top3.map((r, i) => {
+    const sep =
+      i === 0
+        ? ''
+        : i === top3.length - 1
+          ? ' und '
+          : ', ';
+    return `${sep}${fmtHours(r.ms)} in <b>${esc(r.name)}</b>`;
+  });
+  return `In dieser Periode sind ${parts.join('')} geflossen.`;
+}
+
 /* ─────────────────────────────────────────────────────────────────────
    Benchmark-Skalen — Einordnung nackter Zahlen
    ─────────────────────────────────────────────────────────────────────

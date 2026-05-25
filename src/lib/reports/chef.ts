@@ -15,18 +15,21 @@ import type { ChangePointMetric, ReportData } from '../reportData';
 import {
   esc,
   fmtHours,
+  fmtHoursWithPct,
   formatHalfRange,
   interpretReactiveShare,
   renderBars,
   renderCrisisBanner,
   renderDriftArrow,
   renderFindingsBlock,
+  renderTop3TimeFlow,
 } from './shared';
 
 export function renderChefBody(data: ReportData): string {
   return `
     ${renderCrisisBanner(data)}
     ${buildHeadlines(data)}
+    ${buildTopTimeFlow(data)}
     <h2>Schwerpunkt-Matrix</h2>
     ${buildSchwerpunkt(data)}
     <h2>Operativer Mix</h2>
@@ -117,6 +120,17 @@ function buildHeadlines(data: ReportData): string {
 }
 
 /**
+ * Welle 8.2 — Top-3-Zeitfresser-Block. Antwortet konkret auf
+ * "Wo geht die Zeit hin?" — der Chef bekommt sofort drei Projekte
+ * mit Stundenwerten, nicht nur Prozentanteile.
+ */
+function buildTopTimeFlow(data: ReportData): string {
+  const sentence = renderTop3TimeFlow(data.breakdowns.projekte);
+  if (!sentence) return '';
+  return `<p class="chef-mix-hint">${sentence}</p>`;
+}
+
+/**
  * Schwerpunkt-Matrix: Top-3 Stakeholder mit Drift-Pfeil + Top-3 Projekte
  * mit Drift-Pfeil. Drift kommt aus der Periodenhälfte-Differenz.
  */
@@ -142,9 +156,11 @@ function buildSchwerpunkt(data: ReportData): string {
           d !== null
             ? `<div class="chef-pair-drift">${renderDriftArrow(d)}</div>`
             : '<div class="chef-pair-drift" style="color:#888">·</div>';
+        // Welle 8.2 — Stunden zusätzlich zum Anteil. Beantwortet
+        // "Wo geht die Zeit hin?" konkret, nicht nur relativ.
         return `<div class="chef-pair">
           <div class="chef-pair-name">${esc(r.name)}</div>
-          <div class="chef-pair-pct">${r.pct.toFixed(0)}%</div>
+          <div class="chef-pair-pct">${fmtHoursWithPct(r.ms, r.pct)}</div>
           ${driftCell}
         </div>`;
       })

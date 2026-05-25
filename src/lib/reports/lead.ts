@@ -25,6 +25,7 @@ import {
   renderDriftArrow,
   renderFindingsBlock,
   renderStakeholderDossier,
+  renderTop3TimeFlow,
 } from './shared';
 
 export function renderLeadBody(data: ReportData): string {
@@ -34,6 +35,7 @@ export function renderLeadBody(data: ReportData): string {
     ${renderChangePointSection(data, 4)}
     <h2>Mandanten-Dossiers</h2>
     ${buildDossiers(data)}
+    ${buildTopTimeFlow(data)}
     ${buildDriftSection(data)}
     ${buildFindingsSection(data)}
     ${buildHebel(data)}
@@ -171,6 +173,17 @@ function buildDossiers(data: ReportData): string {
   return `<div class="lead-dossiers">
     ${profiles.map((p) => renderStakeholderDossier(p)).join('')}
   </div>`;
+}
+
+/**
+ * Welle 8.2 — Top-3-Zeitfresser-Satz für den Lead direkt vor der
+ * Drift-Tabelle. Antwortet konkret „wo geht die Zeit hin?" in
+ * Stunden statt nur in Prozent — ein Anker für die Drift-Lektüre.
+ */
+function buildTopTimeFlow(data: ReportData): string {
+  const sentence = renderTop3TimeFlow(data.breakdowns.projekte);
+  if (!sentence) return '';
+  return `<p class="chef-mix-hint" style="margin-top:18px">${sentence}</p>`;
 }
 
 /**

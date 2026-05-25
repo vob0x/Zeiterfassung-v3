@@ -17,6 +17,7 @@ import {
   dayPartLabel,
   rhythmLabel,
   renderCrisisBanner,
+  renderTop3TimeFlow,
 } from './shared';
 
 export function renderCoachBody(data: ReportData): string {
@@ -28,6 +29,7 @@ export function renderCoachBody(data: ReportData): string {
   // Muster verdienen dieselbe Sichtbarkeit.
   const strengths = buildStrengthsBlock(data);
   const paragraphs = buildCoachParagraphs(data);
+  const topTimeFlow = buildTopTimeFlow(data);
   const questions = buildReflectionQuestions(data);
   const disclaimer = buildDisclaimer(data);
 
@@ -35,6 +37,10 @@ export function renderCoachBody(data: ReportData): string {
   // Change-Point-Paragrafen, hat den Coach-Bericht aufgeblasen und im
   // 2-Minuten-Modus erschlagen. Die operativ-strategische Schicht
   // bleibt Lead / Chef / Board vorbehalten.
+  //
+  // Welle 8.2 — Top-3-Zeitfresser als kurzer Stunden-Satz zwischen
+  // narrativen Paragrafen und den Reflexionsfragen. Konkrete Antwort
+  // auf "Wo geht die Zeit hin?" in Stunden.
   return `
     ${renderCrisisBanner(data)}
     <div class="coach-tagline">${tagline}</div>
@@ -42,9 +48,20 @@ export function renderCoachBody(data: ReportData): string {
     ${weekstrip}
     ${strengths}
     <div class="coach-narrative">${paragraphs}</div>
+    ${topTimeFlow}
     ${questions}
     ${disclaimer}
   `;
+}
+
+/**
+ * Welle 8.2 — Top-3-Zeitfresser-Satz für den Coach. Persönlicher
+ * Ton, etwas zurückhaltender visuell als bei Lead/Chef.
+ */
+function buildTopTimeFlow(data: ReportData): string {
+  const sentence = renderTop3TimeFlow(data.breakdowns.projekte);
+  if (!sentence) return '';
+  return `<p class="coach-para">${sentence}</p>`;
 }
 
 /**
