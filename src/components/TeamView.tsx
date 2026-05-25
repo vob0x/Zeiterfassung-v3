@@ -242,6 +242,9 @@ function ConnectedView() {
   const leaveTeam = useTeamStore((s) => s.leaveTeam);
   const setMemberRole = useTeamStore((s) => s.setMemberRole);
   const removeMember = useTeamStore((s) => s.removeMember);
+  // Welle 8 — Beschäftigungsgrad pro Mitglied (für die Überstunden-
+  // Berechnung). Admin kann ändern, alle sehen den Wert.
+  const setMemberWorkload = useTeamStore((s) => s.setMemberWorkload);
   const profile = useAuthStore((s) => s.profile);
   const [copied, setCopied] = useState(false);
 
@@ -283,6 +286,17 @@ function ConnectedView() {
       return;
     try {
       await removeMember(userId);
+    } catch {
+      // Error im Store
+    }
+  };
+
+  const onChangeWorkload = async (userId: string, raw: string) => {
+    // Leer-Eingabe ignorieren; ungültige Werte clampen wir im Store.
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n)) return;
+    try {
+      await setMemberWorkload(userId, n);
     } catch {
       // Error im Store
     }
@@ -406,6 +420,54 @@ function ConnectedView() {
                   className="flex items-center gap-2"
                   style={{ flexShrink: 0 }}
                 >
+                  {/* Welle 8 — Beschäftigungsgrad. Admin sieht Number-
+                      Input (1–100), Mitarbeiter sieht read-only Badge. */}
+                  {isAdmin ? (
+                    <span
+                      className="flex items-center gap-1"
+                      title="Beschäftigungsgrad in Prozent. Wirkt auf das tägliche Vertrags-Soll (8.24 h × Workload) in den Überstunden-Findings."
+                    >
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        defaultValue={m.workload_pct}
+                        onBlur={(e) =>
+                          onChangeWorkload(m.user_id, e.target.value)
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter')
+                            (e.target as HTMLInputElement).blur();
+                        }}
+                        aria-label="Beschäftigungsgrad in Prozent"
+                        className="text-[10px] font-mono px-1 py-0.5 rounded text-right"
+                        style={{
+                          width: 44,
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--text)',
+                        }}
+                      />
+                      <span
+                        className="text-[10px]"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        %
+                      </span>
+                    </span>
+                  ) : (
+                    <span
+                      className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                      style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text-muted)',
+                      }}
+                      title="Beschäftigungsgrad — Basis der Überstunden-Berechnung im Report"
+                    >
+                      {m.workload_pct} %
+                    </span>
+                  )}
                   {isAdmin && !isYou ? (
                     // Admin-Edit-Mode: Dropdown statt statischem Label
                     <select

@@ -112,6 +112,12 @@ export interface TeamMember {
   user_id: string;
   display_name: string | null;
   joined_at: string;
+  /**
+   * Welle 8 — Beschäftigungsgrad in Prozent (1–100). Standard 100
+   * (Vollzeit). Wird in der Überstunden-Berechnung als Multiplikator
+   * auf das tägliche Vertrags-Soll (8.24 h) angewendet.
+   */
+  workload_pct: number;
 }
 
 export type ZeRole = 'admin' | 'mitarbeiter';

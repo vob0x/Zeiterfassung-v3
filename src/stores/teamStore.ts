@@ -55,6 +55,12 @@ interface TeamState {
    * für den Ziel-User. Self-Removal nicht erlaubt — dafür gibt's leaveTeam.
    */
   removeMember: (userId: string) => Promise<void>;
+  /**
+   * Welle 8 — Admin: Beschäftigungsgrad (workload_pct) eines Mitglieds
+   * setzen. Wertebereich 1–100. Wirkt auf die Überstunden-Berechnung im
+   * Report (Vertrags-Soll skaliert mit workload_pct/100).
+   */
+  setMemberWorkload: (userId: string, pct: number) => Promise<void>;
   clearError: () => void;
 }
 
@@ -170,6 +176,11 @@ export const useTeamStore = create<TeamState>((set, get) => ({
         user_id: m.user_id,
         display_name: m.display_name || null,
         joined_at: m.joined_at,
+        // Welle 8 — DB-Default ist 100; alte Rows ohne Spalte mappen auf 100.
+        workload_pct:
+          typeof m.workload_pct === 'number' && m.workload_pct > 0
+            ? m.workload_pct
+            : 100,
         codename: codenames.get(m.user_id) || m.display_name || '?',
         role: roles.get(m.user_id) || 'mitarbeiter',
       }));
@@ -461,6 +472,48 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     } catch (e: any) {
       set({
         error: e?.message || 'Entfernen fehlgeschlagen',
+        loading: false,
+      });
+      throw e;
+    }
+  },
+
+  // Welle 8 — Workload (Beschäftigungsgrad) eines Mitglieds setzen.
+  // Wir validieren den Range clientseitig (1–100). RLS auf der DB
+  // entscheidet endgültig, ob der aufrufende User das Update darf —
+  // typischerweise: nur Admin des Teams.
+  setMemberWorkload: async (userId: string, pct: number) => {
+    const profile = useAuthStore.getState().profile;
+    const team = get().team;
+    if (!profile?.id || !team) throw new Error('Nicht in einem Team');
+    const clamped = Math.max(1, Math.min(100, Math.round(pct)));
+
+    const me = get().members.find((m) => m.user_id === profile.id);
+    if (me?.role !== 'admin') {
+      throw new Error('Nur Admins dürfen den Beschäftigungsgrad ändern');
+    }
+
+    const ok = await ensureValidSession();
+    if (!ok) throw new Error('Sitzung abgelaufen');
+
+    set({ loading: true, error: null });
+    try {
+      const { error } = await supabase
+        .from('team_members')
+        .update({ workload_pct: clamped })
+        .eq('team_id', team.id)
+        .eq('user_id', userId);
+      if (error) throw new Error(error.message);
+
+      set({
+        members: get().members.map((m) =>
+          m.user_id === userId ? { ...m, workload_pct: clamped } : m
+        ),
+        loading: false,
+      });
+    } catch (e: any) {
+      set({
+        error: e?.message || 'Beschäftigungsgrad-Update fehlgeschlagen',
         loading: false,
       });
       throw e;
