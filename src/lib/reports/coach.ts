@@ -13,9 +13,11 @@
 import type { ReportData } from '../reportData';
 import {
   esc,
+  fmtHours,
   fmtHoursShort,
   dayPartLabel,
   rhythmLabel,
+  interpretOvertime,
   renderCrisisBanner,
   renderTop3TimeFlow,
 } from './shared';
@@ -216,6 +218,33 @@ function buildCoachParagraphs(data: ReportData): string {
     paras.push(
       `Diese Periode war eher Strategie als Reaktion: nur ${data.kpis.reactivePct.toFixed(0)}% in reaktiven Projekten. Du hattest Raum für eigene Vorhaben — was ist konkret aus diesem Raum entstanden, und ist es das, was du dir vorgenommen hattest?`
     );
+  }
+
+  // Welle 8 — Überstunden-Narrativ. Persönlicher Bezug auf den
+  // Energiehaushalt, nicht buchhalterische Aussage. Erscheint, wenn
+  // ein Vertrags-Soll vorhanden ist UND die Mehrarbeit auffällig ist
+  // (mind. 5 %), sowie spiegelnd auch bei deutlicher Unterzeit.
+  if (data.kpis.contractMs > 0) {
+    const otScaleCoach = interpretOvertime(
+      data.kpis.overtimeMs,
+      data.kpis.contractMs
+    );
+    const otRatioPct =
+      (data.kpis.overtimeMs / data.kpis.contractMs) * 100;
+    if (otScaleCoach.level === 'high') {
+      paras.push(
+        `Eine harte Zahl: du hast in dieser Periode <b>${fmtHours(data.kpis.overtimeMs)}</b> über dem Vertrags-Soll gearbeitet (${otRatioPct.toFixed(0)} % Mehrarbeit). Das ist nicht mehr Schwankung, das ist strukturell — Vertragszeit reicht für diesen Arbeitsanfall nicht aus. Frag dich beim nächsten Spaziergang ehrlich: trägt dich das, oder nimmt es schon Substanz?`
+      );
+    } else if (otScaleCoach.level === 'elevated') {
+      paras.push(
+        `Zur Einordnung: rund <b>${fmtHours(data.kpis.overtimeMs)}</b> Mehrarbeit gegenüber dem Vertrags-Soll (${otRatioPct.toFixed(0)} %). Noch im Bereich, der sich aushalten lässt — aber ein spürbarer Mehrbedarf, der über die Wochen Energie kostet. Hat es sich angefühlt wie eine vorübergehende Phase, oder wie das neue Normal?`
+      );
+    } else if (data.kpis.undertimeMs > 30 * 60 * 60_000) {
+      // > 30 h unter Soll — meist Urlaub/Krankheit, einmal kurz benennen
+      paras.push(
+        `Die Periode lag <b>${fmtHours(data.kpis.undertimeMs)}</b> unter dem Vertrags-Soll — Urlaubstage, Krankheit oder eine bewusst ruhige Phase. Wenn es Erholung war: hat sie getragen, oder reicht sie für das, was als Nächstes kommt?`
+      );
+    }
   }
 
   // Welle 6 — Versickerungs-Block. Erscheint nur, wenn der Anteil

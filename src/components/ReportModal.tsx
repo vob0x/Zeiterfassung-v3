@@ -25,6 +25,8 @@ import {
 import type { ProjectCategory, TimeEntry, TeamMemberWithRole } from '@/types';
 import { useI18n } from '@/i18n';
 import { useMasterStore } from '@/stores/masterStore';
+import { useAuthStore } from '@/stores/authStore';
+import { useTeamStore } from '@/stores/teamStore';
 
 interface ReportModalProps {
   open: boolean;
@@ -65,6 +67,48 @@ export default function ReportModal({
     return m;
   }, [projects]);
 
+  // Welle 8 — Beschäftigungsgrad. Self: eigener Workload aus team_members
+  // (Solo-User ohne Team: Default 100). Team: gewichteter Schnitt über
+  // alle Mitglieder, gewichtet nach der Member-Anzahl Einträge im Range
+  // (Member ohne Daten zählen nicht mit), Fallback einfacher Schnitt.
+  // Member-Scope: der einzelne Member.
+  const profileId = useAuthStore((s) => s.profile?.id);
+  const teamMembers = useTeamStore((s) => s.members);
+  const workloadPct = useMemo(() => {
+    if (scope === 'self') {
+      const me = teamMembers.find((m) => m.user_id === profileId);
+      return me?.workload_pct ?? 100;
+    }
+    if (scope === 'member') {
+      const m = members.find((mm) => mm.user_id === profileId);
+      // 'member' (foreign view): scopen wir auf den gerade ausgewählten
+      // Member, dessen Daten in entries[] kommen. Wir nehmen den
+      // einzigen, der in members[] steckt.
+      const single = members[0];
+      return (single?.workload_pct ?? m?.workload_pct ?? 100);
+    }
+    // team: gewichteter Durchschnitt
+    if (members.length === 0) return 100;
+    const counts = new Map<string, number>();
+    for (const e of entries) {
+      counts.set(e.user_id, (counts.get(e.user_id) || 0) + 1);
+    }
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const m of members) {
+      const w = counts.get(m.user_id) ?? 0;
+      weightedSum += (m.workload_pct ?? 100) * w;
+      totalWeight += w;
+    }
+    if (totalWeight > 0) return weightedSum / totalWeight;
+    // Fallback: einfacher Schnitt, wenn keine Einträge mapbar sind
+    const simpleSum = members.reduce(
+      (a, m) => a + (m.workload_pct ?? 100),
+      0
+    );
+    return simpleSum / members.length;
+  }, [scope, profileId, teamMembers, members, entries]);
+
   const data = useMemo(
     () =>
       buildReportData(entries, {
@@ -78,8 +122,18 @@ export default function ReportModal({
           role: m.role,
         })),
         projectCategories,
+        workloadPct,
       }),
-    [entries, range, scope, subjectName, members, lens, projectCategories]
+    [
+      entries,
+      range,
+      scope,
+      subjectName,
+      members,
+      lens,
+      projectCategories,
+      workloadPct,
+    ]
   );
 
   const bodyHtml = useMemo(() => renderReportBody(data), [data]);

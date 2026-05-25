@@ -13,8 +13,10 @@
 import type { ReportData } from '../reportData';
 import {
   esc,
+  fmtHours,
   fmtHoursShort,
   interpretLeakPct,
+  interpretOvertime,
   interpretReactiveShare,
   renderBars,
   renderCrisisBanner,
@@ -81,6 +83,34 @@ export function renderBoardBody(data: ReportData): string {
     <div class="board-hero-label">Reaktivität</div>
     <div class="board-hero-value">${k.reactivePct.toFixed(0)}% <span class="scale-badge scale-${reactScale.level}">${reactScale.label}</span></div>
     <div class="board-hero-sub">Anteil der Arbeitszeit in reaktiven Projekten (Medienanfragen, BGÖ, Bürger, Krise, politische Geschäfte). Beschreibt das Profil der Periode — niedrig heißt Strategie-Raum, hoch heißt fremdgetriebener Betrieb.</div>
+  </div>`);
+
+  // Welle 8 — Überstunden-Cell. Strategische Profil-Aussage: liegt die
+  // Periode unter, im Rahmen oder über dem Vertrags-Soll? Bei Teilzeit-
+  // Personen anteilig gekürzt (workloadPct skaliert das Soll).
+  const otScale = interpretOvertime(k.overtimeMs, k.contractMs);
+  const otRatioPct =
+    k.contractMs > 0 ? (k.overtimeMs / k.contractMs) * 100 : 0;
+  let otValue: string;
+  let otSub: string;
+  if (k.contractMs <= 0) {
+    otValue = '—';
+    otSub = 'Zu wenig Arbeitstage im Zeitraum für eine Überstunden-Aussage.';
+  } else if (k.overtimeMs > 0) {
+    otValue = `+${fmtHours(k.overtimeMs)} <span class="scale-badge scale-${otScale.level}">${otScale.label}</span>`;
+    const wlNote =
+      k.workloadPct < 100
+        ? ` Bei ${k.workloadPct.toFixed(0)} % Beschäftigungsgrad anteilig gerechnet.`
+        : '';
+    otSub = `Mehrarbeit gegenüber dem Vertrags-Soll von ${fmtHours(k.contractMs)} (${k.workloadPct.toFixed(0)} % × 8.24 h × ${k.workingDays} Arbeitstage), entspricht ${otRatioPct.toFixed(0)} %.${wlNote} ${esc(otScale.hint)}`;
+  } else {
+    otValue = `−${fmtHours(k.undertimeMs)}`;
+    otSub = `Unter dem Vertrags-Soll von ${fmtHours(k.contractMs)} — die Periode war ${fmtHours(k.undertimeMs)} kürzer (Urlaub, Krankheit, ruhige Phase?).`;
+  }
+  heroRows.push(`<div class="board-hero-cell">
+    <div class="board-hero-label">Überstunden</div>
+    <div class="board-hero-value">${otValue}</div>
+    <div class="board-hero-sub">${otSub}</div>
   </div>`);
 
   const heroHtml = `<div class="board-hero">

@@ -473,6 +473,21 @@ export interface ReportData {
      * Krisen-Modus in den Brillen (gedämpfte Warnungen).
      */
     hasCrisisSlots: boolean;
+    /**
+     * Welle 8 — Vertrags-Soll (workingDays × 8.24 h × workloadPct/100).
+     * Basis für die Überstunden-Berechnung.
+     */
+    contractMs: number;
+    /**
+     * Welle 8 — Überstunden (totalWallclockMs − contractMs, mindestens 0).
+     * Wenn negativ, gibt es keine Überstunden, sondern Unterstunden — die
+     * werden in undertimeMs ausgewiesen.
+     */
+    overtimeMs: number;
+    /** Welle 8 — Unterstunden (max(0, contractMs − totalWallclockMs)). */
+    undertimeMs: number;
+    /** Welle 8 — Effektiver Workload-Anteil, der in die Rechnung floss. */
+    workloadPct: number;
   };
   perMember?: PerMemberRow[];
   breakdowns: {
@@ -591,6 +606,13 @@ interface BuildOptions {
    * Heuristik aus dem Projektnamen zurück.
    */
   projectCategories?: Map<string, ProjectCategory>;
+  /**
+   * Welle 8 — Beschäftigungsgrad in Prozent (1–100). Standard 100. Für
+   * Team-Reports der gewichtete Durchschnitt der Mitglieder-Workloads.
+   * Wirkt auf die Berechnung des Vertrags-Solls (CONTRACT_MS_PER_DAY ×
+   * workloadPct/100) und damit auf die Überstunden-/Unterstunden-Werte.
+   */
+  workloadPct?: number;
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -684,6 +706,12 @@ function countAbsences(entries: TimeEntry[]): AbsenceCount[] {
 
 const MICRO_TASK_MS = 15 * 60_000; // < 15min = Mini-Task
 const HIGH_LOAD_DAY_MS = 10 * 60 * 60_000; // >= 10h Präsenz
+/**
+ * Welle 8 — Vertrags-Soll pro Arbeitstag. 8.24 h ist die NDB-Vorgabe
+ * für Vollzeit; wird in der Überstunden-Berechnung mit workloadPct/100
+ * skaliert (Teilzeit-Personen erhalten ein anteilig kürzeres Soll).
+ */
+const CONTRACT_MS_PER_DAY = 8.24 * 60 * 60_000;
 const MEETING_FORMAT_HINTS = ['meeting', 'sitzung', 'telefon', 'call', 'workshop'];
 const STAKEHOLDER_PROFILE_THRESHOLD_PCT = 10; // Mini-Dossier ab 10% Anteil
 
@@ -1890,6 +1918,19 @@ export function buildReportData(
   const avgWall = workingDays > 0 ? totalWallMs / workingDays : 0;
   const avgPres = workingDays > 0 ? totalPresMs / workingDays : 0;
 
+  // Welle 8 — Vertrags-Soll und Überstunden / Unterstunden. Der Workload
+  // skaliert das tägliche Soll: 100 % = 8.24 h/Tag, 90 % = 7.416 h/Tag.
+  // Berechnung auf totalWallclockMs (vereinigte Tracker-Zeit), nicht auf
+  // Naive — sonst zählen parallele Tracker doppelt als Mehrarbeit.
+  const effectiveWorkloadPct = Math.max(
+    1,
+    Math.min(100, opts.workloadPct ?? 100)
+  );
+  const contractMs =
+    workingDays * CONTRACT_MS_PER_DAY * (effectiveWorkloadPct / 100);
+  const overtimeMs = Math.max(0, totalWallMs - contractMs);
+  const undertimeMs = Math.max(0, contractMs - totalWallMs);
+
   // Tätigkeits-Mix für Produktiv-Quote
   const taetBuckets = new Map<string, number>();
   for (const e of nonAbsence) {
@@ -2702,6 +2743,10 @@ export function buildReportData(
       plannableMs,
       plannablePct,
       hasCrisisSlots,
+      contractMs,
+      overtimeMs,
+      undertimeMs,
+      workloadPct: effectiveWorkloadPct,
     },
     perMember,
     breakdowns,

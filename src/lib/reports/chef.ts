@@ -17,6 +17,7 @@ import {
   fmtHours,
   fmtHoursWithPct,
   formatHalfRange,
+  interpretOvertime,
   interpretReactiveShare,
   renderBars,
   renderCrisisBanner,
@@ -101,6 +102,27 @@ function buildHeadlines(data: ReportData): string {
   } else {
     heads.push(`<b>Sequenzielle Arbeit:</b> Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} — die Person macht ein Ding nach dem anderen, kaum Mehrfachzuordnung pro Slot.`);
   }
+
+  // Welle 8 — Überstunden-Headline. Direkt nach Reaktivität, weil
+  // sie das prägende operative Signal für den Linien-Chef ist: zeigt,
+  // ob das Soll gehalten wurde oder nicht — vertraglich, anteilig für
+  // Teilzeit-Personen.
+  const otScale = interpretOvertime(k.overtimeMs, k.contractMs);
+  const otRatioPct =
+    k.contractMs > 0 ? (k.overtimeMs / k.contractMs) * 100 : 0;
+  const wlNote =
+    k.workloadPct < 100
+      ? ` Bei ${k.workloadPct.toFixed(0)} % Beschäftigungsgrad anteilig gerechnet.`
+      : '';
+  let otHead: string;
+  if (k.contractMs <= 0) {
+    otHead = `<b>Überstunden:</b> zu wenig Arbeitstage im Zeitraum für eine belastbare Aussage.`;
+  } else if (k.overtimeMs > 0) {
+    otHead = `<b>Überstunden ${otScale.label}:</b> +${fmtHours(k.overtimeMs)} über dem Vertrags-Soll von ${fmtHours(k.contractMs)} (${otRatioPct.toFixed(0)} %).${wlNote} ${esc(otScale.hint)}`;
+  } else {
+    otHead = `<b>Unter dem Vertrags-Soll:</b> −${fmtHours(k.undertimeMs)} auf ${fmtHours(k.contractMs)} Sollzeit.${wlNote} Ruhige Periode, Urlaubsanteil oder geplante Entlastung — keine Mehrarbeit zu steuern.`;
+  }
+  heads.push(otHead);
 
   // Tracking-Datenqualität
   const covPct = k.coverage * 100;

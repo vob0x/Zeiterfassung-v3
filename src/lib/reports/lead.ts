@@ -14,10 +14,10 @@ import type { ReportData } from '../reportData';
 import {
   esc,
   fmtHours,
-  fmtHoursShort,
   formatHalfRange,
   interpretCoverage,
   interpretLeakPct,
+  interpretOvertime,
   interpretParallelFactor,
   interpretReactiveShare,
   renderChangePointSection,
@@ -52,23 +52,48 @@ function buildCockpit(data: ReportData): string {
   const k = data.kpis;
   const cards: string[] = [];
 
-  // ── Belastung ────────────────────────────────────────────────────
+  // ── Belastung (Welle 8: Überstunden + 10-h-Tage zusammen) ────────
+  // Cockpit-Karte verschränkt beide Belastungs-Signale: Überstunden als
+  // vertragsrelative Aussage und die 10-h-Tage als gesundheitliche
+  // Schwelle (10 h absolut, nicht workload-skaliert).
   let belastungClass: 'ampel-warn' | 'ampel-ok' | '' = '';
   let belastungValue: string;
   let belastungSub: string;
   const hi = data.weekday.highLoadDaysCount;
-  if (hi >= 3) {
+  const otScaleLead = interpretOvertime(k.overtimeMs, k.contractMs);
+  const otRatioPctLead =
+    k.contractMs > 0 ? (k.overtimeMs / k.contractMs) * 100 : 0;
+  const otValueLead =
+    k.contractMs <= 0
+      ? '—'
+      : k.overtimeMs > 0
+        ? `+${fmtHours(k.overtimeMs)} (${otRatioPctLead.toFixed(0)} %)`
+        : `−${fmtHours(k.undertimeMs)}`;
+  const longDaySentence =
+    hi === 0
+      ? 'Kein einziger Tag über 10 Stunden — die gesundheitliche Schwelle wurde gehalten.'
+      : hi === 1
+        ? '1 Tag über 10 Stunden — im Toleranzbereich.'
+        : `${hi} Tage über 10 Stunden — wiederkehrendes Belastungs-Signal.`;
+  const otSentence =
+    k.contractMs <= 0
+      ? ''
+      : k.overtimeMs > 0
+        ? `Mehrarbeit ${otScaleLead.label} (+${fmtHours(k.overtimeMs)} auf ${fmtHours(k.contractMs)} Sollzeit).`
+        : `Unter dem Vertrags-Soll (${fmtHours(k.contractMs)}), Differenz ${fmtHours(k.undertimeMs)}.`;
+  if (otScaleLead.level === 'high' || hi >= 3) {
     belastungClass = 'ampel-warn';
-    belastungValue = `${hi} lange Tage`;
-    belastungSub = `An ${hi} Tagen lag zwischen erstem und letztem Eintrag mehr als 10 Stunden — überdurchschnittlich lange Tage. <b>Im Gespräch fragen:</b> Was treibt diese Spitzen — Deadline, Personalengpass, bewusste Entscheidung? Und wirkt der Rhythmus tragfähig oder zehrt er?`;
-  } else if (hi >= 1) {
-    belastungValue = `${hi} lange${hi === 1 ? 'r' : ''} Tag${hi === 1 ? '' : 'e'}`;
-    belastungSub = `Vereinzelte lange Tage über 10 Stunden, aber kein durchgängiges Muster. <b>Kurz anhaken:</b> War an diesen Tagen etwas Besonderes — Abgabe, Workshop, Reise — oder bewusst gewählte Intensität?`;
+    belastungSub = `${otSentence} ${longDaySentence} <b>Im Gespräch fragen:</b> Was treibt diese Mehrarbeit — Deadline, Personalengpass, eine bewusste Entscheidung? Trägt der Rhythmus, oder zehrt er?`;
+  } else if (otScaleLead.level === 'elevated' || hi >= 1) {
+    belastungSub = `${otSentence} ${longDaySentence} <b>Kurz anhaken:</b> War an diesen Tagen etwas Besonderes (Abgabe, Workshop, Reise), oder verdichtet sich das Muster?`;
   } else {
     belastungClass = 'ampel-ok';
-    belastungValue = `Ø ${fmtHoursShort(k.avgPresenceMsPerDay)} / Tag`;
-    belastungSub = `Keine Tage über 10 Stunden, solide Routine. <b>Verstärker-Frage:</b> Was hilft dabei, diesen Rhythmus zu halten — und wo steckt die Reserve für besondere Phasen?`;
+    belastungSub = `${otSentence} ${longDaySentence} <b>Verstärker-Frage:</b> Was hilft dabei, diesen Rhythmus zu halten — und wo steckt die Reserve für besondere Phasen?`;
   }
+  belastungValue =
+    k.contractMs > 0
+      ? `${otValueLead} · ${hi} 10-h-Tage`
+      : `${hi} 10-h-Tage`;
   cards.push(`<div class="lead-three-card ${belastungClass}">
     <div class="lead-three-h">Belastung</div>
     <div class="lead-three-v">${belastungValue}</div>

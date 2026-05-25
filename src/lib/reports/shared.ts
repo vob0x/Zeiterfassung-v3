@@ -273,6 +273,49 @@ export function interpretReactiveShare(pct: number): ScaleAssessment {
   };
 }
 
+/**
+ * Welle 8 — Überstunden-Skala, ausgedrückt als Mehrarbeit-Quote
+ * (overtimeMs / contractMs).
+ *   < 5 %: 'im Rahmen' (innerhalb der üblichen Schwankung)
+ *   5 – 15 %: 'auffällig' (spürbare Zusatzbelastung, kann strukturell werden)
+ *   > 15 %: 'strukturell' (Vertragszeit reicht nicht aus, Steuerungs-Thema)
+ *
+ * Bei contractMs ≤ 0 (kein Arbeitstag im Range) wird ein neutrales
+ * '—' zurückgegeben — die Skala greift dann nicht.
+ */
+export function interpretOvertime(
+  overtimeMs: number,
+  contractMs: number
+): ScaleAssessment {
+  if (contractMs <= 0) {
+    return {
+      level: 'normal',
+      label: '—',
+      hint: 'Zu wenig Daten für eine Bewertung.',
+    };
+  }
+  const ratio = overtimeMs / contractMs;
+  if (ratio < 0.05) {
+    return {
+      level: 'normal',
+      label: 'im Rahmen',
+      hint: 'Unter 5 % Mehrarbeit über dem Vertragssoll — innerhalb der üblichen Schwankung.',
+    };
+  }
+  if (ratio < 0.15) {
+    return {
+      level: 'elevated',
+      label: 'auffällig',
+      hint: '5 – 15 % Mehrarbeit über dem Vertragssoll — spürbare Zusatzbelastung, die strukturell werden kann.',
+    };
+  }
+  return {
+    level: 'high',
+    label: 'strukturell',
+    hint: 'Über 15 % Mehrarbeit über dem Vertragssoll — Vertragszeit reicht nicht aus, das ist ein Steuerungs-Thema.',
+  };
+}
+
 /** Tiefer Fokus (Slot ≥ 2h Anteil): <20% fragmentiert, >55% sehr fokussiert. */
 export function interpretDeepFocus(pct: number): ScaleAssessment {
   if (pct < 20)
