@@ -2564,8 +2564,10 @@ export function buildReportData(
     });
   }
 
-  // Wochenend-Arbeit: Coach + Lead.
-  if (weekday.weekendMs > 0 && totalWallMs > 0) {
+  // Wochenend-Arbeit: Coach + Lead. Welle 9.2: braucht ≥ 5 Arbeitstage —
+  // sonst kann 1 Tag = ganzes Wochenende sein, der Anteil ist nicht
+  // aussagekräftig.
+  if (workingDays >= 5 && weekday.weekendMs > 0 && totalWallMs > 0) {
     const weekendShare = (weekday.weekendMs / totalWallMs) * 100;
     if (weekendShare >= 8) {
       findings.push({

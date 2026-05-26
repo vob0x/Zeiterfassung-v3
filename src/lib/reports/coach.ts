@@ -121,7 +121,8 @@ function buildTagline(data: ReportData): string {
   if (hi >= 3) {
     return `An ${hi} von ${data.kpis.workingDays} Arbeitstagen warst du über zehn Stunden im Tracker. Was hat dich an diesen Tagen so lange gehalten — und was ist davon liegen geblieben?`;
   }
-  if (we > 0 && k.totalWallclockMs > 0) {
+  // Welle 9.2 — Wochenend-Anteil braucht ≥ 5 Arbeitstage.
+  if (data.kpis.workingDays >= 5 && we > 0 && k.totalWallclockMs > 0) {
     const wePct = (we / k.totalWallclockMs) * 100;
     if (wePct >= 10) {
       return `${wePct.toFixed(0)}% deiner Stunden fielen aufs Wochenende. War das gewollt — oder reichten die Wochentage nicht?`;
@@ -133,10 +134,12 @@ function buildTagline(data: ReportData): string {
   if (deep < 20 && data.slotLength.totalCount >= 30) {
     return `Deine Stunden verteilen sich auf viele kurze Slots — kaum Blöcke über zwei Stunden. Wo könnte im Wochenplan ein freier Vormittag stehen?`;
   }
-  if (rhythm === 'fix') {
+  // Welle 9.2 — Rhythmus-Aussagen brauchen ≥ 3 Arbeitstage, sonst hat
+  // "fester Rhythmus" oder "gleitend" kein Sample dahinter.
+  if (data.kpis.workingDays >= 3 && rhythm === 'fix') {
     return `Dein Tagesablauf trug einen festen Rhythmus — Start- und Endzeiten lagen eng beieinander.`;
   }
-  if (rhythm === 'gleitend') {
+  if (data.kpis.workingDays >= 3 && rhythm === 'gleitend') {
     return `Dein Tagesablauf war gleitend — Anfangs- und Endzeiten verteilten sich breit über den Zeitraum.`;
   }
   if (top && top.pct >= 50) {
@@ -425,8 +428,9 @@ function buildStrengthsBlock(data: ReportData): string {
     );
   }
 
-  // Verlässlicher Tagesrhythmus
-  if (rhythm === 'fix' || rhythm === 'rhythmisch') {
+  // Verlässlicher Tagesrhythmus. Welle 9.2: Rhythmus-Festigkeit braucht
+  // ≥ 3 Arbeitstage — bei kürzeren Reports keine Aussage.
+  if (data.kpis.workingDays >= 3 && (rhythm === 'fix' || rhythm === 'rhythmisch')) {
     items.push(
       rhythm === 'fix'
         ? `<b>Verlässlicher Rhythmus:</b> deine Start- und Endzeiten lagen eng beieinander. Das gibt dem Tag eine Form, an der du dich orientieren kannst — und anderen ein Zeitfenster, in dem du erreichbar bist.`
@@ -508,8 +512,13 @@ function buildReflectionQuestions(data: ReportData): string {
     );
   }
 
-  // Wochenend-Arbeit
-  if (data.weekday.weekendMs > 0 && data.kpis.totalWallclockMs > 0) {
+  // Wochenend-Arbeit. Welle 9.2: Wochenend-Anteil nur bei ≥ 5 Tagen
+  // sinnvoll — sonst kann 1 Tag = ganzes Wochenende sein.
+  if (
+    data.kpis.workingDays >= 5 &&
+    data.weekday.weekendMs > 0 &&
+    data.kpis.totalWallclockMs > 0
+  ) {
     const wePct =
       (data.weekday.weekendMs / data.kpis.totalWallclockMs) * 100;
     if (wePct >= 8) {
