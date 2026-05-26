@@ -19,7 +19,7 @@ import {
   interpretCoverage,
   interpretLeakPct,
   interpretOvertime,
-  renderOvertimeMethodNote,
+  renderTrackingQualityNote,
   interpretParallelFactor,
   interpretReactiveShare,
   renderChangePointSection,
@@ -117,8 +117,8 @@ function buildCockpit(data: ReportData): string {
     k.contractMs <= 0
       ? ''
       : k.overtimeMs > 0
-        ? `Mehrarbeit ${otScaleLead.label} (+${fmtHours(k.overtimeMs)} auf ${fmtHours(k.contractMs)} Sollzeit).`
-        : `Unter dem Vertrags-Soll (${fmtHours(k.contractMs)}), Differenz ${fmtHours(k.undertimeMs)}.`;
+        ? `${fmtHours(k.effectiveWorkTimeMs)} Arbeitszeit (Präsenz minus 45-min-Pause) vs. ${fmtHours(k.contractMs)} Soll — Mehrarbeit ${otScaleLead.label}, +${fmtHours(k.overtimeMs)}.`
+        : `Arbeitszeit (Präsenz minus Pause): ${fmtHours(k.effectiveWorkTimeMs)} — ${fmtHours(k.undertimeMs)} unter Soll von ${fmtHours(k.contractMs)}.`;
   // Welle 8.4 — Attribution als zweite Zeile in der Karte (kursiv,
   // klein, mit Methoden-Hinweis). Nur bei tatsächlicher Mehrarbeit.
   let attributionLine = '';
@@ -129,10 +129,11 @@ function buildCockpit(data: ReportData): string {
       .join(', ');
     attributionLine = ` <i>Mehrarbeit lief vor allem in: ${parts} — nach Tagesreihenfolge zugeordnet.</i>`;
   }
-  // Welle 8.9 — Transparenz, falls Naive deutlich über Wallclock liegt.
-  const methodLine = renderOvertimeMethodNote(
-    k.totalNaiveMs,
-    k.totalWallclockMs
+  // Welle 9 — Tracking-Disziplin-Hinweis bei ungetrackten Lücken.
+  const methodLine = renderTrackingQualityNote(
+    k.totalPresenceMs,
+    k.totalWallclockMs,
+    k.pauseDeductMs
   );
   if (otScaleLead.level === 'high' || hi >= 3) {
     belastungClass = 'ampel-warn';

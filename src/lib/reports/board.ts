@@ -18,7 +18,7 @@ import {
   fmtHoursShort,
   interpretLeakPct,
   interpretOvertime,
-  renderOvertimeMethodNote,
+  renderTrackingQualityNote,
   interpretReactiveShare,
   renderBars,
   renderCrisisBanner,
@@ -104,10 +104,11 @@ export function renderBoardBody(data: ReportData): string {
       k.workloadPct < 100
         ? ` Bei ${k.workloadPct.toFixed(0)} % Beschäftigungsgrad anteilig gerechnet.`
         : '';
-    // Welle 8.9 — Transparenz, wenn Naive deutlich über Wallclock liegt.
-    const methodNote = renderOvertimeMethodNote(
-      k.totalNaiveMs,
-      k.totalWallclockMs
+    // Welle 9 — Tracking-Disziplin-Hinweis bei ungetrackten Lücken.
+    const methodNote = renderTrackingQualityNote(
+      k.totalPresenceMs,
+      k.totalWallclockMs,
+      k.pauseDeductMs
     );
     // Welle 8.4 — Beleg: in welches Projekt floss die Mehrarbeit?
     // Methoden-Hinweis dezent (kursiv eingeklammert).
@@ -115,10 +116,10 @@ export function renderBoardBody(data: ReportData): string {
     const attrNote = topOt
       ? ` Dominantes Projekt in der Überzeit: <b>${esc(topOt.projekt)}</b> (${fmtHours(topOt.ms)}) — <i>nach Tagesreihenfolge zugeordnet.</i>`
       : '';
-    otSub = `Mehrarbeit gegenüber dem Vertrags-Soll von ${fmtHours(k.contractMs)} (${k.workloadPct.toFixed(0)} % × 8 h 24 min × ${k.workingDays} Arbeitstage), entspricht ${otRatioPct.toFixed(0)} %.${wlNote}${methodNote}${attrNote}`;
+    otSub = `Arbeitszeit (Präsenz minus 45-min-Pause): ${fmtHours(k.effectiveWorkTimeMs)} vs. Soll ${fmtHours(k.contractMs)} (${k.workloadPct.toFixed(0)} % × 8 h 24 min × ${k.workingDays} Arbeitstage), Saldo ${otRatioPct.toFixed(0)} %.${wlNote}${methodNote}${attrNote}`;
   } else {
     otValue = `−${fmtHours(k.undertimeMs)}`;
-    otSub = `Unter dem Vertrags-Soll von ${fmtHours(k.contractMs)} — die Periode war ${fmtHours(k.undertimeMs)} kürzer (Urlaub, Krankheit, ruhige Phase?).`;
+    otSub = `Arbeitszeit (Präsenz minus Pause): ${fmtHours(k.effectiveWorkTimeMs)} — ${fmtHours(k.undertimeMs)} unter Soll von ${fmtHours(k.contractMs)}. Urlaubstage, Krankheit oder geringere Auslastung.`;
   }
   heroRows.push(`<div class="board-hero-cell">
     <div class="board-hero-label">Überstunden</div>

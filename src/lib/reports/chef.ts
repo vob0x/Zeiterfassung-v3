@@ -18,7 +18,7 @@ import {
   fmtHoursWithPct,
   formatHalfRange,
   interpretOvertime,
-  renderOvertimeMethodNote,
+  renderTrackingQualityNote,
   interpretReactiveShare,
   renderBars,
   renderCrisisBanner,
@@ -115,16 +115,19 @@ function buildHeadlines(data: ReportData): string {
     k.workloadPct < 100
       ? ` Bei ${k.workloadPct.toFixed(0)} % Beschäftigungsgrad anteilig gerechnet.`
       : '';
-  // Welle 8.9 — Transparenz: erklärt, warum die rechnerische Stundenzahl
-  // unter der naiv erfassten liegt, wenn parallele Tracker liefen.
-  const methodNote = renderOvertimeMethodNote(k.totalNaiveMs, k.totalWallclockMs);
+  // Welle 9 — Tracking-Disziplin-Hinweis bei ungetrackten Lücken.
+  const methodNote = renderTrackingQualityNote(
+    k.totalPresenceMs,
+    k.totalWallclockMs,
+    k.pauseDeductMs
+  );
   let otHead: string;
   if (k.contractMs <= 0) {
-    otHead = `<b>Überstunden:</b> zu wenig Arbeitstage im Zeitraum für eine belastbare Aussage.`;
+    otHead = `<b>Überstunden:</b> zu wenig Arbeitstage im Zeitraum für eine tragfähige Aussage.`;
   } else if (k.overtimeMs > 0) {
-    otHead = `<b>Überstunden ${otScale.label}:</b> +${fmtHours(k.overtimeMs)} über dem Vertrags-Soll von ${fmtHours(k.contractMs)} (${otRatioPct.toFixed(0)} %).${wlNote} ${esc(otScale.hint)}${methodNote}`;
+    otHead = `<b>Überstunden ${otScale.label}:</b> ${fmtHours(k.effectiveWorkTimeMs)} Arbeitszeit (Präsenz minus 45-min-Pause) vs. ${fmtHours(k.contractMs)} Soll — +${fmtHours(k.overtimeMs)} (${otRatioPct.toFixed(0)} %).${wlNote} ${esc(otScale.hint)}${methodNote}`;
   } else {
-    otHead = `<b>Unter dem Vertrags-Soll:</b> −${fmtHours(k.undertimeMs)} auf ${fmtHours(k.contractMs)} Sollzeit.${wlNote} Ruhige Periode, Urlaubsanteil oder geplante Entlastung — keine Mehrarbeit zu steuern.${methodNote}`;
+    otHead = `<b>Unter dem Vertrags-Soll:</b> ${fmtHours(k.effectiveWorkTimeMs)} Arbeitszeit gegenüber ${fmtHours(k.contractMs)} Soll, −${fmtHours(k.undertimeMs)}.${wlNote} Urlaubsanteil, Krankheit oder geringere Auslastung — keine Mehrarbeit zu steuern.${methodNote}`;
   }
   heads.push(otHead);
 

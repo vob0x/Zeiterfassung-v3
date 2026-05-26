@@ -81,27 +81,29 @@ export function fmtHoursWithPct(ms: number, pct: number): string {
 }
 
 /**
- * Welle 8.9 — Transparenz-Hinweis für die Überstunden-Rechnung.
+ * Welle 9 — Transparenz, wenn die Tracker-Daten innerhalb der
+ * Präsenz signifikant Lücken aufweisen. Hilft dem User zu verstehen,
+ * ob die Überstunden-Aussage robust ist oder auf einem Bauchmaß-
+ * Pausenabzug beruht.
  *
- * Die Überstunden vergleichen das Vertrags-Soll mit Wallclock (vereinigte
- * Tracker-Zeit). Wenn jemand parallel mehrere Tracker laufen lässt, kann
- * die naiv erfasste Stundensumme deutlich höher liegen als das, was die
- * App rechnet — und das verwirrt. Dieser Helper liefert einen knappen
- * Methoden-Satz, aber nur wenn die Differenz spürbar ist (> 5 %); sonst
- * leerer String, kein Lärm im Bericht.
- *
- * Beispiel-Output (bei MT-Faktor 1.4):
- *   "Vergleich auf Wallclock: 46:00h erfasst (Naive-Summe) entsprechen
- *    32:50h tatsächlicher Arbeitszeit, wenn parallele Tracker vereinigt
- *    werden — auf dieser Zahl basiert die Überstunden-Rechnung."
+ * Fires only when: (Präsenz - Wallclock) / Präsenz > 0.15 — also
+ * wenn mehr als 15 % der Anwesenheit nicht durch aktive Tracker
+ * abgedeckt war (außerhalb des 45-min-Pausen-Abzugs).
  */
-export function renderOvertimeMethodNote(
-  naiveMs: number,
-  wallclockMs: number
+export function renderTrackingQualityNote(
+  presenceMs: number,
+  wallclockMs: number,
+  pauseDeductMs: number
 ): string {
-  if (wallclockMs <= 0) return '';
-  if (naiveMs / wallclockMs < 1.05) return '';
-  return ` <i>Vergleich auf Wallclock: ${fmtHours(naiveMs)} erfasst (Naive-Summe) entsprechen ${fmtHours(wallclockMs)} tatsächlicher Arbeitszeit, wenn parallele Tracker vereinigt werden — auf dieser Zahl basiert die Überstunden-Rechnung.</i>`;
+  if (presenceMs <= 0) return '';
+  const trackedActiveMs = wallclockMs;
+  const presenceMinusPause = Math.max(0, presenceMs - pauseDeductMs);
+  if (presenceMinusPause <= 0) return '';
+  const untrackedActive = presenceMinusPause - trackedActiveMs;
+  if (untrackedActive <= 0) return '';
+  const untrackedPct = untrackedActive / presenceMinusPause;
+  if (untrackedPct < 0.15) return '';
+  return ` <i>Hinweis zur Tracking-Disziplin: ${fmtHours(presenceMs)} Präsenz, davon ${fmtHours(wallclockMs)} mit Trackern aktiv. ${fmtHours(untrackedActive)} liegen außerhalb des 45-min-Pausen-Abzugs ohne Tracker — die Überstunden-Aussage ist robust, wenn das tatsächlich Pausen oder Wartezeit waren, aber unsicher, wenn ungetrackte Arbeit dazwischen lag.</i>`;
 }
 
 /**

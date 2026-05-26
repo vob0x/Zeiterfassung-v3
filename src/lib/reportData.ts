@@ -489,6 +489,15 @@ export interface ReportData {
     undertimeMs: number;
     /** Welle 8 — Effektiver Workload-Anteil, der in die Rechnung floss. */
     workloadPct: number;
+    /**
+     * Welle 9 — Effektive Arbeitszeit (Präsenz minus 45 min Pause pro
+     * Tag mit ≥ 5:30 Präsenz). Grundlage für die Überstunden-Berechnung.
+     */
+    effectiveWorkTimeMs: number;
+    /**
+     * Welle 9 — Pausen-Abzug-Gesamtsumme, für Transparenz im Bericht.
+     */
+    pauseDeductMs: number;
   };
   perMember?: PerMemberRow[];
   breakdowns: {
@@ -729,6 +738,15 @@ const HIGH_LOAD_DAY_MS = 10 * 60 * 60_000; // >= 10h Präsenz
  * (das wäre 8 h 14 min 24 s und entspräche keinem Vertrags-Standard).
  */
 const CONTRACT_MS_PER_DAY = 8.4 * 60 * 60_000;
+/**
+ * Welle 9 — Pausen-Abzug pro Arbeitstag bei Präsenz-basierter
+ * Arbeitszeit-Schätzung. 45 min entspricht dem Schweizer Büro-
+ * Mittagsschnitt (oft 30 min am Pult plus 15 min Bewegung). Bei
+ * Präsenz < 5:30 wird kein Abzug gemacht (kein gesetzliches Pausen-
+ * Recht); ab 5:30 voll abgezogen.
+ */
+const PAUSE_MS_PER_DAY = 45 * 60_000;
+const PAUSE_THRESHOLD_MS = 5.5 * 60 * 60_000;
 const MEETING_FORMAT_HINTS = ['meeting', 'sitzung', 'telefon', 'call', 'workshop'];
 const STAKEHOLDER_PROFILE_THRESHOLD_PCT = 10; // Mini-Dossier ab 10% Anteil
 
@@ -1997,18 +2015,28 @@ export function buildReportData(
   const avgWall = workingDays > 0 ? totalWallMs / workingDays : 0;
   const avgPres = workingDays > 0 ? totalPresMs / workingDays : 0;
 
-  // Welle 8 — Vertrags-Soll und Überstunden / Unterstunden. Der Workload
-  // skaliert das tägliche Soll: 100 % = 8 h 24 min/Tag, 90 % = 7 h 34 min/Tag.
-  // Berechnung auf totalWallclockMs (vereinigte Tracker-Zeit), nicht auf
-  // Naive — sonst zählen parallele Tracker doppelt als Mehrarbeit.
+  // Welle 8 — Vertrags-Soll. Der Workload skaliert das tägliche Soll:
+  // 100 % = 8 h 24 min/Tag, 90 % = 7 h 34 min/Tag.
   const effectiveWorkloadPct = Math.max(
     1,
     Math.min(100, opts.workloadPct ?? 100)
   );
   const contractMs =
     workingDays * CONTRACT_MS_PER_DAY * (effectiveWorkloadPct / 100);
-  const overtimeMs = Math.max(0, totalWallMs - contractMs);
-  const undertimeMs = Math.max(0, contractMs - totalWallMs);
+
+  // Welle 9 — Effektive Arbeitszeit als Vertrags-Vergleichsgröße.
+  // Präsenz minus 45 min Pausen-Abzug pro Tag mit ≥ 5:30 Präsenz.
+  // Tage unter 5:30 Präsenz haben keinen Pausen-Abzug (kein
+  // gesetzlicher Pausen-Anspruch). Wallclock und Naive bleiben als
+  // Sekundär-Größen erhalten — für Tracking-Disziplin-Note und
+  // User-Wahrnehmung.
+  let pauseDeductMs = 0;
+  dayPresMs.forEach((presMs) => {
+    if (presMs >= PAUSE_THRESHOLD_MS) pauseDeductMs += PAUSE_MS_PER_DAY;
+  });
+  const effectiveWorkTimeMs = Math.max(0, totalPresMs - pauseDeductMs);
+  const overtimeMs = Math.max(0, effectiveWorkTimeMs - contractMs);
+  const undertimeMs = Math.max(0, contractMs - effectiveWorkTimeMs);
 
   // Tätigkeits-Mix für Produktiv-Quote
   const taetBuckets = new Map<string, number>();
@@ -2862,6 +2890,8 @@ export function buildReportData(
       overtimeMs,
       undertimeMs,
       workloadPct: effectiveWorkloadPct,
+      effectiveWorkTimeMs,
+      pauseDeductMs,
     },
     perMember,
     breakdowns,

@@ -19,7 +19,7 @@ import {
   dayPartLabel,
   rhythmLabel,
   interpretOvertime,
-  renderOvertimeMethodNote,
+  renderTrackingQualityNote,
   renderCrisisBanner,
   renderTop3TimeFlow,
 } from './shared';
@@ -276,31 +276,25 @@ function buildCoachParagraphs(data: ReportData): string {
     const attrSentence = topOt
       ? ` Nach Stunde 8:24 lief vor allem <b>${esc(topOt.projekt)}</b> — das ist auch das Projekt, das in den langen Tagen dominierte. <i>(nach Tagesreihenfolge der Slots zugeordnet.)</i>`
       : '';
-    // Welle 8.9 — Wallclock-Disclaimer, falls Naive deutlich darüber liegt.
-    const methodSentence = renderOvertimeMethodNote(
-      data.kpis.totalNaiveMs,
-      data.kpis.totalWallclockMs
+    // Welle 9 — Tracking-Disziplin-Note, falls Tracker-Lücken außerhalb
+    // des 45-min-Pausenabzugs auffällig sind.
+    const methodSentence = renderTrackingQualityNote(
+      data.kpis.totalPresenceMs,
+      data.kpis.totalWallclockMs,
+      data.kpis.pauseDeductMs
     );
     if (otScaleCoach.level === 'high') {
       paras.push(
-        `Eine harte Zahl: du hast in dieser Periode <b>${fmtHours(data.kpis.overtimeMs)}</b> über dem Vertrags-Soll gearbeitet (${otRatioPct.toFixed(0)} % Mehrarbeit). Das ist nicht mehr Schwankung, das ist strukturell — Vertragszeit reicht für diesen Arbeitsanfall nicht aus.${attrSentence}${methodSentence} Geht das auf Dauer, oder fehlt dir am Wochenende schon die Erholung für die nächste Woche?`
+        `Du warst in dieser Periode <b>${fmtHours(data.kpis.totalPresenceMs)}</b> präsent — abzüglich Pausen-Schnitt <b>${fmtHours(data.kpis.effectiveWorkTimeMs)}</b> Arbeitszeit. Das sind <b>${fmtHours(data.kpis.overtimeMs)}</b> über dem Vertrags-Soll von ${fmtHours(data.kpis.contractMs)} (${otRatioPct.toFixed(0)} % Mehrarbeit). Das ist nicht mehr Schwankung, das ist strukturell — Vertragszeit reicht für diesen Arbeitsanfall nicht aus.${attrSentence}${methodSentence} Geht das auf Dauer, oder fehlt dir am Wochenende schon die Erholung für die nächste Woche?`
       );
     } else if (otScaleCoach.level === 'elevated') {
       paras.push(
-        `Zur Einordnung: rund <b>${fmtHours(data.kpis.overtimeMs)}</b> Mehrarbeit gegenüber dem Vertrags-Soll (${otRatioPct.toFixed(0)} %). Eine Periode lässt sich so überbrücken, mehrere hintereinander zehren an der Reserve.${attrSentence}${methodSentence} War das eine vorübergehende Phase, oder das neue Normal?`
+        `Zur Einordnung: nach Präsenz minus 45-min-Pause hast du rund <b>${fmtHours(data.kpis.overtimeMs)}</b> über dem Vertrags-Soll gearbeitet (${otRatioPct.toFixed(0)} %). Eine Periode lässt sich so überbrücken, mehrere hintereinander zehren an der Reserve.${attrSentence}${methodSentence} War das eine vorübergehende Phase, oder das neue Normal?`
       );
     } else if (data.kpis.undertimeMs > 30 * 60 * 60_000) {
       // > 30 h unter Soll — meist Urlaub/Krankheit, einmal kurz benennen
       paras.push(
-        `Die Periode lag <b>${fmtHours(data.kpis.undertimeMs)}</b> unter dem Vertrags-Soll — Urlaubstage, Krankheit oder eine bewusst ruhige Phase. Wenn es Erholung war: hat sie getragen, oder reicht sie für das, was als Nächstes kommt?${methodSentence}`
-      );
-    } else if (data.kpis.undertimeMs > 0 && methodSentence) {
-      // Welle 8.9 — kleine Unterstunden + paralleles Tracking: oft sieht
-      // das wie ein Bug aus, weil die Naive-Summe deutlich darüber liegt.
-      // Eine kurze Erklärung räumt den Eindruck aus, ohne den Bericht
-      // mit Mathematik vollzustopfen.
-      paras.push(
-        `Rechnerisch lag die Periode ${fmtHours(data.kpis.undertimeMs)} unter dem Vertrags-Soll von ${fmtHours(data.kpis.contractMs)} — das wirkt erst seltsam, wenn du auf die naiv erfassten Stunden schaust.${methodSentence}`
+        `Die Periode lag <b>${fmtHours(data.kpis.undertimeMs)}</b> unter dem Vertrags-Soll — Urlaubstage, Krankheit oder eine reduzierte Auslastung. Wenn es Erholung war: hat sie getragen, oder reicht sie für das, was als Nächstes kommt?${methodSentence}`
       );
     }
   }
