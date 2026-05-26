@@ -397,6 +397,14 @@ export interface NextActionData {
   value?: number;
   /** Zweiter Beleg-Wert (z. B. Stunden), für Sätze. */
   secondaryValue?: number;
+  /**
+   * Welle 9.3 — Nur bei kind='routine' relevant. True, wenn die Periode
+   * Mehrarbeit zeigt (overtimeMs > 0 oder effectiveWorkTimeMs > 105 %
+   * vom Vertrags-Soll), aber keine spezifische Steuerungs-Empfehlung
+   * gegriffen hat. Brillen wählen dann eine "aktiv, aber keine konkrete
+   * Steuerungs-Frage"-Formulierung statt einer "ruhig"-Aussage.
+   */
+  routineActive?: boolean;
 }
 
 /**
@@ -463,7 +471,15 @@ export function buildNextActionData(data: ReportData): NextActionData {
     };
   }
 
-  return { kind: 'routine' };
+  // Welle 9.3 — Routine-Fallback: unterscheiden zwischen "aktive Periode
+  // ohne konkretes Steuerungs-Signal" (Mehrarbeit lief, aber keine Stack-
+  // Regel hat gegriffen) und "tatsächlich ruhig". Nie das Wort "ruhig"
+  // verwenden, wenn jemand über Soll gearbeitet hat.
+  const k = data.kpis;
+  const routineActive =
+    k.overtimeMs > 0 ||
+    (k.contractMs > 0 && k.effectiveWorkTimeMs > k.contractMs * 1.05);
+  return { kind: 'routine', routineActive };
 }
 
 /* ─────────────────────────────────────────────────────────────────────

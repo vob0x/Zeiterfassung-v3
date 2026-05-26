@@ -72,7 +72,10 @@ function buildNextAction(data: ReportData): string {
       sentence = `Im nächsten 1:1 mit der Person über die Konzentration auf <b>${esc(a.subject || '—')}</b> sprechen (${(a.value ?? 0).toFixed(0)} % der Zeit) — strategisch gewollt, oder Diversifikation als Auftrag?`;
       break;
     case 'routine':
-      sentence = `Im 1:1 ohne Krisen-Punkte: welche zwei Mandanten sollen in der nächsten Periode bewusst mehr Gewicht bekommen, welche weniger?`;
+      // Welle 9.3 — aktiv vs. tatsächlich unauffällig trennen.
+      sentence = a.routineActive
+        ? `Im 1:1 ansprechen: die Periode war aktiv (Mehrarbeit gegenüber Soll), aber kein einzelnes Steuerungs-Thema sticht heraus — wo lief die Energie hin, und welche zwei Mandanten sollen in der nächsten Periode bewusst mehr oder weniger Gewicht bekommen?`
+        : `Im 1:1 ohne Krisen-Punkte: welche zwei Mandanten sollen in der nächsten Periode bewusst mehr Gewicht bekommen, welche weniger?`;
       break;
   }
   return `<div class="lead-hebel" style="margin-top:18px">

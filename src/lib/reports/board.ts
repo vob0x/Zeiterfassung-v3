@@ -191,7 +191,10 @@ function buildNextActionLine(data: ReportData): string {
       sentence = `Diversifikation neben <b>${esc(a.subject || '—')}</b> als Mandat für die kommende Periode setzen.`;
       break;
     case 'routine':
-      sentence = `Routine — kein akuter Steuerungs-Bedarf, weiter beobachten.`;
+      // Welle 9.3 — aktiv vs. unauffällig differenzieren, "ruhig" raus.
+      sentence = a.routineActive
+        ? `Stand: aktiv (Mehrarbeit gegenüber Soll), aber keine konkrete Steuerungs-Frage akut. Beobachten und im nächsten Bericht prüfen, ob ein Muster entsteht.`
+        : `Kein akuter Steuerungs-Bedarf — beim nächsten Bericht wieder schauen.`;
       break;
   }
   return `<div class="board-trend" style="background:#fff8eb;border-left:4px solid #C9A962">

@@ -86,7 +86,11 @@ function buildNextAction(data: ReportData): string {
       sentence = `Beim nächsten Wochen-Start: welcher der anderen Mandanten braucht diese Woche eine bewusste Stunde von dir — auch wenn <b>${esc(a.subject || '—')}</b> drückt?`;
       break;
     case 'routine':
-      sentence = `Eine ruhige Periode — nimm dir für die nächste Woche eine Sache vor, die nicht reagieren ist, sondern gestalten. Was wäre das konkret?`;
+      // Welle 9.3 — unterscheiden zwischen aktiv-aber-undefiniert
+      // und tatsächlich-ruhig. "Ruhig" verschwindet ganz.
+      sentence = a.routineActive
+        ? `Aktive Periode ohne konkretes Steuerungs-Signal — bewusst eine Sache wählen, an der du diese Woche dranbleibst. Was wäre das?`
+        : `Keine akuten Themen — nimm dir für die nächste Woche eine Sache vor, die gestaltet statt reagiert. Was wäre das konkret?`;
       break;
   }
   return `<div class="coach-questions">
@@ -145,7 +149,14 @@ function buildTagline(data: ReportData): string {
   if (top && top.pct >= 50) {
     return `Mehr als die Hälfte deiner Zeit floss zu <b>${esc(top.name)}</b>. Eine klare Wahl — bewusst oder umstandsbedingt?`;
   }
-  return `Eine ruhige Periode ohne große Auffälligkeiten — solide Routine, kein Drama in den Zahlen.`;
+  // Welle 9.3 — Default-Tagline: bei Mehrarbeit nicht "ruhig" sagen.
+  if (
+    k.overtimeMs > 0 ||
+    (k.contractMs > 0 && k.effectiveWorkTimeMs > k.contractMs * 1.05)
+  ) {
+    return `Eine aktive Periode ohne eine einzige Auffälligkeit, die sich aufdrängt — kein Drama in den Zahlen, aber die Arbeit lief deutlich.`;
+  }
+  return `Eine Periode ohne große Auffälligkeiten — solide Routine, kein Drama in den Zahlen.`;
 }
 
 /** Drei persönlich relevante KPIs — Präsenz, Hochlast, Wochenende. */

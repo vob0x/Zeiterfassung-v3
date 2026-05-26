@@ -449,6 +449,13 @@ function pickPriorityAction(data: ReportData): string {
     return `Bei <b>${esc(top.name)}</b> als Hauptmandant: Versickerungs-Anteil ${k.leakPct.toFixed(0)}% (${fmtHours(k.leakMs)}) als „nicht produktiv" markiert. Mandats-Schnitt prüfen — bindet der Auftrag in einem Maß, dass Wertschöpfung untergeht?`;
   }
 
-  // Default: keine roten Flaggen, Routine trägt
+  // Default: keine roten Flaggen, Routine trägt. Welle 9.3 — aktiv vs.
+  // tatsächlich unauffällig trennen, "ruhig" verschwindet ganz.
+  const routineActive =
+    k.overtimeMs > 0 ||
+    (k.contractMs > 0 && k.effectiveWorkTimeMs > k.contractMs * 1.05);
+  if (routineActive) {
+    return `Aktive Periode (Mehrarbeit gegenüber Soll), aber kein einzelnes Steuerungs-Thema sticht heraus. Beobachten, ob beim nächsten Bericht ein Muster sichtbar wird — bis dahin im Stand der gewohnten Steuerung weiterfahren.`;
+  }
   return `Keine akuten Hebel — Lage beobachten, im Stand der gewohnten Steuerung weiterfahren. Energie für die nächste Periode anderweitig setzen.`;
 }
