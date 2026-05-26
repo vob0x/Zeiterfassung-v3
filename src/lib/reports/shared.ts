@@ -1241,6 +1241,20 @@ export function dayPartLabel(part: string): string {
   return 'gemischt über den Tag';
 }
 
+/**
+ * Welle 9.1 — Tagesteil als konkreter Satz statt Adjektiv-Floskel.
+ * "mittags-zentriert" sagt nichts; "Schwerpunkt lag zwischen 12 und
+ * 18 Uhr" sagt etwas. Bei 'gemischt' leerer String — kein Satz, der
+ * nichts aussagt.
+ */
+export function dayPartSentence(part: string): string {
+  if (part === 'morgens') return 'Schwerpunkt deiner Arbeit lag vor allem zwischen 6 und 12 Uhr.';
+  if (part === 'mittags') return 'Schwerpunkt deiner Arbeit lag zwischen 12 und 18 Uhr.';
+  if (part === 'abends') return 'Schwerpunkt deiner Arbeit lag nach 18 Uhr.';
+  if (part === 'nachts') return 'Schwerpunkt deiner Arbeit lag zwischen 23 und 6 Uhr.';
+  return '';
+}
+
 /** Rhythmus-Label für Sprachausgabe. */
 export function rhythmLabel(r: 'fix' | 'rhythmisch' | 'gleitend'): string {
   if (r === 'fix') return 'fester Tagesrhythmus';

@@ -16,7 +16,7 @@ import {
   esc,
   fmtHours,
   fmtHoursShort,
-  dayPartLabel,
+  dayPartSentence,
   rhythmLabel,
   interpretOvertime,
   renderTrackingQualityNote,
@@ -214,16 +214,28 @@ function buildCoachParagraphs(data: ReportData): string {
     paras.push(seg);
   }
 
-  // Rhythmus + Tagesteil
-  const rhythmDesc = rhythmLabel(rhythm);
-  const partDesc = dayPartLabel(part);
+  // Rhythmus + Tagesteil. Welle 9.1: Grammatik fixen, "mittags-zentriert"
+  // konkret übersetzen, "gemischt" weglassen. Welle 9.2: Rhythmus-Block
+  // erst ab 3 Arbeitstagen — bei kürzeren Reports gar keine Aussage.
   const burstPart =
     burst.longestBurstMin >= 240
       ? ` Deine längste Slot-Kette ohne Pause: ${Math.round(burst.longestBurstMin / 60)} Stunden am ${esc(burst.longestBurstDate || '')}.`
       : '';
-  paras.push(
-    `Du arbeitetest mit einem ${rhythmDesc} und warst ${partDesc}.${burstPart}`
-  );
+  if (data.kpis.workingDays >= 3) {
+    const rhythmDesc = rhythmLabel(rhythm);
+    const partSentence = dayPartSentence(part);
+    if (partSentence) {
+      paras.push(
+        `Du hast mit einem ${rhythmDesc} gearbeitet. ${partSentence}${burstPart}`
+      );
+    } else {
+      paras.push(
+        `Du hast mit einem ${rhythmDesc} gearbeitet.${burstPart}`
+      );
+    }
+  } else if (burstPart) {
+    paras.push(burstPart.trim());
+  }
 
   // Fokus-Tiefe
   if (data.slotLength.totalCount >= 20) {

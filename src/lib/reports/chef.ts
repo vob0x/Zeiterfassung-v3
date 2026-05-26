@@ -450,5 +450,5 @@ function pickPriorityAction(data: ReportData): string {
   }
 
   // Default: keine roten Flaggen, Routine trägt
-  return `Stabile Linienlage — keine operativen Hebel akut nötig. Beobachten reicht; Energie für die nächste Periode anderweitig setzen.`;
+  return `Keine akuten Hebel — Lage beobachten, im Stand der gewohnten Steuerung weiterfahren. Energie für die nächste Periode anderweitig setzen.`;
 }
