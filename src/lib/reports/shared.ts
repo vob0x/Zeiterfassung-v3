@@ -81,6 +81,30 @@ export function fmtHoursWithPct(ms: number, pct: number): string {
 }
 
 /**
+ * Welle 8.9 — Transparenz-Hinweis für die Überstunden-Rechnung.
+ *
+ * Die Überstunden vergleichen das Vertrags-Soll mit Wallclock (vereinigte
+ * Tracker-Zeit). Wenn jemand parallel mehrere Tracker laufen lässt, kann
+ * die naiv erfasste Stundensumme deutlich höher liegen als das, was die
+ * App rechnet — und das verwirrt. Dieser Helper liefert einen knappen
+ * Methoden-Satz, aber nur wenn die Differenz spürbar ist (> 5 %); sonst
+ * leerer String, kein Lärm im Bericht.
+ *
+ * Beispiel-Output (bei MT-Faktor 1.4):
+ *   "Vergleich auf Wallclock: 46:00h erfasst (Naive-Summe) entsprechen
+ *    32:50h tatsächlicher Arbeitszeit, wenn parallele Tracker vereinigt
+ *    werden — auf dieser Zahl basiert die Überstunden-Rechnung."
+ */
+export function renderOvertimeMethodNote(
+  naiveMs: number,
+  wallclockMs: number
+): string {
+  if (wallclockMs <= 0) return '';
+  if (naiveMs / wallclockMs < 1.05) return '';
+  return ` <i>Vergleich auf Wallclock: ${fmtHours(naiveMs)} erfasst (Naive-Summe) entsprechen ${fmtHours(wallclockMs)} tatsächlicher Arbeitszeit, wenn parallele Tracker vereinigt werden — auf dieser Zahl basiert die Überstunden-Rechnung.</i>`;
+}
+
+/**
  * Welle 8.2 — Top-3-Zeitfresser-Block. Liefert einen Satz wie
  * „In dieser Periode sind 28 h in <b>Projekt X</b>, 22 h in <b>Y</b>
  * und 18 h in <b>Z</b> geflossen." Leerer String, wenn keine Rows da.

@@ -475,7 +475,7 @@ export interface ReportData {
      */
     hasCrisisSlots: boolean;
     /**
-     * Welle 8 — Vertrags-Soll (workingDays × 8.24 h × workloadPct/100).
+     * Welle 8 — Vertrags-Soll (workingDays × 8 h 24 min × workloadPct/100).
      * Basis für die Überstunden-Berechnung.
      */
     contractMs: number;
@@ -583,7 +583,7 @@ export interface ReportData {
   composites: CompositeFinding[];
   /**
    * Welle 8.4 — Überstunden-Attribution nach Projekten. Pro Tag wird
-   * chronologisch durchgegangen; alles, was nach Stunde 8.24 erfasst
+   * chronologisch durchgegangen; alles, was nach Stunde 8:24 erfasst
    * wurde, dem laufenden Projekt zugeschrieben. Top 5 Projekte mit
    * absoluter Mehrarbeit und Anteil am Gesamt-Overflow. Leeres Array,
    * wenn es im Range keine Mehrarbeit gab.
@@ -720,11 +720,15 @@ function countAbsences(entries: TimeEntry[]): AbsenceCount[] {
 const MICRO_TASK_MS = 15 * 60_000; // < 15min = Mini-Task
 const HIGH_LOAD_DAY_MS = 10 * 60 * 60_000; // >= 10h Präsenz
 /**
- * Welle 8 — Vertrags-Soll pro Arbeitstag. 8.24 h ist die NDB-Vorgabe
- * für Vollzeit; wird in der Überstunden-Berechnung mit workloadPct/100
- * skaliert (Teilzeit-Personen erhalten ein anteilig kürzeres Soll).
+ * Welle 8 — Vertrags-Soll pro Arbeitstag. 8 h 24 min ist die Bundes-
+ * Vorgabe für Vollzeit (42-h-Woche / 5). Der Wert wird in der
+ * Überstunden-Berechnung mit workloadPct/100 skaliert — Teilzeit-
+ * Personen erhalten ein anteilig kürzeres Soll.
+ *
+ * Hinweis: 8.4 Dezimalstunden = 8 h 24 min. NICHT 8.24 h decimal
+ * (das wäre 8 h 14 min 24 s und entspräche keinem Vertrags-Standard).
  */
-const CONTRACT_MS_PER_DAY = 8.24 * 60 * 60_000;
+const CONTRACT_MS_PER_DAY = 8.4 * 60 * 60_000;
 const MEETING_FORMAT_HINTS = ['meeting', 'sitzung', 'telefon', 'call', 'workshop'];
 const STAKEHOLDER_PROFILE_THRESHOLD_PCT = 10; // Mini-Dossier ab 10% Anteil
 
@@ -1883,11 +1887,11 @@ export function detectDataQualityIssues(entries: TimeEntry[]): DataQualityIssue[
 /**
  * Schätzt, welche Projekte die Überstunden eines Tages generiert
  * haben. Methode: pro Tag chronologisch durchgehen, alles, was nach
- * 8.24 h × workloadPct/100 erfasst wurde, dem laufenden Projekt
+ * 8 h 24 min × workloadPct/100 erfasst wurde, dem laufenden Projekt
  * zuschreiben.
  *
  * Methodisch unsauber — die Reihenfolge der Slots ist nicht kausal,
- * man könnte ebenso gut die ersten 8.24 h als „Überzeit" deklarieren
+ * man könnte ebenso gut die ersten 8 h 24 min als „Überzeit" deklarieren
  * und den Rest als Vertrag. Aber als Indikator gibt das hier eine
  * brauchbare Antwort: was lief am Tagesende noch, als das Soll
  * längst erreicht war? Genau das, was sich nicht in die normale
@@ -1994,7 +1998,7 @@ export function buildReportData(
   const avgPres = workingDays > 0 ? totalPresMs / workingDays : 0;
 
   // Welle 8 — Vertrags-Soll und Überstunden / Unterstunden. Der Workload
-  // skaliert das tägliche Soll: 100 % = 8.24 h/Tag, 90 % = 7.416 h/Tag.
+  // skaliert das tägliche Soll: 100 % = 8 h 24 min/Tag, 90 % = 7 h 34 min/Tag.
   // Berechnung auf totalWallclockMs (vereinigte Tracker-Zeit), nicht auf
   // Naive — sonst zählen parallele Tracker doppelt als Mehrarbeit.
   const effectiveWorkloadPct = Math.max(
@@ -2508,7 +2512,7 @@ export function buildReportData(
   }
 
   // Belastungs-Flag: Arbeitsvertrag-relativ statt personalisiert.
-  // User-Spec: 8.24h/Tag Vertrag, 9h normal, 1×10h/Wo. knapp akzeptabel.
+  // User-Spec: 8 h 24 min/Tag Vertrag, 9 h normal, 1× 10 h/Woche knapp akzeptabel.
   // Flag wenn Anteil 10h+-Tage > 20% UND absolute Zahl >= 2.
   // Wenn zusätzlich reaktive Periode (>= 20% reactivePct): Stau-Sentence
   // anhängen — reaktive Unterbrechungen + lange Tage drücken Eigenarbeit
@@ -2528,7 +2532,7 @@ export function buildReportData(
       level: 'warn',
       kind: 'high-load-days',
       audiences: ['coach', 'lead', 'chef'],
-      htmlMessage: `<b>${highLoadCount} Tage über 10 Stunden</b> bei ${workingDays} Arbeitstagen — das sind ${ratioPct} % (über der Schwelle von einem 10-h-Tag pro Woche). Konkret: ${dateList}. Der Arbeitsvertrag sieht 8.24 h pro Tag vor; bis zu einem langen Tag pro Woche ist Toleranz, darüber wird es ein Belastungs-Muster.${stauSentence}`,
+      htmlMessage: `<b>${highLoadCount} Tage über 10 Stunden</b> bei ${workingDays} Arbeitstagen — das sind ${ratioPct} % (über der Schwelle von einem 10-h-Tag pro Woche). Konkret: ${dateList}. Der Arbeitsvertrag sieht 8 h 24 min pro Tag vor; bis zu einem langen Tag pro Woche ist Toleranz, darüber wird es ein Belastungs-Muster.${stauSentence}`,
     });
   }
 

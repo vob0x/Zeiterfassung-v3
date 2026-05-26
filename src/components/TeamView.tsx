@@ -425,7 +425,7 @@ function ConnectedView() {
                   {isAdmin ? (
                     <span
                       className="flex items-center gap-1"
-                      title="Beschäftigungsgrad in Prozent. Wirkt auf das tägliche Vertrags-Soll (8.24 h × Workload) in den Überstunden-Findings."
+                      title="Beschäftigungsgrad in Prozent. Wirkt auf das tägliche Vertrags-Soll (8 h 24 min × Workload) in den Überstunden-Findings."
                     >
                       <input
                         type="number"

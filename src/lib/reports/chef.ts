@@ -18,6 +18,7 @@ import {
   fmtHoursWithPct,
   formatHalfRange,
   interpretOvertime,
+  renderOvertimeMethodNote,
   interpretReactiveShare,
   renderBars,
   renderCrisisBanner,
@@ -114,13 +115,16 @@ function buildHeadlines(data: ReportData): string {
     k.workloadPct < 100
       ? ` Bei ${k.workloadPct.toFixed(0)} % Beschäftigungsgrad anteilig gerechnet.`
       : '';
+  // Welle 8.9 — Transparenz: erklärt, warum die rechnerische Stundenzahl
+  // unter der naiv erfassten liegt, wenn parallele Tracker liefen.
+  const methodNote = renderOvertimeMethodNote(k.totalNaiveMs, k.totalWallclockMs);
   let otHead: string;
   if (k.contractMs <= 0) {
     otHead = `<b>Überstunden:</b> zu wenig Arbeitstage im Zeitraum für eine belastbare Aussage.`;
   } else if (k.overtimeMs > 0) {
-    otHead = `<b>Überstunden ${otScale.label}:</b> +${fmtHours(k.overtimeMs)} über dem Vertrags-Soll von ${fmtHours(k.contractMs)} (${otRatioPct.toFixed(0)} %).${wlNote} ${esc(otScale.hint)}`;
+    otHead = `<b>Überstunden ${otScale.label}:</b> +${fmtHours(k.overtimeMs)} über dem Vertrags-Soll von ${fmtHours(k.contractMs)} (${otRatioPct.toFixed(0)} %).${wlNote} ${esc(otScale.hint)}${methodNote}`;
   } else {
-    otHead = `<b>Unter dem Vertrags-Soll:</b> −${fmtHours(k.undertimeMs)} auf ${fmtHours(k.contractMs)} Sollzeit.${wlNote} Ruhige Periode, Urlaubsanteil oder geplante Entlastung — keine Mehrarbeit zu steuern.`;
+    otHead = `<b>Unter dem Vertrags-Soll:</b> −${fmtHours(k.undertimeMs)} auf ${fmtHours(k.contractMs)} Sollzeit.${wlNote} Ruhige Periode, Urlaubsanteil oder geplante Entlastung — keine Mehrarbeit zu steuern.${methodNote}`;
   }
   heads.push(otHead);
 

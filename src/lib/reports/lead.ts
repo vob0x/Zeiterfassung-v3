@@ -19,6 +19,7 @@ import {
   interpretCoverage,
   interpretLeakPct,
   interpretOvertime,
+  renderOvertimeMethodNote,
   interpretParallelFactor,
   interpretReactiveShare,
   renderChangePointSection,
@@ -128,14 +129,19 @@ function buildCockpit(data: ReportData): string {
       .join(', ');
     attributionLine = ` <i>Mehrarbeit lief vor allem in: ${parts} — nach Tagesreihenfolge zugeordnet.</i>`;
   }
+  // Welle 8.9 — Transparenz, falls Naive deutlich über Wallclock liegt.
+  const methodLine = renderOvertimeMethodNote(
+    k.totalNaiveMs,
+    k.totalWallclockMs
+  );
   if (otScaleLead.level === 'high' || hi >= 3) {
     belastungClass = 'ampel-warn';
-    belastungSub = `${otSentence} ${longDaySentence}${attributionLine} <b>Im Gespräch fragen:</b> Was treibt diese Mehrarbeit — Deadline, Personalengpass, eine bewusste Entscheidung? Trägt der Rhythmus, oder zehrt er?`;
+    belastungSub = `${otSentence} ${longDaySentence}${attributionLine}${methodLine} <b>Im Gespräch fragen:</b> Was treibt diese Mehrarbeit — Deadline, Personalengpass, eine bewusste Entscheidung? Trägt der Rhythmus, oder zehrt er?`;
   } else if (otScaleLead.level === 'elevated' || hi >= 1) {
-    belastungSub = `${otSentence} ${longDaySentence}${attributionLine} <b>Kurz anhaken:</b> War an diesen Tagen etwas Besonderes (Abgabe, Workshop, Reise), oder verdichtet sich das Muster?`;
+    belastungSub = `${otSentence} ${longDaySentence}${attributionLine}${methodLine} <b>Kurz anhaken:</b> War an diesen Tagen etwas Besonderes (Abgabe, Workshop, Reise), oder verdichtet sich das Muster?`;
   } else {
     belastungClass = 'ampel-ok';
-    belastungSub = `${otSentence} ${longDaySentence} <b>Verstärker-Frage:</b> Was hilft dabei, diesen Rhythmus zu halten — und wo steckt die Reserve für besondere Phasen?`;
+    belastungSub = `${otSentence} ${longDaySentence}${methodLine} <b>Verstärker-Frage:</b> Was hilft dabei, diesen Rhythmus zu halten — und wo steckt die Reserve für besondere Phasen?`;
   }
   belastungValue =
     k.contractMs > 0

@@ -115,7 +115,7 @@ export interface TeamMember {
   /**
    * Welle 8 — Beschäftigungsgrad in Prozent (1–100). Standard 100
    * (Vollzeit). Wird in der Überstunden-Berechnung als Multiplikator
-   * auf das tägliche Vertrags-Soll (8.24 h) angewendet.
+   * auf das tägliche Vertrags-Soll (8 h 24 min) angewendet.
    */
   workload_pct: number;
 }
