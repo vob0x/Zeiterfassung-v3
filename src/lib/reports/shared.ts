@@ -103,7 +103,7 @@ export function renderTrackingQualityNote(
   if (untrackedActive <= 0) return '';
   const untrackedPct = untrackedActive / presenceMinusPause;
   if (untrackedPct < 0.15) return '';
-  return ` <i>Hinweis zur Tracking-Disziplin: ${fmtHours(presenceMs)} Präsenz, davon ${fmtHours(wallclockMs)} mit Trackern aktiv. ${fmtHours(untrackedActive)} liegen außerhalb des 45-min-Pausen-Abzugs ohne Tracker — die Überstunden-Aussage ist robust, wenn das tatsächlich Pausen oder Wartezeit waren, aber unsicher, wenn ungetrackte Arbeit dazwischen lag.</i>`;
+  return ` <i>Hinweis zur Tracking-Disziplin: ${fmtHours(presenceMs)} Präsenz, davon ${fmtHours(wallclockMs)} mit Trackern aktiv. ${fmtHours(untrackedActive)} liegen außerhalb des 45-min-Pausen-Abzugs ohne Tracker — wenn das Pausen oder Wartezeit waren, stimmt die Aussage; wenn ungetrackte Arbeit dazwischen lag, liegt die tatsächliche Belastung höher als hier ausgewiesen.</i>`;
 }
 
 /**
