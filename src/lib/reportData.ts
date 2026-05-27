@@ -2822,16 +2822,22 @@ export function buildReportData(
   // Solls), dann ist das kein Einzelfall, sondern ein Steuerungs-Thema.
   const overtimeRatio = contractMs > 0 ? overtimeMs / contractMs : 0;
   const topOvertimeProj = overtimeAttribution[0];
+  const longDayRatioStrukt =
+    workingDays > 0 ? weekday.highLoadDaysCount / workingDays : 0;
+  const topOvertimeCat = topOvertimeProj
+    ? effectiveCategoryWithDefault(
+        projCatMap.get(topOvertimeProj.projekt) ?? null,
+        topOvertimeProj.projekt
+      )
+    : null;
+  // Trigger A: klassische Konzentration. Eine starke Mehrarbeit-Quote
+  // mit Konzentration auf ein Projekt — "klar strukturell".
   if (
     overtimeRatio >= 0.15 &&
     topOvertimeProj &&
     topOvertimeProj.share >= 0.4
   ) {
-    const cat = effectiveCategoryWithDefault(
-      projCatMap.get(topOvertimeProj.projekt) ?? null,
-      topOvertimeProj.projekt
-    );
-    const isReactive = cat === 'reaktiv';
+    const isReactive = topOvertimeCat === 'reaktiv';
     const reaktivSentence = isReactive
       ? ' Das Projekt ist als reaktiv klassifiziert — Anfragen-Last, die strukturell zur Überstunde wird.'
       : '';
@@ -2840,6 +2846,26 @@ export function buildReportData(
       kind: 'strukturelles-stau-muster',
       audiences: ['coach', 'lead', 'chef'],
       htmlMessage: `<b>Strukturelles Muster bei „${htmlEsc(topOvertimeProj.projekt)}":</b> ${(topOvertimeProj.share * 100).toFixed(0)} % der Überstunden flossen dort hinein, die gesamte Mehrarbeit liegt bei ${(overtimeRatio * 100).toFixed(0)} % über dem Vertragssoll.${reaktivSentence} Steuerungs-Frage: Was an diesem Projekt lässt sich nicht in der regulären Arbeitszeit abwickeln — Volumen, Anforderung, Schnittstellen, Erwartung?`,
+    });
+  }
+  // Welle 10.1 — Trigger B: verteiltes Stau-Muster. Auch bei moderater
+  // Gesamt-Mehrarbeit kann ein strukturelles Problem vorliegen, wenn
+  // die langen Tage sich häufen UND das Top-Überstunden-Projekt reaktiv
+  // ist UND einen relevanten (auch wenn nicht dominanten) Anteil trägt.
+  // Beispiel aus echter Datenbasis: 5.9 % Mehrarbeit, 40 % 10-h-Tage,
+  // Medienanfragen als Top-OT-Projekt (15.5 %) — Trigger A schweigt,
+  // aber das Muster ist da.
+  else if (
+    longDayRatioStrukt >= 0.30 &&
+    topOvertimeProj &&
+    topOvertimeProj.share >= 0.15 &&
+    topOvertimeCat === 'reaktiv'
+  ) {
+    findings.push({
+      level: 'warn',
+      kind: 'strukturelles-stau-muster',
+      audiences: ['coach', 'lead', 'chef'],
+      htmlMessage: `<b>Verteiltes Stau-Muster, Spitzen bei „${htmlEsc(topOvertimeProj.projekt)}":</b> ${Math.round(longDayRatioStrukt * 100)} % der Arbeitstage gingen über 10 Stunden, und die Mehrarbeit konzentriert sich am stärksten auf ein reaktives Projekt (${(topOvertimeProj.share * 100).toFixed(0)} % der zugeschriebenen Überzeit). Die Gesamt-Mehrarbeit ist mit ${(overtimeRatio * 100).toFixed(0)} % über Soll moderat — aber das Profil zeigt: lange Tage entstehen vor allem dort, wo Anfragen unterbrechen. Steuerungs-Frage: Lässt sich der Anfragen-Strom an dieser Stelle puffern, kanalisieren oder besser planen?`,
     });
   }
 
