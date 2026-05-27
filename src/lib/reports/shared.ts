@@ -274,28 +274,33 @@ export function interpretLeakPct(pct: number): ScaleAssessment {
  * Indikator zusammen mit anderen Signalen).
  */
 export function interpretReactiveShare(pct: number): ScaleAssessment {
-  if (pct < 20)
+  // Welle 10.0 — Bänder von 20/40/60 auf 15/35/55 verschoben. Anlass:
+  // Werte um 19 % wurden als „Strategiephase" sortiert, obwohl in
+  // absoluten Stunden bereits ein substanzieller Reaktiv-Anteil vorlag
+  // (Beispiel: 107 h reaktiv über 3 Monate = 19,2 %). Die strengere
+  // Untergrenze macht die Skala in der Mitte realistischer.
+  if (pct < 15)
     return {
       level: 'normal',
       label: 'Strategiephase',
-      hint: 'Unter 20 % reaktive Arbeit — ruhige Periode, viel Raum für eigene Vorhaben.',
+      hint: 'Unter 15 % reaktive Arbeit — ruhige Periode, viel Raum für eigene Vorhaben.',
     };
-  if (pct < 40)
+  if (pct < 35)
     return {
       level: 'normal',
       label: 'Mischbetrieb',
-      hint: '20 – 40 % reaktive Arbeit — rund jede vierte bis fünfte Stunde fremdgetrieben. Eigenarbeit muss diesen Anteil aushalten; ob das geht, zeigt der Belastungs-Block.',
+      hint: '15 – 35 % reaktive Arbeit — etwa jede vierte bis sechste Stunde fremdgetrieben. Eigenarbeit muss diesen Anteil aushalten; ob das geht, zeigt der Belastungs-Block.',
     };
-  if (pct < 60)
+  if (pct < 55)
     return {
       level: 'elevated',
       label: 'belebte Phase',
-      hint: '40 – 60 % reaktive Arbeit — mehr als jede dritte Stunde fremdgetrieben, Eigenarbeit muss diesen Anteil mittragen.',
+      hint: '35 – 55 % reaktive Arbeit — etwa jede dritte Stunde fremdgetrieben, Eigenarbeit muss diesen Anteil mittragen.',
     };
   return {
     level: 'high',
     label: 'Reaktiv-Last',
-    hint: 'Über 60 % reaktive Arbeit — die Periode war stark fremdgetrieben, kaum Raum für Eigen-Vorhaben.',
+    hint: 'Über 55 % reaktive Arbeit — die Periode war stark fremdgetrieben, kaum Raum für Eigen-Vorhaben.',
   };
 }
 
@@ -435,9 +440,11 @@ export function buildNextActionData(data: ReportData): NextActionData {
     };
   }
 
-  // 2. high-load-days, wenn parallel reactivePct ≥ 20 (Stau-Dynamik)
+  // 2. high-load-days, wenn parallel reactivePct ≥ 15 (Stau-Dynamik)
+  // Welle 10.0 — Schwelle von 20 auf 15 abgesenkt, passend zur neuen
+  // Reaktivitäts-Skala (Mischbetrieb ab 15 %).
   const highLoad = data.findings.find((f) => f.kind === 'high-load-days');
-  if (highLoad && data.kpis.reactivePct >= 20) {
+  if (highLoad && data.kpis.reactivePct >= 15) {
     return {
       kind: 'high-load-days-stau',
       value: data.weekday.highLoadDaysCount,

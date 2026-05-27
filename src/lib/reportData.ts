@@ -2552,9 +2552,11 @@ export function buildReportData(
       .map((d) => `${d.date} (${fmtHours(d.ms)})`)
       .join(', ');
     const ratioPct = Math.round(longDayRatio * 100);
+    // Welle 10.0 — Schwelle von 20 auf 15 abgesenkt, passend zur neuen
+    // Reaktivitäts-Skala (Mischbetrieb ab 15 %).
     const stauSentence =
-      reactivePct >= 20
-        ? ` Zusammen mit ${reactivePct.toFixed(0)}% reaktiver Arbeit deutet das auf Stau-Dynamik: Anfragen unterbrechen, Eigenarbeit verlagert sich in die langen Tage.`
+      reactivePct >= 15
+        ? ` Zusammen mit ${reactivePct.toFixed(0)} % reaktiver Arbeit deutet das auf Stau-Dynamik: Anfragen unterbrechen, Eigenarbeit verlagert sich in die langen Tage.`
         : '';
     findings.push({
       level: 'warn',

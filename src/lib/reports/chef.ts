@@ -70,14 +70,15 @@ function buildHeadlines(data: ReportData): string {
   // die Person — niedrig = Strategie, hoch = Anfragen-Last.
   const reactScale = interpretReactiveShare(k.reactivePct);
   let reactHead: string;
-  if (k.reactivePct >= 60) {
-    reactHead = `<b>Reaktiv-Last dominiert die Periode:</b> ${k.reactivePct.toFixed(0)}% der Arbeitszeit (${fmtHours(k.reactiveMs)}) lief in reaktiven Projekten — Medienanfragen, BGÖ, Bürger, Krise, politische Geschäfte. Eigen-Arbeit hatte kaum Raum. Strategie-Themen für die nächste Periode bewusst blocken — sonst läuft die Reaktiv-Last weiter alles andere mit weg.`;
-  } else if (k.reactivePct >= 40) {
-    reactHead = `<b>Belebte Reaktiv-Phase:</b> ${k.reactivePct.toFixed(0)}% der Arbeitszeit (${fmtHours(k.reactiveMs)}) in reaktiven Projekten — jede dritte bis zweite Stunde fremdgetrieben. Eigen-Arbeit kommt noch durch. Konkret prüfen: gibt es Trigger, die proaktiv geklärt werden könnten?`;
-  } else if (k.reactivePct >= 20) {
-    reactHead = `<b>Normaler Betrieb:</b> ${k.reactivePct.toFixed(0)} % reaktive Arbeit (${fmtHours(k.reactiveMs)}) — gesundes Verhältnis von eigener und fremdgetriebener Arbeit. Die Person konnte sowohl auf Anfragen reagieren als auch eigene Themen vorantreiben.`;
+  // Welle 10.0 — Schwellen 15/35/55 statt 20/40/60.
+  if (k.reactivePct >= 55) {
+    reactHead = `<b>Reaktiv-Last dominiert die Periode:</b> ${k.reactivePct.toFixed(0)} % der Arbeitszeit (${fmtHours(k.reactiveMs)}) lief in reaktiven Projekten — Medienanfragen, BGÖ, Bürger, Krise, politische Geschäfte. Eigen-Arbeit hatte kaum Raum. Strategie-Themen für die nächste Periode bewusst blocken — sonst läuft die Reaktiv-Last weiter alles andere mit weg.`;
+  } else if (k.reactivePct >= 35) {
+    reactHead = `<b>Belebte Reaktiv-Phase:</b> ${k.reactivePct.toFixed(0)} % der Arbeitszeit (${fmtHours(k.reactiveMs)}) in reaktiven Projekten — etwa jede dritte Stunde fremdgetrieben. Eigen-Arbeit kommt noch durch. Konkret prüfen: gibt es Trigger, die proaktiv geklärt werden könnten?`;
+  } else if (k.reactivePct >= 15) {
+    reactHead = `<b>Mischbetrieb:</b> ${k.reactivePct.toFixed(0)} % reaktive Arbeit (${fmtHours(k.reactiveMs)}) — spürbarer Anfragen-Anteil, aber kein Übergewicht. Steuerungs-Frage: welche reaktiven Projekte fressen am meisten Zeit, und ließen sich Auslöser proaktiv reduzieren?`;
   } else {
-    reactHead = `<b>Strategiephase:</b> nur ${k.reactivePct.toFixed(0)}% reaktive Arbeit (${fmtHours(k.reactiveMs)}) — die Periode hatte Raum für Eigen-Vorhaben. Konkret prüfen: ist dieser Raum produktiv genutzt worden, oder bleibt er ungefüllt? Skala-Einordnung: ${esc(reactScale.hint)}`;
+    reactHead = `<b>Strategiephase:</b> nur ${k.reactivePct.toFixed(0)} % reaktive Arbeit (${fmtHours(k.reactiveMs)}) — die Periode hatte Raum für Eigen-Vorhaben. Konkret prüfen: ist dieser Raum produktiv genutzt worden, oder bleibt er ungefüllt? Skala-Einordnung: ${esc(reactScale.hint)}`;
   }
   heads.push(reactHead);
 

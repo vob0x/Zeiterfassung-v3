@@ -190,17 +190,18 @@ function buildCockpit(data: ReportData): string {
   const reactScale = interpretReactiveShare(k.reactivePct);
   let reactClass: 'ampel-warn' | 'ampel-ok' | '' = '';
   if (reactScale.level === 'high') reactClass = 'ampel-warn';
-  else if (reactScale.level === 'normal' && k.reactivePct < 20) reactClass = 'ampel-ok';
+  else if (reactScale.level === 'normal' && k.reactivePct < 15) reactClass = 'ampel-ok';
   const reactValue = `${k.reactivePct.toFixed(0)}% reaktiv`;
   let reactSub: string;
-  if (k.reactivePct >= 60) {
-    reactSub = `Über ${k.reactivePct.toFixed(0)}% der Arbeitszeit lief in reaktiven Projekten (Anfragen, BGÖ, Krise). <b>Im Gespräch fragen:</b> War das eine Eskalations-Phase oder dauerhafter Zustand? Welche Eigen-Vorhaben sind dabei liegengeblieben?`;
-  } else if (k.reactivePct >= 40) {
-    reactSub = `${k.reactivePct.toFixed(0)}% in reaktiven Projekten — jede dritte bis zweite Stunde war fremdgetrieben. <b>Im Gespräch fragen:</b> Welche reaktiven Themen waren die größten Treiber? Gibt es etwas, das proaktiv geklärt werden könnte?`;
-  } else if (k.reactivePct >= 20) {
-    reactSub = `${k.reactivePct.toFixed(0)}% reaktive Arbeit — gesundes Verhältnis von Eigen- und Anfragen-Arbeit. <b>Im Gespräch:</b> Routine trägt, kein Hebel akut nötig.`;
+  // Welle 10.0 — Schwellen 15/35/55 statt 20/40/60.
+  if (k.reactivePct >= 55) {
+    reactSub = `Über ${k.reactivePct.toFixed(0)} % der Arbeitszeit lief in reaktiven Projekten (Anfragen, BGÖ, Krise). <b>Im Gespräch fragen:</b> War das eine Eskalations-Phase oder dauerhafter Zustand? Welche Eigen-Vorhaben sind dabei liegengeblieben?`;
+  } else if (k.reactivePct >= 35) {
+    reactSub = `${k.reactivePct.toFixed(0)} % in reaktiven Projekten — etwa jede dritte Stunde war fremdgetrieben. <b>Im Gespräch fragen:</b> Welche reaktiven Themen waren die größten Treiber? Gibt es etwas, das proaktiv geklärt werden könnte?`;
+  } else if (k.reactivePct >= 15) {
+    reactSub = `${k.reactivePct.toFixed(0)} % reaktive Arbeit — spürbarer Anfragen-Anteil, Mischbetrieb. <b>Im Gespräch:</b> Welche Themen schieben sich regelmäßig dazwischen, und welche Eigen-Vorhaben tragen das mit?`;
   } else {
-    reactSub = `Nur ${k.reactivePct.toFixed(0)}% in reaktiven Projekten — die Person hatte Raum für Eigen-Vorhaben. <b>Im Gespräch fragen:</b> Was ist konkret aus diesem Raum entstanden? Wurde er für Strategie / Konzeption genutzt?`;
+    reactSub = `Nur ${k.reactivePct.toFixed(0)} % in reaktiven Projekten — die Person hatte Raum für Eigen-Vorhaben. <b>Im Gespräch fragen:</b> Was ist konkret aus diesem Raum entstanden? Wurde er für Strategie / Konzeption genutzt?`;
   }
   cards.push(`<div class="lead-three-card ${reactClass}">
     <div class="lead-three-h">Reaktivität</div>
