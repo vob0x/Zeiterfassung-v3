@@ -245,29 +245,65 @@ export function computeLiveWallClockMs(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Präsenzzeit — Brutto-Fenster pro Tag.
+// Präsenzzeit — Brutto-Fenster pro Tag, abzüglich langer Tageslücken.
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
+ * Welle 10.2 — Schwelle, ab der eine Lücke zwischen Tracker-Segmenten
+ * als „echter Unterbruch" gilt und aus der Präsenz herausgerechnet
+ * wird (kein Pausen-Anteil mehr). Wert: 120 Minuten = 2 Stunden.
+ *
+ * Hintergrund: ohne diese Korrektur landet ein Tag wie
+ *   08:00–18:00 (regulär) + 22:00–23:00 (Abend-Catch-up)
+ * mit 15 h Präsenz im Bericht, obwohl 4 h Feierabend dazwischen
+ * lagen. 2 h ist die robuste Schwelle: länger als jede vernünftige
+ * Mittagspause, kürzer als jede typische Abend-Pause vor späterer
+ * Arbeit.
+ */
+const LONG_GAP_MIN = 120;
+
+/**
  * Präsenzzeit eines einzelnen Tages: vom frühesten Eintrag-Start bis
- * zum spätesten Eintrag-Ende. Inklusive Lücken dazwischen — nicht
- * dasselbe wie Wallclock-Union.
+ * zum spätesten Eintrag-Ende, ABZÜGLICH aller Lücken ≥ 2 h zwischen
+ * Tracker-Segmenten (Welle 10.2). Kurze Lücken (Mittag, Kaffee)
+ * bleiben drin und werden vom 45-min-Standard-Pausen-Abzug in der
+ * Überstunden-Rechnung erfasst.
  */
 export function computePresenceForDayMs(
   dayEntries: Array<{ start_time: string; end_time: string }>
 ): number {
-  let earliest: number | null = null;
-  let latest: number | null = null;
+  if (dayEntries.length === 0) return 0;
+  // Intervalle in Minuten parsen
+  const ivs: Array<[number, number]> = [];
   for (const e of dayEntries) {
     const s = toMin(e.start_time);
     let en = toMin(e.end_time);
     if (s == null || en == null) continue;
     if (en < s) en += 24 * 60;
-    if (earliest == null || s < earliest) earliest = s;
-    if (latest == null || en > latest) latest = en;
+    ivs.push([s, en]);
   }
-  if (earliest == null || latest == null) return 0;
-  return Math.max(0, (latest - earliest) * 60_000);
+  if (ivs.length === 0) return 0;
+  // Chronologisch sortieren und überlappende Slots vereinigen — Lücken
+  // existieren nur zwischen vereinigten Segmenten.
+  ivs.sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [[ivs[0][0], ivs[0][1]]];
+  for (let i = 1; i < ivs.length; i++) {
+    const [s, e] = ivs[i];
+    const last = merged[merged.length - 1];
+    if (s <= last[1]) {
+      if (e > last[1]) last[1] = e;
+    } else {
+      merged.push([s, e]);
+    }
+  }
+  // Brutto-Fenster und Summe der langen Lücken
+  const raw = merged[merged.length - 1][1] - merged[0][0];
+  let longGapSum = 0;
+  for (let i = 1; i < merged.length; i++) {
+    const gap = merged[i][0] - merged[i - 1][1];
+    if (gap >= LONG_GAP_MIN) longGapSum += gap;
+  }
+  return Math.max(0, (raw - longGapSum) * 60_000);
 }
 
 /**
