@@ -170,7 +170,7 @@ export function interpretParallelFactor(x: number): ScaleAssessment {
     return {
       level: 'elevated',
       label: 'moderat parallel',
-      hint: '1.2 – 1.4 = häufiger mehrere Themen gleichzeitig; üblich bei Mandanten-Steuerung.',
+      hint: '1.2 – 1.4 = häufiger mehrere Themen gleichzeitig; üblich bei paralleler Stakeholder-Arbeit.',
     };
   return {
     level: 'high',
@@ -553,33 +553,33 @@ export function renderStakeholderDossier(
     tags.push(
       `<span class="tag tag-warn">${profile.microTaskPct.toFixed(0)}% kurze Einträge (&lt;15min)</span>`
     );
-    leadQuestion = `Frage fürs Gespräch: dieser Mandant löst viele kleine Anfragen aus. Gibt es einen Sammel-Termin (etwa eine feste Sprechzeit) — oder reagiert die Person auf jede einzelne sofort?`;
+    leadQuestion = `Frage fürs Gespräch: dieser Stakeholder löst viele kleine Anfragen aus. Gibt es einen Sammel-Termin (etwa eine feste Sprechzeit) — oder reagiert die Person auf jede einzelne sofort?`;
   } else if (profile.microTaskPct >= 40 && isReactiveDominant) {
     tags.push(
       `<span class="tag tag-info">${profile.microTaskPct.toFixed(0)}% Triage-Slots</span>`
     );
-    leadQuestion = `Frage fürs Gespräch: dieser Mandant ist Auftrags-Triage (${profile.reactiveCategoryShare.toFixed(0)}% reaktive Arbeit). Die vielen kurzen Slots sind der Job, nicht ein Problem. Statt zu sammeln: läuft die Triage selbst rund, oder gibt es einen Stau (Anfragen, die zu lang liegen bleiben)?`;
+    leadQuestion = `Frage fürs Gespräch: dieser Stakeholder ist Anforderungs-Triage (${profile.reactiveCategoryShare.toFixed(0)}% reaktive Arbeit). Die vielen kurzen Slots sind der Job, nicht ein Problem. Statt zu sammeln: läuft die Triage selbst rund, oder gibt es einen Stau (Anfragen, die zu lang liegen bleiben)?`;
   }
   if (profile.nonprodPct >= 30) {
     tags.push(
       `<span class="tag tag-warn">${profile.nonprodPct.toFixed(0)}% nicht-produktiv</span>`
     );
     if (!leadQuestion)
-      leadQuestion = `Frage fürs Gespräch: viel Zeit für Verwaltung / Abstimmung / Beziehungspflege bei diesem Mandanten. Bewusst investiert in eine wichtige Beziehung, oder dehnt sich der Auftrag stillschweigend aus?`;
+      leadQuestion = `Frage fürs Gespräch: viel Zeit für Verwaltung / Abstimmung / Beziehungspflege bei diesem Stakeholder. Bewusst investiert in eine wichtige Beziehung, oder dehnen sich die Anforderungen stillschweigend aus?`;
   }
   if (profile.meetingHeavyPct >= 50) {
     tags.push(
       `<span class="tag tag-info">${profile.meetingHeavyPct.toFixed(0)}% in Terminen</span>`
     );
     if (!leadQuestion)
-      leadQuestion = `Frage fürs Gespräch: über die Hälfte dieser Mandant-Zeit lief in Live-Terminen. Welche davon wären als Mail / kurze Notiz schneller erledigt?`;
+      leadQuestion = `Frage fürs Gespräch: über die Hälfte der Zeit für diesen Stakeholder lief in Live-Terminen. Welche davon wären als Mail / kurze Notiz schneller erledigt?`;
   }
   if (profile.notizPct <= 25 && profile.entriesCount >= 8) {
     tags.push(
       `<span class="tag tag-info">nur ${profile.notizPct.toFixed(0)}% mit Notiz</span>`
     );
     if (!leadQuestion)
-      leadQuestion = `Frage fürs Gespräch: Einträge bei diesem Mandanten haben selten eine Notiz. Beim Review oder bei einer Übergabe fehlt damit der Kontext — geht Ein-Wort-Disziplin?`;
+      leadQuestion = `Frage fürs Gespräch: Einträge bei diesem Stakeholder haben selten eine Notiz. Beim Review oder bei einer Übergabe fehlt damit der Kontext — geht Ein-Wort-Disziplin?`;
   }
   if (!leadQuestion) {
     leadQuestion = `Wirkt unauffällig — kein konkreter Hebel fürs Gespräch nötig.`;
@@ -658,17 +658,17 @@ const CP_METRIC_INFO: Record<
     label: 'Parallel-Last (pro echte Stunde wieviel Aufgaben)',
     format: (v) => `${v.toFixed(2)}x`,
     upMeaning:
-      'Mehr parallel laufende Themen pro Stunde — entweder bewusste Mehr-Mandanten-Steuerung oder Zerstreuung.',
+      'Mehr parallel laufende Themen pro Stunde — entweder bewusste parallele Stakeholder-Arbeit oder Zerstreuung.',
     downMeaning:
       'Weniger Parallelität — du warst seriell unterwegs, ein Ding nach dem anderen.',
   },
   topStakeholder: {
-    label: 'Anteil des größten Mandanten',
+    label: 'Anteil des größten Stakeholders',
     format: (v) => `${v.toFixed(0)}%`,
     upMeaning:
-      'Ein Mandant hat plötzlich deutlich mehr deiner Zeit gezogen — ein Großauftrag, ein Eskalations-Moment?',
+      'Ein Stakeholder hat plötzlich deutlich mehr deiner Zeit gezogen — eine große Anforderung, ein Eskalations-Moment?',
     downMeaning:
-      'Der bisherige Hauptmandant verliert Anteil — andere Themen rücken nach.',
+      'Der bisherige Haupt-Stakeholder verliert Anteil — andere Themen rücken nach.',
   },
   coverage: {
     label: 'Tracking-Genauigkeit',
@@ -767,7 +767,7 @@ export function renderChangePointCard(
   if (cp.metric === 'topStakeholder') {
     const wk = weeks.find((w) => w.label === cp.weekLabel);
     if (wk?.topStakeholderName && wk.topStakeholderName !== '—') {
-      label = `Anteil des Mandanten ${esc(wk.topStakeholderName)}`;
+      label = `Anteil des Stakeholders ${esc(wk.topStakeholderName)}`;
     }
   }
 

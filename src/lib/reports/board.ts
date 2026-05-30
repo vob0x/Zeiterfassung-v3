@@ -68,7 +68,7 @@ export function renderBoardBody(data: ReportData): string {
   );
   if (k.multiTaskingFactor > 1.2) {
     profilSubParts.push(
-      `Pro erfasster Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(1)} Stunden Aufgaben an — Hinweis auf parallele Mandanten-Steuerung.`
+      `Pro erfasster Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(1)} Stunden Aufgaben an — Hinweis auf parallele Stakeholder-Arbeit.`
     );
   }
   const leakScale = interpretLeakPct(k.leakPct);
@@ -134,7 +134,7 @@ export function renderBoardBody(data: ReportData): string {
   // ── Verteilungsbild — Top-3 Stakeholder + Top-3 Projekte ─────────
   const pies = `<div class="board-pies">
     <div>
-      <h3>Mandanten</h3>
+      <h3>Stakeholder</h3>
       ${renderBars(data.breakdowns.stakeholders, '#C9A962', 3)}
     </div>
     <div>
@@ -176,7 +176,7 @@ function buildNextActionLine(data: ReportData): string {
   let sentence = '';
   switch (a.kind) {
     case 'strukturelles-stau-muster':
-      sentence = `Auftrags-Volumen und Ressourcen-Zuordnung bei <b>${esc(a.subject || '—')}</b> auf den Prüfstand.`;
+      sentence = `Anforderungs-Volumen und Ressourcen-Zuordnung bei <b>${esc(a.subject || '—')}</b> auf den Prüfstand.`;
       break;
     case 'high-load-days-stau':
       sentence = `Eigenarbeit gegen Reaktiv-Druck schützen — wiederkehrende Belastungs-Spitzen begrenzen.`;
@@ -188,7 +188,7 @@ function buildNextActionLine(data: ReportData): string {
       sentence = `Strategie-Räume gegen die Reaktiv-Last reservieren.`;
       break;
     case 'klumpen-risiko':
-      sentence = `Diversifikation neben <b>${esc(a.subject || '—')}</b> als Mandat für die kommende Periode setzen.`;
+      sentence = `Bewusst entscheiden, ob die Priorisierung auf <b>${esc(a.subject || '—')}</b> so weitergetragen wird, oder ob andere Stakeholder in der kommenden Periode bewusst Raum bekommen sollen.`;
       break;
     case 'routine':
       // Welle 9.3 — aktiv vs. unauffällig differenzieren, "ruhig" raus.
@@ -216,7 +216,7 @@ function buildTrendSentence(data: ReportData): string {
     if (cpTop.deltaSign === 'up') {
       return `<b>Konzentrations-Sprung in ${esc(cpTop.weekLabel)}:</b> <b>${esc(shName)}</b> springt von Ø ${cpTop.baselineValue.toFixed(0)}% auf ${cpTop.currentValue.toFixed(0)}% — gegenüber den vorherigen ${cpTop.baselineWeekCount} Wochen ein deutlicher Bruch.`;
     }
-    return `<b>Konzentrations-Wechsel in ${esc(cpTop.weekLabel)}:</b> Spitzen-Anteil sinkt von Ø ${cpTop.baselineValue.toFixed(0)}% auf ${cpTop.currentValue.toFixed(0)}% — das Portfolio rebalanciert sich.`;
+    return `<b>Konzentrations-Wechsel in ${esc(cpTop.weekLabel)}:</b> Spitzen-Anteil sinkt von Ø ${cpTop.baselineValue.toFixed(0)}% auf ${cpTop.currentValue.toFixed(0)}% — der Projekt-Mix verschiebt sich.`;
   }
 
   if (data.drift) {
@@ -230,11 +230,11 @@ function buildTrendSentence(data: ReportData): string {
   }
   if (data.projektLifecycle.newcomers.length > 0) {
     const n = data.projektLifecycle.newcomers[0];
-    return `<b>Portfolio in Bewegung:</b> neues Projekt <b>${esc(n.name)}</b> ist in der zweiten Hälfte hinzugekommen.`;
+    return `<b>Projekt-Mix in Bewegung:</b> neues Projekt <b>${esc(n.name)}</b> ist in der zweiten Hälfte hinzugekommen.`;
   }
   if (data.projektLifecycle.vanished.length > 0) {
     const v = data.projektLifecycle.vanished[0];
-    return `<b>Portfolio in Bewegung:</b> Projekt <b>${esc(v.name)}</b> ist in der zweiten Hälfte ausgelaufen.`;
+    return `<b>Projekt-Mix in Bewegung:</b> Projekt <b>${esc(v.name)}</b> ist in der zweiten Hälfte ausgelaufen.`;
   }
   return `<b>Stabile Verteilung</b> über den Zeitraum — die Schwerpunkte haben sich nicht verschoben.`;
 }

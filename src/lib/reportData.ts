@@ -1599,7 +1599,7 @@ function metricLabelDe(m: ChangePointMetric): string {
     case 'multiTasking':
       return 'die Parallel-Last';
     case 'topStakeholder':
-      return 'der Anteil des Hauptmandanten';
+      return 'der Anteil des Haupt-Stakeholders';
     case 'coverage':
       return 'die Tracking-Genauigkeit';
     case 'reactiveShare':
@@ -1641,7 +1641,7 @@ export function describeChangePointContext(
   const snapshotBits: string[] = [];
   if (ws.topStakeholderName && ws.topStakeholderName !== '—') {
     snapshotBits.push(
-      `der größte Mandant war <b>${htmlEsc(ws.topStakeholderName)}</b> mit ${(ws.topStakeholderShare * 100).toFixed(0)}% der Wochenzeit`
+      `der größte Stakeholder war <b>${htmlEsc(ws.topStakeholderName)}</b> mit ${(ws.topStakeholderShare * 100).toFixed(0)}% der Wochenzeit`
     );
   }
   snapshotBits.push(`insgesamt ${ws.wallclockHours.toFixed(1)}h Arbeitszeit`);
@@ -1690,8 +1690,8 @@ export function describeChangePointContext(
     case 'topStakeholder':
       actionHint =
         cp.deltaSign === 'up'
-          ? `Was du tun könntest: Mandanten-Gespräch oder Mandanten-Akte aus dieser Woche anschauen — was hat den Sprung ausgelöst (Großauftrag, Eskalation, neuer Scope)? Daraus folgt die Frage: ist das jetzt der neue Anteil, oder nur diese eine Woche?`
-          : `Was du tun könntest: schauen, welcher andere Mandant in dieser Woche den Platz übernommen hat. Bewusste Verschiebung — oder ist der bisherige Hauptmandant einfach in eine ruhigere Phase gerutscht?`;
+          ? `Was du tun könntest: Stakeholder-Gespräch oder Stakeholder-Akte aus dieser Woche anschauen — was hat den Sprung ausgelöst (große Anforderung, Eskalation, neuer Scope)? Daraus folgt die Frage: ist das jetzt der neue Anteil, oder nur diese eine Woche?`
+          : `Was du tun könntest: schauen, welcher andere Stakeholder in dieser Woche den Platz übernommen hat. Bewusste Verschiebung — oder ist der bisherige Haupt-Stakeholder einfach in eine ruhigere Phase gerutscht?`;
       break;
     case 'coverage':
       actionHint =
@@ -1803,7 +1803,7 @@ function buildComposites(input: CompositeBuildInput): CompositeFinding[] {
       diagnosis:
         'Hohe Aktivität, aber Aktivität ohne neue Linien: das ist ein reaktives Muster, nicht ein gestaltendes. Du arbeitest viel an dem, was reinkommt, aber keine neue eigene Initiative ist in diesem Zeitraum dazugekommen.',
       hebel:
-        'Welcher Mandant löst am meisten Ad-hoc-Slots aus? Ein Sammel-Termin (feste Sprechzeit pro Woche, Mail-Triage am Tagesende) gibt typischerweise mehrere Stunden pro Woche zurück — Zeit, in der dann wirklich Neues angeschoben werden kann.',
+        'Welcher Stakeholder löst am meisten Ad-hoc-Slots aus? Ein Sammel-Termin (feste Sprechzeit pro Woche, Mail-Triage am Tagesende) gibt typischerweise mehrere Stunden pro Woche zurück — Zeit, in der dann wirklich Neues angeschoben werden kann.',
       evidenceFindings: [...reactiveIdx, ...burstIdx],
       audiences: ['coach', 'lead'],
     });
@@ -1823,9 +1823,9 @@ function buildComposites(input: CompositeBuildInput): CompositeFinding[] {
     composites.push({
       id: 'konzentrations-verlust',
       level: 'warn',
-      diagnosis: `Schwerpunkt auf einen Mandanten, aber dieser verliert in der Periode Boden. Konkret: ${input.stakeholders[0]?.name ? `<b>${htmlEsc(input.stakeholders[0].name)}</b> bindet noch ${input.stakeholders[0].pct.toFixed(0)}%` : 'der bisherige Hauptmandant bleibt nominell vorne'}, aber das Profil ist sichtbar im Umbau. Das ist nicht zwingend schlecht — aber es ist ein strategischer Moment.`,
+      diagnosis: `Schwerpunkt auf einen Stakeholder, aber dieser verliert in der Periode Boden. Konkret: ${input.stakeholders[0]?.name ? `<b>${htmlEsc(input.stakeholders[0].name)}</b> bindet noch ${input.stakeholders[0].pct.toFixed(0)}%` : 'der bisherige Haupt-Stakeholder bleibt nominell vorne'}, aber das Profil ist sichtbar im Umbau. Das ist nicht zwingend schlecht — aber es ist ein strategischer Moment.`,
       hebel:
-        'Ist dieser Verlust strategisch gewollt (Skalierung anderer Mandate, bewusster Rückzug)? Oder ungeplant (Eskalation, Kundenfrust, ein Vertrag läuft aus)? Die Antwort darauf bestimmt, ob jetzt Vertriebs-Aktivität, ein Kunden-Gespräch oder ein Abschluss-Planning gefragt ist.',
+        'Ist dieser Verlust bewusst priorisiert (Schwerpunkt-Verschiebung auf andere Stakeholder, geplanter Rückzug)? Oder ungeplant (Eskalation, Konfliktlage, ein Auftrag läuft aus)? Die Antwort darauf bestimmt, ob jetzt ein Stakeholder-Gespräch, eine Übergabe oder ein Abschluss-Planning gefragt ist.',
       evidenceFindings: [...klumpenIdx, ...cpIdx],
       audiences: ['lead', 'chef', 'board'],
     });
@@ -2416,7 +2416,7 @@ export function buildReportData(
       level: 'info',
       kind: 'klumpen-risiko',
       audiences: ['lead', 'chef', 'board'],
-      htmlMessage: `<b>Klumpen-Risiko bei ${htmlEsc(top.name)}:</b> ${top.pct.toFixed(0)} % der gesamten Arbeitszeit fließen in diesen einen Mandanten. Wenn dieser Auftrag wegfällt oder sich der Schwerpunkt verschiebt, ändert sich die Auslastung schlagartig — entweder bewusste Strategie (etwa ein Großmandat) oder Hinweis, dass Diversifikation überfällig ist.`,
+      htmlMessage: `<b>Klare Priorisierung auf ${htmlEsc(top.name)}:</b> ${top.pct.toFixed(0)} % der gesamten Arbeitszeit fließen in diesen einen Stakeholder. Wenn die Lieferung wegfällt oder sich der Schwerpunkt verschiebt, ändert sich die Auslastung schlagartig — entweder bewusst gesetzt (etwa ein zentraler Stakeholder mit hoher Anforderungslage), oder Hinweis, dass eine bewusste Öffnung in Richtung anderer Stakeholder ansteht.`,
     });
   }
 
@@ -2434,7 +2434,7 @@ export function buildReportData(
       level: 'info',
       kind: 'mt-high',
       audiences: ['lead', 'chef'],
-      htmlMessage: `<b>Auffällig viel Parallel-Arbeit:</b> pro erfasster Arbeitsstunde fielen ${mtFactor.toFixed(2)} h Aufgaben an. Heißt: oft liefen mehrere Themen gleichzeitig im selben Slot (etwa mehrere Stakeholder gleichzeitig zugewiesen). Entweder bewusste Mehr-Mandanten-Steuerung — oder vergessene Tracker, die nicht gestoppt wurden. Ein paar Stichproben lohnen sich.${baselineSentence}`,
+      htmlMessage: `<b>Auffällig viel Parallel-Arbeit:</b> pro erfasster Arbeitsstunde fielen ${mtFactor.toFixed(2)} h Aufgaben an. Heißt: oft liefen mehrere Themen gleichzeitig im selben Slot (etwa mehrere Stakeholder gleichzeitig zugewiesen). Entweder bewusste parallele Stakeholder-Arbeit — oder vergessene Tracker, die nicht gestoppt wurden. Ein paar Stichproben lohnen sich.${baselineSentence}`,
     });
   }
 
@@ -2456,7 +2456,7 @@ export function buildReportData(
       level: 'info',
       kind: 'coverage-thin',
       audiences: ['coach', 'lead', 'chef', 'board'],
-      htmlMessage: `<b>${daysThin} Tage mit lückenhaftem Tracking</b> (unter 60 % des Anwesenheitsfensters erfasst). Heißt: zwischen erstem und letztem Eintrag dieser Tage klaffen größere Lücken — die Detail-Verteilung (Mandant, Tätigkeit) ist an diesen Tagen weniger belastbar. Tendenz-Aussagen über den ganzen Zeitraum bleiben gültig.`,
+      htmlMessage: `<b>${daysThin} Tage mit lückenhaftem Tracking</b> (unter 60 % des Anwesenheitsfensters erfasst). Heißt: zwischen erstem und letztem Eintrag dieser Tage klaffen größere Lücken — die Detail-Verteilung (Stakeholder, Tätigkeit) ist an diesen Tagen weniger belastbar. Tendenz-Aussagen über den ganzen Zeitraum bleiben gültig.`,
     });
   }
 
@@ -2474,14 +2474,14 @@ export function buildReportData(
           level: 'info',
           kind: 'reactive-stakeholder',
           audiences: ['coach', 'lead'],
-          htmlMessage: `<b>${htmlEsc(sp.name)} ist Auftrags-Triage:</b> ${sp.microTaskPct.toFixed(0)} % der Einträge unter 15 Minuten, ${sp.reactiveCategoryShare.toFixed(0)} % der Arbeit in reaktiven Projekten (Anfragen, BGÖ, Krise). Kurze Slots sind hier nicht Fragmentierung, sondern dein Job — Anfragen schnell durchsetzen, eine nach der anderen. Eine Triage-Leistung, die unsichtbar bleibt, weil sie sich nicht in „zwei Stunden konzentrierte Arbeit" ablesen lässt.`,
+          htmlMessage: `<b>${htmlEsc(sp.name)} ist Anforderungs-Triage:</b> ${sp.microTaskPct.toFixed(0)} % der Einträge unter 15 Minuten, ${sp.reactiveCategoryShare.toFixed(0)} % der Arbeit in reaktiven Projekten (Anfragen, BGÖ, Krise). Kurze Slots sind hier nicht Fragmentierung, sondern dein Job — Anfragen schnell durchsetzen, eine nach der anderen. Eine Triage-Leistung, die unsichtbar bleibt, weil sie sich nicht in „zwei Stunden konzentrierte Arbeit" ablesen lässt.`,
         });
       } else {
         findings.push({
           level: 'warn',
           kind: 'reactive-stakeholder',
           audiences: ['coach', 'lead'],
-          htmlMessage: `<b>${htmlEsc(sp.name)} ist ein Ad-hoc-Mandant:</b> ${sp.microTaskPct.toFixed(0)} % der Einträge sind unter 15 Minuten lang (Schnitt ${fmtHours(sp.avgEntryMs)} pro Eintrag), bei ${sp.pct.toFixed(0)} % Gesamtanteil. Dieser Mandant löst viele kleine, kurze Aktionen aus, die deine Konzentration unterbrechen. Ein Sammel-Termin (etwa eine feste Stunde am Tag, in der die Anfragen gebündelt werden) gibt typischerweise mehrere Stunden Tiefenarbeit pro Woche zurück.`,
+          htmlMessage: `<b>${htmlEsc(sp.name)} ist ein Ad-hoc-Stakeholder:</b> ${sp.microTaskPct.toFixed(0)} % der Einträge sind unter 15 Minuten lang (Schnitt ${fmtHours(sp.avgEntryMs)} pro Eintrag), bei ${sp.pct.toFixed(0)} % Gesamtanteil. Dieser Stakeholder löst viele kleine, kurze Aktionen aus, die deine Konzentration unterbrechen. Ein Sammel-Termin (etwa eine feste Stunde am Tag, in der die Anfragen gebündelt werden) gibt typischerweise mehrere Stunden Tiefenarbeit pro Woche zurück.`,
         });
       }
     }
@@ -2494,7 +2494,7 @@ export function buildReportData(
         level: 'warn',
         kind: 'oos-stakeholder',
         audiences: ['lead'],
-        htmlMessage: `<b>${htmlEsc(sp.name)}: viel Zeit außerhalb des eigentlichen Auftrags?</b> ${sp.nonprodPct.toFixed(0)} % der gebundenen Zeit (${fmtHours(sp.ms)}) sind als „nicht produktiv" verbucht — also Verwaltung, Abstimmung, Beziehungspflege. Bei diesem Mandanten arbeitest du nicht direkt am Ergebnis, sondern am Drumherum. Bewusste Beziehungspflege bei einem strategischen Kunden, oder dehnt sich der Auftrag stillschweigend aus?`,
+        htmlMessage: `<b>${htmlEsc(sp.name)}: viel Zeit außerhalb der eigentlichen Lieferung?</b> ${sp.nonprodPct.toFixed(0)} % der gebundenen Zeit (${fmtHours(sp.ms)}) sind als „nicht produktiv" verbucht — also Verwaltung, Abstimmung, Beziehungspflege. Bei diesem Stakeholder arbeitest du nicht direkt am Ergebnis, sondern am Drumherum. Bewusste Beziehungspflege bei einem zentralen Stakeholder, oder dehnen sich die Anforderungen stillschweigend aus?`,
       });
     }
   }
@@ -2506,7 +2506,7 @@ export function buildReportData(
         level: 'info',
         kind: 'meeting-heavy-stakeholder',
         audiences: ['lead', 'chef'],
-        htmlMessage: `<b>${htmlEsc(sp.name)}: Mandant mit hohem Termin-Anteil.</b> ${sp.meetingHeavyPct.toFixed(0)} % der Zeit für diesen Mandanten lief in Meetings, Calls oder Workshops. Über die Hälfte der Arbeit findet in Live-Terminen statt, nicht in eigener stiller Arbeit. Welche dieser Termine wären als kurze Mail oder Ein-Seiten-Notiz schneller erledigt?`,
+        htmlMessage: `<b>${htmlEsc(sp.name)}: Stakeholder mit hohem Termin-Anteil.</b> ${sp.meetingHeavyPct.toFixed(0)} % der Zeit für diesen Stakeholder lief in Meetings, Calls oder Workshops. Über die Hälfte der Arbeit findet in Live-Terminen statt, nicht in eigener stiller Arbeit. Welche dieser Termine wären als kurze Mail oder Ein-Seiten-Notiz schneller erledigt?`,
       });
     }
   }
@@ -2650,7 +2650,7 @@ export function buildReportData(
       level: 'info',
       kind: 'project-movement',
       audiences: ['chef', 'board'],
-      htmlMessage: `<b>Projekt-Bewegung im Zeitraum:</b> ${parts.join(' · ')}. Die Projekt-Liste am Ende der Periode hat sich klar verschoben — neue Initiativen sind dazugekommen oder alte ausgelaufen. Gewollte Portfolio-Bewegung, oder zeigt sich hier, dass Projekte unkontrolliert starten oder sterben?`,
+      htmlMessage: `<b>Projekt-Bewegung im Zeitraum:</b> ${parts.join(' · ')}. Die Projekt-Liste am Ende der Periode hat sich klar verschoben — neue Initiativen sind dazugekommen oder alte ausgelaufen. Bewusst gesetzte Verschiebung im Projekt-Mix, oder zeigt sich hier, dass Projekte unkontrolliert starten oder sterben?`,
     });
   }
 
@@ -2732,7 +2732,7 @@ export function buildReportData(
       case 'multiTasking': {
         if (cp.deltaSign === 'up') {
           headline = `<b>${wkLabel} war besonders parallel:</b> du hast pro erfasster Arbeitsstunde ${cp.currentValue.toFixed(2)} h Aufgaben gezählt — Schnitt sonst ${cp.baselineValue.toFixed(2)} h.`;
-          erklaerung = `Mehrere Themen liefen gleichzeitig (etwa mehrere Stakeholder im selben Slot). Bewusste Mehr-Mandanten-Steuerung oder Zerstreuung?`;
+          erklaerung = `Mehrere Themen liefen gleichzeitig (etwa mehrere Stakeholder im selben Slot). Bewusste parallele Stakeholder-Arbeit oder Zerstreuung?`;
         } else {
           headline = `<b>${wkLabel} war seriell:</b> Parallel-Last ${cp.currentValue.toFixed(2)} h pro Arbeitsstunde, gegenüber Schnitt ${cp.baselineValue.toFixed(2)} h.`;
           erklaerung = `Du hast ein Ding nach dem anderen gemacht — weniger Parallel-Verarbeitung als sonst.`;
@@ -2741,13 +2741,13 @@ export function buildReportData(
       }
       case 'topStakeholder': {
         const wk = weeks.find((w) => w.label === cp.weekLabel);
-        const name = wk?.topStakeholderName || 'Hauptmandant';
+        const name = wk?.topStakeholderName || 'Haupt-Stakeholder';
         if (cp.deltaSign === 'up') {
           headline = `<b>${wkLabel}: ${htmlEsc(name)} hat plötzlich viel Raum eingenommen</b> — ${cp.currentValue.toFixed(0)} % der Woche, gegenüber Schnitt ${cp.baselineValue.toFixed(0)} % in den ${ago}.`;
-          erklaerung = `Ein einzelner Mandant hat in dieser Woche dominiert. Eskalation, Großauftrag oder bewusst priorisiert?`;
+          erklaerung = `Ein einzelner Stakeholder hat in dieser Woche dominiert. Eskalation, große Anforderung oder bewusst priorisiert?`;
         } else {
           headline = `<b>${wkLabel}: ${htmlEsc(name)} verliert Anteil</b> — ${cp.currentValue.toFixed(0)} % gegenüber Schnitt ${cp.baselineValue.toFixed(0)} %.`;
-          erklaerung = `Der bisherige Hauptmandant rückt in den Hintergrund — Projekt abgeschlossen, oder andere Themen drängen rein?`;
+          erklaerung = `Der bisherige Haupt-Stakeholder rückt in den Hintergrund — Projekt abgeschlossen, oder andere Themen drängen rein?`;
         }
         break;
       }

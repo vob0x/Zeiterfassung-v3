@@ -83,7 +83,7 @@ function buildNextAction(data: ReportData): string {
       sentence = `Such dir in der nächsten Woche eine einzige Stunde, die nicht reaktiv läuft, und block sie bewusst — was würdest du in dieser Stunde tun, wenn nichts reinkäme?`;
       break;
     case 'klumpen-risiko':
-      sentence = `Beim nächsten Wochen-Start: welcher der anderen Mandanten braucht diese Woche eine bewusste Stunde von dir — auch wenn <b>${esc(a.subject || '—')}</b> drückt?`;
+      sentence = `Beim nächsten Wochen-Start: welcher der anderen Stakeholder braucht diese Woche eine bewusste Stunde von dir — auch wenn <b>${esc(a.subject || '—')}</b> drückt?`;
       break;
     case 'routine':
       // Welle 9.3 — unterscheiden zwischen aktiv-aber-undefiniert
@@ -223,8 +223,8 @@ function buildCoachParagraphs(data: ReportData): string {
       top.pct >= 50
         ? `Dein Kopf war diese Periode klar bei <b>${esc(top.name)}</b> — ${top.pct.toFixed(0)}% deiner erfassten Zeit. Das ist Fokus mit Preis: andere Themen bekamen wenig Raum.`
         : top.pct >= 30
-          ? `Dein Hauptmandat <b>${esc(top.name)}</b> nahm ${top.pct.toFixed(0)}% — klar erkennbar, aber kein Monopol. Daneben hattest du ein eigenes Portfolio.`
-          : `Du hast breit verteilt — <b>${esc(top.name)}</b> an der Spitze, aber nur mit ${top.pct.toFixed(0)}%. Viele Mandanten teilen sich deine Aufmerksamkeit.`;
+          ? `Dein Haupt-Stakeholder <b>${esc(top.name)}</b> nahm ${top.pct.toFixed(0)}% — klar erkennbar, aber kein Monopol. Daneben hattest du einen eigenen Stakeholder-Mix.`
+          : `Du hast breit verteilt — <b>${esc(top.name)}</b> an der Spitze, aber nur mit ${top.pct.toFixed(0)}%. Viele Stakeholder teilen sich deine Aufmerksamkeit.`;
     paras.push(seg);
   }
 
@@ -277,7 +277,7 @@ function buildCoachParagraphs(data: ReportData): string {
   // unkommentiert — die Coach-Brille soll nicht alles erzählen.
   if (data.kpis.reactivePct >= 50) {
     paras.push(
-      `Eine fremdgetriebene Periode: ${data.kpis.reactivePct.toFixed(0)}% deiner Arbeitszeit lief in reaktiven Projekten — Medienanfragen, Bürgeranfragen, BGÖ, politische Geschäfte. Das ist Auftragsdienst, kein Mangel an Eigen-Initiative. Frage trotzdem: hat sich in der Periode auch nur eine Stunde eigene Vorausplanung untergebracht, oder war alles Reaktion?`
+      `Eine fremdgetriebene Periode: ${data.kpis.reactivePct.toFixed(0)}% deiner Arbeitszeit lief in reaktiven Projekten — Medienanfragen, Bürgeranfragen, BGÖ, politische Geschäfte. Das ist Liefer-Dienst auf Anfrage, kein Mangel an Eigen-Initiative. Frage trotzdem: hat sich in der Periode auch nur eine Stunde eigene Vorausplanung untergebracht, oder war alles Reaktion?`
     );
   } else if (data.kpis.reactivePct < 15 && data.kpis.workingDays >= 10) {
     paras.push(
@@ -333,7 +333,7 @@ function buildCoachParagraphs(data: ReportData): string {
       .filter((p) => p.nonprodPct >= 30 && p.entriesCount >= 5)
       .sort((a, b) => b.nonprodPct - a.nonprodPct)[0];
     const wo = topNonprodSh
-      ? ` Der größte Anteil davon steckte in der Arbeit für <b>${esc(topNonprodSh.name)}</b> (${topNonprodSh.nonprodPct.toFixed(0)}% dieser Mandant-Slots).`
+      ? ` Der größte Anteil davon steckte in der Arbeit für <b>${esc(topNonprodSh.name)}</b> (${topNonprodSh.nonprodPct.toFixed(0)}% dieser Stakeholder-Slots).`
       : '';
     paras.push(
       `Was zu denken gibt: ${data.kpis.leakPct.toFixed(0)}% deiner Zeit hast du selbst als „nicht produktiv" markiert. Das ist deine Bewertung, nicht die der Daten — du hast diese Slots aktiv so eingestuft.${wo} Welche dieser Slots würdest du im Nachhinein anders setzen — beim nächsten Mal sagen oder gar nicht erst zusagen?`
@@ -375,7 +375,7 @@ function buildCoachParagraphs(data: ReportData): string {
         sentence = `Auffällig: in ${wk} fiel der Anteil deiner konzentrierten Arbeit (Blöcke über zwei Stunden am Stück) auf ${cp.currentValue.toFixed(0)} % — sonst lag er bei ${cp.baselineValue.toFixed(0)} %. Die Woche war fragmentierter, mehr Stückwerk statt zusammenhängender Arbeit. Was hat dich da unterbrochen — Termine, Anfragen, oder eine grundsätzlich andere Aufgabenstellung?`;
         break;
       case 'multiTasking':
-        sentence = `Auch die Parallel-Last ist in ${wk} hochgegangen — pro Arbeitsstunde fielen ${cp.currentValue.toFixed(2)}h Aufgaben an statt sonst ${cp.baselineValue.toFixed(2)}h. Das heißt: mehrere Themen liefen öfter gleichzeitig im selben Slot. Hattest du das Gefühl, an zu vielen Sachen gleichzeitig zu sitzen — oder war das eine bewusste Mehr-Mandanten-Woche?`;
+        sentence = `Auch die Parallel-Last ist in ${wk} hochgegangen — pro Arbeitsstunde fielen ${cp.currentValue.toFixed(2)}h Aufgaben an statt sonst ${cp.baselineValue.toFixed(2)}h. Das heißt: mehrere Themen liefen öfter gleichzeitig im selben Slot. Hattest du das Gefühl, an zu vielen Sachen gleichzeitig zu sitzen — oder war das eine bewusste Woche mit vielen parallelen Stakeholdern?`;
         break;
       case 'meeting':
         sentence = `In ${wk} ist dein Termin-Anteil deutlich gestiegen — ${cp.currentValue.toFixed(0)} % der Arbeitszeit in Meetings und Calls (gegenüber Ø ${cp.baselineValue.toFixed(0)} %). Weniger Zeit für eigene stille Arbeit. Hast du die Termine selbst gewollt, oder sind sie von außen reingerutscht?`;
@@ -483,7 +483,7 @@ function buildStrengthsBlock(data: ReportData): string {
   if (k.reactivePct >= 30 && !k.hasCrisisSlots) {
     const reactiveHours = Math.round(k.reactiveMs / 3_600_000);
     items.push(
-      `<b>Triage trägt:</b> ${k.reactivePct.toFixed(0)}% deiner Zeit (rund ${reactiveHours}h) lief in reaktiven Projekten — Anfragen, BGÖ, politische Vorstöße. Das ist Auftrags-Bewältigung, die im klassischen Produktivitäts-Maß nicht auftaucht, aber dein eigentliches Stellenprofil ausmacht.`
+      `<b>Triage trägt:</b> ${k.reactivePct.toFixed(0)}% deiner Zeit (rund ${reactiveHours}h) lief in reaktiven Projekten — Anfragen, BGÖ, politische Vorstöße. Das ist Anforderungs-Bewältigung, die im klassischen Produktivitäts-Maß nicht auftaucht, aber dein eigentliches Stellenprofil ausmacht.`
     );
   }
 
@@ -519,7 +519,7 @@ function buildReflectionQuestions(data: ReportData): string {
     .sort((a, b) => a.notizPct - b.notizPct)[0];
   if (lowestNotizSh) {
     fragen.push(
-      `Bei ${esc(lowestNotizSh.name)} tragen nur ${lowestNotizSh.notizPct.toFixed(0)}% der Einträge einen Kommentar. Wenn du in drei Monaten die Slots dieses Mandanten anschaust — welche davon wären jetzt schwer einzuordnen, weil dir die kurze Notiz fehlt?`
+      `Bei ${esc(lowestNotizSh.name)} tragen nur ${lowestNotizSh.notizPct.toFixed(0)}% der Einträge einen Kommentar. Wenn du in drei Monaten die Slots dieses Stakeholders anschaust — welche davon wären jetzt schwer einzuordnen, weil dir die kurze Notiz fehlt?`
     );
   }
 
@@ -555,7 +555,7 @@ function buildReflectionQuestions(data: ReportData): string {
   if (reactiveSh) {
     if (reactiveSh.reactiveCategoryShare >= 50) {
       fragen.push(
-        `Bei ${esc(reactiveSh.name)} liefen ${reactiveSh.microTaskPct.toFixed(0)}% deiner Einträge in kurzen Slots — das ist Auftrags-Triage, kein Stückwerk. Frag dich nicht „wie sammle ich das", sondern: läuft die Triage rund? Gibt es Anfragen, die zu lange liegen blieben oder zwischen Stühlen fielen?`
+        `Bei ${esc(reactiveSh.name)} liefen ${reactiveSh.microTaskPct.toFixed(0)}% deiner Einträge in kurzen Slots — das ist Anforderungs-Triage, kein Stückwerk. Frag dich nicht „wie sammle ich das", sondern: läuft die Triage rund? Gibt es Anfragen, die zu lange liegen blieben oder zwischen Stühlen fielen?`
       );
     } else {
       fragen.push(

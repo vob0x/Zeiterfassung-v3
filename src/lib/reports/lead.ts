@@ -35,7 +35,7 @@ export function renderLeadBody(data: ReportData): string {
     ${renderCrisisBanner(data)}
     ${buildCockpit(data)}
     ${renderChangePointSection(data, 4)}
-    <h2>Mandanten-Dossiers</h2>
+    <h2>Stakeholder-Dossiers</h2>
     ${buildDossiers(data)}
     ${buildTopTimeFlow(data)}
     ${buildDriftSection(data)}
@@ -57,7 +57,7 @@ function buildNextAction(data: ReportData): string {
   let sentence = '';
   switch (a.kind) {
     case 'strukturelles-stau-muster':
-      sentence = `Im nächsten 1:1 mit der Person über <b>${esc(a.subject || '—')}</b> sprechen: was lässt sich am Auftrag konkret ändern (Volumen, Schnittstelle, Erwartung), damit dieses Projekt nicht weiter strukturell die Mehrarbeit treibt?`;
+      sentence = `Im nächsten 1:1 mit der Person über <b>${esc(a.subject || '—')}</b> sprechen: was lässt sich an der Anforderung konkret ändern (Volumen, Schnittstelle, Erwartung), damit dieses Projekt nicht weiter strukturell die Mehrarbeit treibt?`;
       break;
     case 'high-load-days-stau':
       sentence = `Im nächsten 1:1: die langen Tage benennen und die Stau-Frage stellen — welche Anfragen drücken Eigenarbeit in die Spitzen-Tage, was lässt sich vorab abräumen oder bündeln?`;
@@ -69,13 +69,13 @@ function buildNextAction(data: ReportData): string {
       sentence = `Im nächsten 1:1 fragen: bei ${(a.value ?? 0).toFixed(0)} % reaktiver Arbeit — was ist von der Eigenarbeit auf der Strecke geblieben, und braucht das gemeinsam Schutzraum?`;
       break;
     case 'klumpen-risiko':
-      sentence = `Im nächsten 1:1 mit der Person über die Konzentration auf <b>${esc(a.subject || '—')}</b> sprechen (${(a.value ?? 0).toFixed(0)} % der Zeit) — strategisch gewollt, oder Diversifikation als Auftrag?`;
+      sentence = `Im nächsten 1:1 mit der Person über die Konzentration auf <b>${esc(a.subject || '—')}</b> sprechen (${(a.value ?? 0).toFixed(0)} % der Zeit) — bewusst priorisiert, oder hat sich das durch die Anfragenlage ergeben?`;
       break;
     case 'routine':
       // Welle 9.3 — aktiv vs. tatsächlich unauffällig trennen.
       sentence = a.routineActive
-        ? `Im 1:1 ansprechen: die Periode war aktiv (Mehrarbeit gegenüber Soll), aber kein einzelnes Steuerungs-Thema sticht heraus — wo lief die Energie hin, und welche zwei Mandanten sollen in der nächsten Periode bewusst mehr oder weniger Gewicht bekommen?`
-        : `Im 1:1 ohne Krisen-Punkte: welche zwei Mandanten sollen in der nächsten Periode bewusst mehr Gewicht bekommen, welche weniger?`;
+        ? `Im 1:1 ansprechen: die Periode war aktiv (Mehrarbeit gegenüber Soll), aber kein einzelnes Steuerungs-Thema sticht heraus — wo lief die Energie hin, und welche zwei Stakeholder sollen in der nächsten Periode bewusst mehr oder weniger Gewicht bekommen?`
+        : `Im 1:1 ohne Krisen-Punkte: welche zwei Stakeholder sollen in der nächsten Periode bewusst mehr Gewicht bekommen, welche weniger?`;
       break;
   }
   return `<div class="lead-hebel" style="margin-top:18px">
@@ -166,12 +166,12 @@ function buildCockpit(data: ReportData): string {
     schwerpunktValue = `${top.pct.toFixed(0)}% ${esc(top.name)}`;
     if (top.pct >= 60) {
       schwerpunktClass = 'ampel-warn';
-      schwerpunktSub = `Über ${top.pct.toFixed(0)}% der Zeit in einen einzigen Mandanten — Klumpen-Risiko. Wenn dieser Auftrag wegfällt, ändert sich die Auslastung schlagartig. <b>Im Gespräch fragen:</b> Ist diese Konzentration strategisch gewollt, oder steht Diversifikation als Auftrag an?`;
+      schwerpunktSub = `Über ${top.pct.toFixed(0)}% der Zeit in einen einzigen Stakeholder — starke Schwerpunkt-Setzung. Wenn diese Lieferung wegfällt oder sich verschiebt, ändert sich die Auslastung schlagartig. <b>Im Gespräch fragen:</b> Ist diese Priorisierung bewusst gesetzt, oder hat sich das durch die Anfragenlage ergeben?`;
     } else if (top.pct >= 35) {
-      schwerpunktSub = `${top.pct.toFixed(0)}% bei ${esc(top.name)} — klar erkennbarer Hauptmandant mit gesundem Portfolio daneben. <b>Im Gespräch fragen:</b> Stimmen die Anteile zur strategischen Wunsch-Mischung, oder driftet die Realität schleichend von der Planung weg?`;
+      schwerpunktSub = `${top.pct.toFixed(0)}% bei ${esc(top.name)} — klar erkennbarer Haupt-Stakeholder mit gesundem Mix daneben. <b>Im Gespräch fragen:</b> Stimmen die Anteile zur gewünschten Aufteilung, oder driftet die Realität schleichend von der Planung weg?`;
     } else {
       schwerpunktClass = 'ampel-ok';
-      schwerpunktSub = `Spitzenanteil bei ${top.pct.toFixed(0)}% — Arbeitszeit verteilt sich breit über mehrere Mandanten. <b>Im Gespräch fragen:</b> Ist die Verteilung bewusst-divers, oder fehlt ein klarer Schwerpunkt? Welche zwei Mandanten sollen in der nächsten Periode mehr Gewicht bekommen?`;
+      schwerpunktSub = `Spitzenanteil bei ${top.pct.toFixed(0)}% — Arbeitszeit verteilt sich breit über mehrere Stakeholder. <b>Im Gespräch fragen:</b> Ist die breite Aufteilung bewusst, oder fehlt ein klarer Schwerpunkt? Welche zwei Stakeholder sollen in der nächsten Periode mehr Gewicht bekommen?`;
     }
   } else {
     schwerpunktValue = '—';
@@ -251,7 +251,7 @@ function buildCockpit(data: ReportData): string {
 function buildDossiers(data: ReportData): string {
   const profiles = data.stakeholderProfiles.slice(0, 3);
   if (profiles.length === 0) {
-    return `<p class="muted">Zu wenig Daten für Mandanten-Dossiers — keine Stakeholder mit ≥ 10 % Anteil im Zeitraum.</p>`;
+    return `<p class="muted">Zu wenig Daten für Stakeholder-Dossiers — keine Stakeholder mit ≥ 10 % Anteil im Zeitraum.</p>`;
   }
   return `<div class="lead-dossiers">
     ${profiles.map((p) => renderStakeholderDossier(p)).join('')}
@@ -333,7 +333,7 @@ function buildHebel(data: ReportData): string {
   const top = data.breakdowns.stakeholders[0];
   if (top && top.pct >= 50) {
     hebel.push(
-      `<b>Klumpen-Risiko bei ${esc(top.name)}</b> — mehr als die Hälfte der Zeit fließt in einen einzigen Mandanten. Frage: ist diese Konzentration strategisch gewollt, oder ist Diversifikation ein Auftrag für die nächsten Wochen?`
+      `<b>Klare Priorisierung auf ${esc(top.name)}</b> — mehr als die Hälfte der Zeit fließt in einen einzigen Stakeholder. Frage: ist diese Priorisierung bewusst gesetzt, oder sollte in den nächsten Wochen Raum für andere Stakeholder bewusst geöffnet werden?`
     );
   }
 
@@ -358,16 +358,16 @@ function buildHebel(data: ReportData): string {
     const isReactiveDominant = oosSh.reactiveCategoryShare >= 50;
     let frage = '';
     if (oosSh.microTaskPct >= 30 && isReactiveDominant) {
-      frage = `Triage-Mandant — kurze Slots sind hier der Job. Frag im Gespräch nicht „kannst du sammeln", sondern: läuft die Triage rund? Gibt es Anfragen, die zu lange liegen oder zwischen Zuständigkeiten verloren gehen?`;
+      frage = `Triage-Stakeholder — kurze Slots sind hier der Job. Frag im Gespräch nicht „kannst du sammeln", sondern: läuft die Triage rund? Gibt es Anfragen, die zu lange liegen oder zwischen Zuständigkeiten verloren gehen?`;
     } else if (oosSh.microTaskPct >= 30) {
       frage = `Lässt sich ein Sammel-Termin etablieren (feste Sprechzeit), damit nicht jede Anfrage einzeln den Tag bricht?`;
     } else if (oosSh.meetingHeavyPct >= 50) {
       frage = `Welche dieser Termine wären als Mail oder kurzes Ein-Pager schneller — und für beide Seiten besser?`;
     } else {
-      frage = `Geht hier viel Zeit in Verwaltung und Beziehungspflege — bewusst investiert, oder dehnt sich der Auftrag aus?`;
+      frage = `Geht hier viel Zeit in Verwaltung und Beziehungspflege — bewusst investiert, oder dehnt sich die Anforderung aus?`;
     }
     hebel.push(
-      `<b>Mandat ${esc(oosSh.name)}</b> fällt mit ${marker.join(', ')} auf. ${frage}`
+      `<b>Stakeholder ${esc(oosSh.name)}</b> fällt mit ${marker.join(', ')} auf. ${frage}`
     );
   }
 
@@ -407,7 +407,7 @@ function buildHebel(data: ReportData): string {
 
   if (hebel.length === 0) {
     hebel.push(
-      `Keine roten Flaggen im Datenbild — gutes Signal. Im Gespräch ohne Krisen-Punkte arbeiten: welche zwei Mandanten sollen in der nächsten Periode bewusst mehr Gewicht bekommen, welche weniger?`
+      `Keine roten Flaggen im Datenbild — gutes Signal. Im Gespräch ohne Krisen-Punkte arbeiten: welche zwei Stakeholder sollen in der nächsten Periode bewusst mehr Gewicht bekommen, welche weniger?`
     );
   }
 

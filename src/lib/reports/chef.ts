@@ -87,20 +87,20 @@ function buildHeadlines(data: ReportData): string {
   if (top) {
     let concHead: string;
     if (top.pct >= 50) {
-      concHead = `<b>Klare Konzentration auf einen Mandanten:</b> <b>${esc(top.name)}</b> bindet ${top.pct.toFixed(0)} % der Zeit. Das ist ein Klumpen-Risiko: wenn dieser Auftrag wegfällt, ändert sich die Auslastung schlagartig. ${data.breakdowns.stakeholders.length} Mandanten und ${data.breakdowns.projekte.length} Projekte im Bewegungsfeld.`;
+      concHead = `<b>Klare Konzentration auf einen Stakeholder:</b> <b>${esc(top.name)}</b> bindet ${top.pct.toFixed(0)} % der Zeit. Das ist eine starke Schwerpunkt-Setzung: wenn diese Lieferung wegfällt oder sich verschiebt, ändert sich die Auslastung schlagartig. ${data.breakdowns.stakeholders.length} Stakeholder und ${data.breakdowns.projekte.length} Projekte im Bewegungsfeld.`;
     } else if (top.pct >= 30) {
-      concHead = `<b>Klar erkennbarer Hauptmandant:</b> <b>${esc(top.name)}</b> mit ${top.pct.toFixed(0)} % Anteil, daneben ein Portfolio von ${data.breakdowns.stakeholders.length} aktiven Mandanten und ${data.breakdowns.projekte.length} Projekten. Stabile Mischung, kein Klumpen.`;
+      concHead = `<b>Klar erkennbarer Haupt-Stakeholder:</b> <b>${esc(top.name)}</b> mit ${top.pct.toFixed(0)} % Anteil, daneben ein Mix von ${data.breakdowns.stakeholders.length} aktiven Stakeholdern und ${data.breakdowns.projekte.length} Projekten. Stabile Verteilung, kein einseitiges Bild.`;
     } else {
-      concHead = `<b>Breit verteilte Arbeitszeit:</b> der größte Mandant (${esc(top.name)}) liegt bei nur ${top.pct.toFixed(0)} %. ${data.breakdowns.stakeholders.length} aktive Mandanten teilen sich die Aufmerksamkeit. Kein akutes Klumpen-Thema, aber eventuell ein Hinweis auf zu breite Streuung.`;
+      concHead = `<b>Breit verteilte Arbeitszeit:</b> der größte Stakeholder (${esc(top.name)}) liegt bei nur ${top.pct.toFixed(0)} %. ${data.breakdowns.stakeholders.length} aktive Stakeholder teilen sich die Aufmerksamkeit. Kein einseitiger Schwerpunkt, aber eventuell ein Hinweis auf zu breite Streuung.`;
     }
     heads.push(concHead);
   }
 
   // Parallel-Arbeit (Multi-Tasking)
   if (k.multiTaskingFactor > 1.4) {
-    heads.push(`<b>Hohe Parallel-Last:</b> pro erfasster Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(2)} h Aufgaben an. Heißt: oft liefen mehrere Themen gleichzeitig im selben Slot — bewusste Mehr-Mandanten-Steuerung, oder Hinweis auf parallel laufende Tracker, die nicht gestoppt wurden. Eine Stichprobe lohnt sich.`);
+    heads.push(`<b>Hohe Parallel-Last:</b> pro erfasster Arbeitsstunde fielen ${k.multiTaskingFactor.toFixed(2)} h Aufgaben an. Heißt: oft liefen mehrere Themen gleichzeitig im selben Slot — bewusste parallele Stakeholder-Arbeit, oder Hinweis auf parallel laufende Tracker, die nicht gestoppt wurden. Eine Stichprobe lohnt sich.`);
   } else if (k.multiTaskingFactor > 1.15) {
-    heads.push(`<b>Moderate Parallel-Last:</b> pro erfasster Arbeitsstunde rund ${k.multiTaskingFactor.toFixed(2)} h Aufgaben gebucht. Üblicher Anteil paralleler Arbeit, etwa wenn Mandanten in einem gemeinsamen Slot besprochen werden.`);
+    heads.push(`<b>Moderate Parallel-Last:</b> pro erfasster Arbeitsstunde rund ${k.multiTaskingFactor.toFixed(2)} h Aufgaben gebucht. Üblicher Anteil paralleler Arbeit, etwa wenn mehrere Stakeholder in einem gemeinsamen Slot besprochen werden.`);
   } else {
     heads.push(`<b>Sequenzielle Arbeit:</b> Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} — die Person macht ein Ding nach dem anderen, kaum Mehrfachzuordnung pro Slot.`);
   }
@@ -270,7 +270,7 @@ function buildDriftSection(data: ReportData): string {
   const rows: string[] = [];
 
   rows.push(`<tr>
-    <td>Anteil größter Mandant</td>
+    <td>Anteil größter Stakeholder</td>
     <td class="num">${d.top1ShareFirst.toFixed(0)}% (${esc(d.topShNameFirst)})</td>
     <td class="num">${d.top1ShareSecond.toFixed(0)}% (${esc(d.topShNameSecond)})</td>
     <td class="num">${renderDriftArrow(d.top1ShareSecond - d.top1ShareFirst)}</td>
@@ -284,7 +284,7 @@ function buildDriftSection(data: ReportData): string {
   </tr>`);
 
   rows.push(`<tr>
-    <td>Anzahl aktiver Mandanten</td>
+    <td>Anzahl aktiver Stakeholder</td>
     <td class="num">${d.distinctShFirst}</td>
     <td class="num">${d.distinctShSecond}</td>
     <td class="num">${renderDriftArrow(d.distinctShSecond - d.distinctShFirst, 1)}</td>
@@ -341,7 +341,7 @@ function buildDriftSection(data: ReportData): string {
           meeting: 'Termin-Anteil',
           deepFocus: 'Konzentrations-Anteil',
           multiTasking: 'Parallel-Last',
-          topStakeholder: 'Anteil Hauptmandant',
+          topStakeholder: 'Anteil Haupt-Stakeholder',
           coverage: 'Tracking-Genauigkeit',
           reactiveShare: 'Reaktiv-Anteil',
         };
@@ -413,7 +413,7 @@ function pickPriorityAction(data: ReportData): string {
   if (stauFinding) {
     const topOt = data.overtimeAttribution[0];
     const projekt = topOt ? esc(topOt.projekt) : 'das treibende Projekt';
-    return `Steuerungs-Gespräch zu <b>${projekt}</b>: was lässt sich am Auftrags-Volumen ändern, was an der Ressourcen-Zuordnung? Solange dieses Projekt strukturell die Mehrarbeit treibt, schiebt jede andere Maßnahme nur Symptome.`;
+    return `Steuerungs-Gespräch zu <b>${projekt}</b>: was lässt sich am Anforderungs-Volumen ändern, was an der Ressourcen-Zuordnung? Solange dieses Projekt strukturell die Mehrarbeit treibt, schiebt jede andere Maßnahme nur Symptome.`;
   }
 
   // 1. Datenqualität — wenn das nicht steht, tragen die Detail-Schlüsse nicht.
@@ -431,13 +431,13 @@ function pickPriorityAction(data: ReportData): string {
   if (data.drift) {
     const dShare = data.drift.top1ShareSecond - data.drift.top1ShareFirst;
     if (dShare >= 8 && data.drift.top1ShareSecond >= 50) {
-      return `Klumpen-Risiko bei <b>${esc(data.drift.topShNameSecond)}</b> verstärkt sich (${data.drift.top1ShareFirst.toFixed(0)}% → ${data.drift.top1ShareSecond.toFixed(0)}%). Entweder Diversifikation als bewussten Auftrag für die nächsten Wochen setzen, oder die strategische Großmandat-Logik schriftlich bestätigen.`;
+      return `Schwerpunkt auf <b>${esc(data.drift.topShNameSecond)}</b> verstärkt sich (${data.drift.top1ShareFirst.toFixed(0)}% → ${data.drift.top1ShareSecond.toFixed(0)}%). Entweder in den nächsten Wochen bewusst Raum für andere Stakeholder öffnen, oder die Schwerpunkt-Setzung schriftlich bestätigen.`;
     }
   }
 
   // 4. Multi-Tasking auffällig — Hygiene oder bewusste Wahl
   if (k.multiTaskingFactor > 1.5) {
-    return `Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} — pro echter Arbeitsstunde wurden über 1.5 h Aufgaben gebucht. Konkret: Tracker-Hygiene prüfen (vergessene laufende Tracker bei Wechseln) — falls die Disziplin steht, bewusste Mehr-Mandanten-Steuerung im Team-Standard verankern.`;
+    return `Parallel-Faktor ${k.multiTaskingFactor.toFixed(2)} — pro echter Arbeitsstunde wurden über 1.5 h Aufgaben gebucht. Konkret: Tracker-Hygiene prüfen (vergessene laufende Tracker bei Wechseln) — falls die Disziplin steht, bewusste parallele Stakeholder-Arbeit im Team-Standard verankern.`;
   }
 
   // 5. Hoher Versickerungs-Anteil (Welle 6) — wenn die Person selbst
@@ -447,7 +447,7 @@ function pickPriorityAction(data: ReportData): string {
     return `Versickerungs-Anteil bei ${k.leakPct.toFixed(0)}% — über 40 % der Zeit als „nicht produktiv" selbsteingestuft. Quellen identifizieren (welche Projekte, welche Kontexte) und gezielt eingreifen — das ist nicht Tracker-Streuung, das ist eine bewusste Selbstmessung.`;
   }
   if (top && k.leakPct >= 25) {
-    return `Bei <b>${esc(top.name)}</b> als Hauptmandant: Versickerungs-Anteil ${k.leakPct.toFixed(0)}% (${fmtHours(k.leakMs)}) als „nicht produktiv" markiert. Mandats-Schnitt prüfen — bindet der Auftrag in einem Maß, dass Wertschöpfung untergeht?`;
+    return `Bei <b>${esc(top.name)}</b> als Haupt-Stakeholder: Versickerungs-Anteil ${k.leakPct.toFixed(0)}% (${fmtHours(k.leakMs)}) als „nicht produktiv" markiert. Stakeholder-Schnitt prüfen — bindet die Arbeit für diesen Stakeholder in einem Maß, dass der eigentliche Output untergeht?`;
   }
 
   // Default: keine roten Flaggen, Routine trägt. Welle 9.3 — aktiv vs.
