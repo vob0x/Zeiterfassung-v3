@@ -1672,7 +1672,7 @@ export function describeChangePointContext(
     case 'meeting':
       actionHint =
         cp.deltaSign === 'up'
-          ? `Was du tun könntest: durch die Termine dieser Woche scrollen und für jeden die Frage stellen: lag am Ende ein konkretes Ergebnis vor (Entscheidung, Mail, Dokument)? Die ohne klares Ergebnis sind die ersten Kandidaten, beim nächsten Mal abzusagen oder durch eine Mail zu ersetzen.`
+          ? `Was du dir anschauen könntest: bei welchen wiederkehrenden Terminen dieser Woche war die Ergebnis-Erwartung vor dem Termin klar? Bei den anderen ist oft die Form das Thema — kürzer ansetzen, Agenda vorab klären, oder schriftlich vorbereiten.`
           : `Was du tun könntest: vergleichen, was in dieser termin-armen Woche an Output entstanden ist, gegenüber einer durchschnittlichen Woche. Lässt sich das Muster (etwa ein bewusster termin-freier Tag pro Woche) etablieren?`;
       break;
     case 'deepFocus':
@@ -1778,7 +1778,7 @@ function buildComposites(input: CompositeBuildInput): CompositeFinding[] {
       diagnosis:
         'Das Bild ist operative Überlastung: viele Themen laufen parallel, die Termin-Dichte ist hoch, und die Datenqualität bzw. die Pausen-Disziplin leiden mit. Solche Wochen sind selten produktiv — sie kosten überproportional Energie für unterproportional viel Output.',
       hebel:
-        'Welche der Termine dieser Periode endeten ohne klares Ergebnis (Entscheidung, Mail, Dokument)? Die sind die ersten Kandidaten zum Streichen — und Streichen ist meistens befreiender als Verschieben.',
+        'Bei welchen Terminen dieser Periode war das Ziel im Vorhinein klar, bei welchen nicht? Bei den zweiten liegt der Hebel meist im Format (kürzer ansetzen, Agenda vorab klären, asynchron vorbereiten) — nicht zwingend in der Absage.',
       evidenceFindings: [
         ...mtIdx,
         ...meetingIdx,
@@ -2446,7 +2446,7 @@ export function buildReportData(
       level: 'info',
       kind: 'nonprod-high',
       audiences: ['lead', 'chef'],
-      htmlMessage: `<b>Knapp die Hälfte als „nicht produktiv" verbucht:</b> ${nonprodPct.toFixed(0)} % der Zeit. Verwaltung, Abstimmung, Beziehungspflege, Wartezeit — Dinge, die nötig sind, aber kein direktes Ergebnis liefern. Welche der Top-Projekte in dieser Kategorie sind wirklich notwendig, welche könnten asynchron (per Mail oder Tool) oder kürzer laufen?`,
+      htmlMessage: `<b>Knapp die Hälfte als „nicht produktiv" markiert:</b> ${nonprodPct.toFixed(0)} % der Zeit. Heißt: Zeit, die kein direktes Produkt hervorbringt — Verwaltung, Abstimmung, Beziehungspflege, Wartezeit auf Entscheidungen. Bei welchen Top-Projekten in dieser Kategorie ist die Form bewusst so gewählt, und wo wäre eine andere Form (kürzer, asynchron) gleich tragfähig?`,
     });
   }
 
@@ -2494,7 +2494,7 @@ export function buildReportData(
         level: 'warn',
         kind: 'oos-stakeholder',
         audiences: ['lead'],
-        htmlMessage: `<b>${htmlEsc(sp.name)}: viel Zeit außerhalb der eigentlichen Lieferung?</b> ${sp.nonprodPct.toFixed(0)} % der gebundenen Zeit (${fmtHours(sp.ms)}) sind als „nicht produktiv" verbucht — also Verwaltung, Abstimmung, Beziehungspflege. Bei diesem Stakeholder arbeitest du nicht direkt am Ergebnis, sondern am Drumherum. Bewusste Beziehungspflege bei einem zentralen Stakeholder, oder dehnen sich die Anforderungen stillschweigend aus?`,
+        htmlMessage: `<b>${htmlEsc(sp.name)}: hoher Anteil ohne direkten Output.</b> ${sp.nonprodPct.toFixed(0)} % der gebundenen Zeit (${fmtHours(sp.ms)}) sind als „nicht produktiv" markiert — Verwaltung, Abstimmung, Beziehungspflege, Wartezeit. Bei diesem Stakeholder bringt die Zeit kein direktes Produkt hervor, was nicht heißt, dass sie verzichtbar ist. Bewusst investierte Beziehungs-Pflege, oder dehnt sich der Aufwand jenseits des Nötigen aus?`,
       });
     }
   }
@@ -2506,7 +2506,7 @@ export function buildReportData(
         level: 'info',
         kind: 'meeting-heavy-stakeholder',
         audiences: ['lead', 'chef'],
-        htmlMessage: `<b>${htmlEsc(sp.name)}: Stakeholder mit hohem Termin-Anteil.</b> ${sp.meetingHeavyPct.toFixed(0)} % der Zeit für diesen Stakeholder lief in Meetings, Calls oder Workshops. Über die Hälfte der Arbeit findet in Live-Terminen statt, nicht in eigener stiller Arbeit. Welche dieser Termine wären als kurze Mail oder Ein-Seiten-Notiz schneller erledigt?`,
+        htmlMessage: `<b>${htmlEsc(sp.name)}: Zusammenarbeit überwiegend in Live-Terminen.</b> ${sp.meetingHeavyPct.toFixed(0)} % der Zeit für diesen Stakeholder lief in Meetings, Calls oder Workshops — Live-Format dominiert das Verhältnis. Bewusst so abgestimmt (z.B. weil Themen Aushandlung brauchen), oder ergibt sich das aus der Anfragenlage?`,
       });
     }
   }
@@ -2522,7 +2522,7 @@ export function buildReportData(
         level: 'warn',
         kind: 'meetings-without-output',
         audiences: ['lead', 'chef'],
-        htmlMessage: `<b>${htmlEsc(sp.name)}: viele Termine ohne klares Ergebnis.</b> ${sp.meetingHeavyPct.toFixed(0)} % Termin-Anteil, davon ${sp.meetingNonprodPct.toFixed(0)} % als „nicht produktiv" gebucht. Die Mehrzahl dieser Termine endet nicht mit einer konkreten Lieferung (Entscheidung, Dokument, Mail). Im 1:1 ansprechen: für jeden wiederkehrenden Termin eine Output-Frage stellen — was ist die Ergebnis-Erwartung, andernfalls Format-Wechsel oder Absage.`,
+        htmlMessage: `<b>${htmlEsc(sp.name)}: viele Termine, davon der Großteil ohne direkten Output.</b> ${sp.meetingHeavyPct.toFixed(0)} % Termin-Anteil, davon ${sp.meetingNonprodPct.toFixed(0)} % als „nicht produktiv" markiert — heißt: kein direktes Produkt am Ende, kann aber Abstimmung, Beziehungspflege oder Wartezeit auf Entscheidungen sein. Im 1:1 zur Klärung: bei welchen wiederkehrenden Terminen ist die Form bewusst so gewählt, und bei welchen wäre eine andere Form (kürzer, asynchron, schriftlich) gleich tragfähig?`,
       });
     }
   }

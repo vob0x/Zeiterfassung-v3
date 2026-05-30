@@ -562,17 +562,17 @@ export function renderStakeholderDossier(
   }
   if (profile.nonprodPct >= 30) {
     tags.push(
-      `<span class="tag tag-warn">${profile.nonprodPct.toFixed(0)}% nicht-produktiv</span>`
+      `<span class="tag tag-info">${profile.nonprodPct.toFixed(0)}% ohne direkten Output</span>`
     );
     if (!leadQuestion)
-      leadQuestion = `Frage fürs Gespräch: viel Zeit für Verwaltung / Abstimmung / Beziehungspflege bei diesem Stakeholder. Bewusst investiert in eine wichtige Beziehung, oder dehnen sich die Anforderungen stillschweigend aus?`;
+      leadQuestion = `Frage fürs Gespräch: hoher Anteil der Zeit bringt bei diesem Stakeholder kein direktes Produkt hervor (Verwaltung, Abstimmung, Beziehungspflege). Bewusst investiert in eine zentrale Beziehung, oder dehnt sich der Aufwand jenseits des Nötigen aus?`;
   }
   if (profile.meetingHeavyPct >= 50) {
     tags.push(
       `<span class="tag tag-info">${profile.meetingHeavyPct.toFixed(0)}% in Terminen</span>`
     );
     if (!leadQuestion)
-      leadQuestion = `Frage fürs Gespräch: über die Hälfte der Zeit für diesen Stakeholder lief in Live-Terminen. Welche davon wären als Mail / kurze Notiz schneller erledigt?`;
+      leadQuestion = `Frage fürs Gespräch: über die Hälfte der Zeit für diesen Stakeholder lief in Live-Terminen. Bewusst so gewählt (Themen brauchen Aushandlung), oder ergibt sich das aus der Anfragenlage?`;
   }
   if (profile.notizPct <= 25 && profile.entriesCount >= 8) {
     tags.push(

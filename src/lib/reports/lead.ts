@@ -362,7 +362,7 @@ function buildHebel(data: ReportData): string {
     } else if (oosSh.microTaskPct >= 30) {
       frage = `Lässt sich ein Sammel-Termin etablieren (feste Sprechzeit), damit nicht jede Anfrage einzeln den Tag bricht?`;
     } else if (oosSh.meetingHeavyPct >= 50) {
-      frage = `Welche dieser Termine wären als Mail oder kurzes Ein-Pager schneller — und für beide Seiten besser?`;
+      frage = `Live-Format dominiert die Zusammenarbeit hier — bewusst so abgestimmt (Themen brauchen Aushandlung), oder ergibt sich das aus der Anfragenlage?`;
     } else {
       frage = `Geht hier viel Zeit in Verwaltung und Beziehungspflege — bewusst investiert, oder dehnt sich die Anforderung aus?`;
     }
