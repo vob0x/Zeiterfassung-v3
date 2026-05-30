@@ -18,9 +18,11 @@ import { renderBoardBody } from './reports/board';
 import { renderCoachBody } from './reports/coach';
 import { renderLeadBody } from './reports/lead';
 import { renderChefBody } from './reports/chef';
+import { renderOverviewBody } from './reports/overview';
 
 /** Dispatcher Lens → Body-Renderer. Exhaustiv typchecked. */
 const LENS_RENDERERS: Record<ReportLens, (d: ReportData) => string> = {
+  overview: renderOverviewBody,
   board: renderBoardBody,
   coach: renderCoachBody,
   lead: renderLeadBody,
@@ -28,6 +30,7 @@ const LENS_RENDERERS: Record<ReportLens, (d: ReportData) => string> = {
 };
 
 const LENS_LABELS: Record<ReportLens, string> = {
+  overview: 'Übersicht',
   coach: 'Coach',
   lead: 'Teamleader',
   chef: 'Direktion',

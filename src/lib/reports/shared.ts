@@ -1199,17 +1199,27 @@ h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .board-trend{font-size:14.5px;color:#1c1a17;background:white;border:1px solid #e5dfc8;border-radius:4px;padding:14px 18px;margin:20px 0;line-height:1.5}
 .board-disclaimer{font-size:11px;color:#888;text-align:center;margin-top:24px}
 
+/* ÜBERSICHT-Brille — sachlich, dichte KPI-Karten */
+.overview-headline{font-size:18px;line-height:1.4;color:#1c1a17;background:#fdfbf6;border:1px solid #d8cfb6;border-left:4px solid #c9a962;border-radius:4px;padding:14px 18px;margin:0 0 20px}
+.overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:24px}
+.overview-card{background:white;border:1px solid #e5dfc8;border-radius:6px;padding:18px 20px}
+.overview-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px}
+.overview-value{font-size:22px;font-weight:700;color:#6c5a2c;font-variant-numeric:tabular-nums;line-height:1.2;margin-bottom:6px}
+.overview-unit{font-size:13px;color:#888;font-weight:400}
+.overview-sub{font-size:12.5px;color:#1c1a17;line-height:1.45}
+.overview-disclaimer{font-size:11px;color:#888;text-align:center;margin-top:18px}
+
 @media (max-width:640px){
-  .coach-minikpi,.lead-three,.lead-four,.chef-matrix,.board-hero-row,.board-pies{grid-template-columns:1fr}
+  .coach-minikpi,.lead-three,.lead-four,.chef-matrix,.board-hero-row,.board-pies,.overview-grid{grid-template-columns:1fr}
   .prodbar-row{grid-template-columns:100px 1fr 60px}
   .cp-card-body{flex-direction:column;align-items:flex-start;gap:6px}
 }
 @media print{
   body{background:white;max-width:none;padding:12mm;margin:0}
-  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.coach-strengths,.lead-hebel,.chef-closing,.lead-card-tags .tag,.lead-kpi-tile,.coach-minikpi-tile,.board-trend,.cp-card,.cp-card-meaning,.cp-card-cooccur,.cp-card-persist,.cp-card-snapshot,.cp-card-action,.cp-persist-tag,.composite,.composite-warn,.composite-info,.composite-tag,.composite-hebel,.scale-badge,.scale-low,.scale-normal,.scale-elevated,.scale-high,.crisis-banner{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .coach-tagline,.lead-three-card,.lead-card,.chef-headline,.board-hero,.finding,.prodbar-fill,.lead-card-q,.coach-questions,.coach-strengths,.lead-hebel,.chef-closing,.lead-card-tags .tag,.lead-kpi-tile,.coach-minikpi-tile,.board-trend,.cp-card,.cp-card-meaning,.cp-card-cooccur,.cp-card-persist,.cp-card-snapshot,.cp-card-action,.cp-persist-tag,.composite,.composite-warn,.composite-info,.composite-tag,.composite-hebel,.scale-badge,.scale-low,.scale-normal,.scale-elevated,.scale-high,.crisis-banner,.overview-card,.overview-headline{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   h2{break-after:avoid}
   section{break-inside:avoid-page}
-  .cp-card,.composite{break-inside:avoid}
+  .cp-card,.composite,.overview-card{break-inside:avoid}
 }
 </style>`;
 

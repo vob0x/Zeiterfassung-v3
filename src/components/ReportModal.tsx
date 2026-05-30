@@ -50,8 +50,8 @@ export default function ReportModal({
 }: ReportModalProps) {
   const { t } = useI18n();
 
-  // Default-Brille: Coach (Selbst-Reflexion ist der typische Einstieg).
-  const [lens, setLens] = useState<ReportLens>('coach');
+  // Default-Brille: Übersicht (sachlich, neutralster Einstieg).
+  const [lens, setLens] = useState<ReportLens>('overview');
 
   // Welle 6 — Projekt-Klassifikationen aus dem masterStore. Wird an
   // buildReportData übergeben, damit der Reaktivitäts-Index, Krisen-
@@ -313,6 +313,7 @@ function LensPicker({
   t: (k: string) => string;
 }) {
   const options: Array<{ key: ReportLens; label: string; hint: string }> = [
+    { key: 'overview', label: t('report.lens.overview'), hint: t('report.lens.overviewHint') },
     { key: 'coach', label: t('report.lens.coach'), hint: t('report.lens.coachHint') },
     { key: 'lead', label: t('report.lens.lead'), hint: t('report.lens.leadHint') },
     { key: 'chef', label: t('report.lens.chef'), hint: t('report.lens.chefHint') },
@@ -326,7 +327,7 @@ function LensPicker({
       >
         {t('report.lens.label')}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
         {options.map((o) => {
           const active = o.key === lens;
           return (

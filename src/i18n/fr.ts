@@ -282,6 +282,8 @@ export const fr = {
     print: 'Imprimer',
     lens: {
       label: 'Perspective du mot de la fin',
+      overview: 'Vue d\'ensemble',
+      overviewHint: 'Les chiffres clés en un coup d\'œil',
       coach: 'Coach',
       coachHint: 'Questions de réflexion personnelle',
       lead: 'Chef d\'équipe',

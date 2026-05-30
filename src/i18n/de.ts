@@ -282,6 +282,8 @@ export const de = {
     print: 'Drucken',
     lens: {
       label: 'Brille für das Schluss-Wort',
+      overview: 'Übersicht',
+      overviewHint: 'Die zentralen Zahlen auf einen Blick',
       coach: 'Coach',
       coachHint: 'Reflexionsfragen zur eigenen Arbeitsweise',
       lead: 'Teamleader',

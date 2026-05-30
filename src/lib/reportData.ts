@@ -41,7 +41,7 @@ export type ReportScope = 'self' | 'member' | 'team';
  *     Datenbasis.
  *   - **board**: Geschäftsleitung, knappe strategische Headlines.
  */
-export type ReportLens = 'coach' | 'lead' | 'chef' | 'board';
+export type ReportLens = 'overview' | 'coach' | 'lead' | 'chef' | 'board';
 
 export interface ReportRange {
   from: string;
