@@ -18,6 +18,7 @@ import { X } from 'lucide-react';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
 import { useIsAdmin } from '@/hooks/useRole';
+import { useNotizSuggestions } from '@/hooks/useNotizSuggestions';
 import { useI18n } from '@/i18n';
 import { isAbsenceActivity } from '@/lib/absences';
 import Picker from './Picker';
@@ -76,6 +77,7 @@ export default function EditEntryModal({ entry, onClose }: EditEntryModalProps) 
   const addActivity = useMasterStore((s) => s.addActivity);
   const addFormat = useMasterStore((s) => s.addFormat);
   const isAdmin = useIsAdmin();
+  const notizSuggestions = useNotizSuggestions();
 
   const [form, setForm] = useState<FormState>(() => fromEntry(entry));
   const [busy, setBusy] = useState(false);
@@ -317,11 +319,17 @@ export default function EditEntryModal({ entry, onClose }: EditEntryModalProps) 
           <Field label={t('entry.notiz')}>
             <input
               type="text"
+              list="notiz-suggestions-edit"
               value={form.notiz}
               onChange={(e) => setForm({ ...form, notiz: e.target.value })}
               placeholder={t('entry.notizPlaceholder')}
               className={inputClass}
             />
+            <datalist id="notiz-suggestions-edit">
+              {notizSuggestions.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
           </Field>
 
           <div className="col-span-2 flex items-center justify-between mt-2">

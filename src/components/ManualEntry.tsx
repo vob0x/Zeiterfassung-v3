@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useEntriesStore } from '@/stores/entriesStore';
 import { useMasterStore } from '@/stores/masterStore';
 import { useIsAdmin } from '@/hooks/useRole';
+import { useNotizSuggestions } from '@/hooks/useNotizSuggestions';
 import { useI18n } from '@/i18n';
 import { dateRangeISO, formatDateISO } from '@/lib/utils';
 import { isAbsenceActivity } from '@/lib/absences';
@@ -93,6 +94,7 @@ export default function ManualEntry() {
 
   // Mitarbeiter dürfen Format/Tätigkeit nicht selbst erweitern.
   const isAdmin = useIsAdmin();
+  const notizSuggestions = useNotizSuggestions();
 
   const [form, setForm] = useState<FormState>(() => makeDefaults(t));
   const [busy, setBusy] = useState(false);
@@ -381,11 +383,17 @@ export default function ManualEntry() {
         <Field label={t('entry.notiz')}>
           <input
             type="text"
+            list="notiz-suggestions-manual"
             value={form.notiz}
             onChange={(e) => setForm({ ...form, notiz: e.target.value })}
             placeholder={t('entry.notizPlaceholder')}
             className={inputClass}
           />
+          <datalist id="notiz-suggestions-manual">
+            {notizSuggestions.map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
         </Field>
 
         {/* Footer: Status + Buttons */}
