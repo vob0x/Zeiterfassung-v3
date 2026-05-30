@@ -11,10 +11,15 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Copy, LogOut, Users, Trash2 } from 'lucide-react';
+import { Copy, LogOut, Users, Trash2, Download, FileJson, FileSpreadsheet } from 'lucide-react';
 import { useTeamStore } from '@/stores/teamStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useEntriesStore } from '@/stores/entriesStore';
 import { useI18n } from '@/i18n';
+import {
+  downloadTeamExportJson,
+  downloadTeamExportCsv,
+} from '@/lib/backup';
 import type { ZeRole } from '@/types';
 
 export default function TeamView() {
@@ -532,6 +537,13 @@ function ConnectedView() {
         </ul>
       </div>
 
+      {/* Team-Export — nur Admin, RLS (te_select_self_or_admin ab Welle
+          12.2) liefert dem Admin auch fremde time_entries-Rows mit. Der
+          Team-Key entschlüsselt clientseitig. */}
+      {isAdmin && (
+        <TeamExportCard codename={profile?.codename ?? 'team'} />
+      )}
+
       {/* Leave-Button */}
       <div className="flex justify-end">
         <button
@@ -546,6 +558,77 @@ function ConnectedView() {
         >
           <LogOut size={12} />
           {t('team.leave')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Team-Export (Welle 12.2) — Admin-only
+   ───────────────────────────────────────────────────────────────────── */
+
+function TeamExportCard({ codename }: { codename: string }) {
+  const { t } = useI18n();
+  const entries = useEntriesStore((s) => s.entries);
+  const teamEntries = useEntriesStore((s) => s.teamEntries);
+
+  // Eigene + Teamkollegen-Einträge zusammenführen — die SELECT-Policy
+  // hat schon gefiltert, der Store hat nur clientseitig nach user_id
+  // gesplittet.
+  const all = [...entries, ...teamEntries];
+
+  const onJson = () => downloadTeamExportJson(all, codename);
+  const onCsv = () => downloadTeamExportCsv(all);
+
+  return (
+    <div
+      className="rounded-lg p-4"
+      style={{
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(201,169,98,0.18)',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Download size={12} style={{ color: 'var(--text-muted)' }} />
+        <span
+          className="text-xs uppercase tracking-widest"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          {t('team.exportTitle')}
+        </span>
+      </div>
+      <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+        {t('team.exportHint')}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onJson}
+          disabled={all.length === 0}
+          className="text-xs py-1.5 px-3 rounded flex items-center gap-1.5 disabled:opacity-50"
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+          }}
+        >
+          <FileJson size={12} />
+          {t('team.exportJson')}
+        </button>
+        <button
+          type="button"
+          onClick={onCsv}
+          disabled={all.length === 0}
+          className="text-xs py-1.5 px-3 rounded flex items-center gap-1.5 disabled:opacity-50"
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+          }}
+        >
+          <FileSpreadsheet size={12} />
+          {t('team.exportCsv')}
         </button>
       </div>
     </div>

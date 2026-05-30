@@ -238,6 +238,11 @@ export const de = {
     removeMember: 'Mitglied entfernen',
     removeMemberConfirm:
       '{name} wirklich aus dem Team entfernen? Die Person verliert den Zugriff auf den Team-Schlüssel.',
+    exportTitle: 'Team-Export',
+    exportHint:
+      'Lade alle entschlüsselten Einträge des Teams als Snapshot herunter — JSON ist verlustfrei, CSV ist tabellarisch für Auswertungen.',
+    exportJson: 'Team-Export JSON',
+    exportCsv: 'Team-Export CSV',
   },
 
   dashboard: {

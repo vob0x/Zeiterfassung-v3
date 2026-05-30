@@ -238,6 +238,11 @@ export const fr = {
     removeMember: 'Retirer le membre',
     removeMemberConfirm:
       "Vraiment retirer {name} de l'équipe ? La personne perdra l'accès à la clé d'équipe.",
+    exportTitle: "Export de l'équipe",
+    exportHint:
+      "Télécharger un instantané des entrées déchiffrées de toute l'équipe — JSON sans perte, CSV tabulaire pour les analyses.",
+    exportJson: "Export d'équipe JSON",
+    exportCsv: "Export d'équipe CSV",
   },
 
   dashboard: {

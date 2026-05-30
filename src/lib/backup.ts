@@ -156,3 +156,104 @@ export function downloadBackupCsv(
   const content = buildBackupCsv(entries);
   triggerDownload(content, backupFilename('csv', codename), 'text/csv');
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Team-Export (Welle 12.2)
+   ─────────────────────────────────────────────────────────────────────
+   Admin lädt JSON oder CSV mit allen sichtbaren Team-Einträgen herunter.
+   RLS (te_select_self_or_admin ab 20260601000000_…) regelt die Visibility
+   server-seitig: der Caller muss Admin in einem Team sein, sonst sind
+   nur eigene Rows drin (kein Datenleck, aber dann auch kein Mehrwert
+   gegenüber Self-Backup).
+
+   Entschlüsselung läuft im Aufrufer (entriesStore.fetchEntries) — alle
+   Team-Member haben den gleichen Team-Key, der Admin kann damit fremde
+   Felder lesen.
+
+   JSON: wiederverwendet buildBackupJson — die Envelope-Form ist
+   identisch, nur `exportedBy` markiert den Modus ('team-<codename>' statt
+   nur '<codename>').
+
+   CSV: separates Schema (englische Header, user_id-Spalte, ISO-Timestamps
+   statt HH:MM-Dauer, Stakeholder per ';' gejoined). Die Self-Export-CSV
+   ist Excel-User-fokussiert (DE-Header, HH:MM); die Team-CSV ist für
+   Weiterverarbeitung in Auswertungs-Tools — daher rohe Maschinen-
+   freundliche Form.
+   ─────────────────────────────────────────────────────────────────────*/
+
+/** Quoted alle Werte unconditional — die Team-CSV ist nicht für Excel
+ *  optimiert, sondern für Re-Imports und Skripte, da ist konsistentes
+ *  Quoting wichtiger als minimale Bytes. */
+function csvCellQuoted(v: string | number | null | undefined): string {
+  if (v === null || v === undefined) return '""';
+  const s = String(v).replace(/"/g, '""');
+  return '"' + s + '"';
+}
+
+const TEAM_EXPORT_COLUMNS = [
+  'date',
+  'start_time',
+  'end_time',
+  'duration_ms',
+  'user_id',
+  'stakeholder',
+  'projekt',
+  'taetigkeit',
+  'format',
+  'notiz',
+  'created_at',
+  'updated_at',
+] as const;
+
+export function buildTeamExportJson(
+  entries: TimeEntry[],
+  codename: string
+): string {
+  // Markiert den Export als Team-Snapshot, damit ein späterer Re-Import
+  // weiß: das sind nicht meine Einträge, sondern die ganzer Team-Sicht.
+  return buildBackupJson(entries, `team-${codename}`);
+}
+
+export function entriesToCsv(entries: TimeEntry[]): string {
+  const header = TEAM_EXPORT_COLUMNS.map(csvCellQuoted).join(',');
+  const rows = entries.map((e) => {
+    const stakeholder = Array.isArray(e.stakeholder)
+      ? e.stakeholder.join(';')
+      : (e.stakeholder as unknown as string) || '';
+    return [
+      e.date,
+      e.start_time,
+      e.end_time,
+      e.duration_ms,
+      e.user_id,
+      stakeholder,
+      e.projekt,
+      e.taetigkeit,
+      e.format,
+      e.notiz || '',
+      e.created_at,
+      e.updated_at,
+    ]
+      .map(csvCellQuoted)
+      .join(',');
+  });
+  return [header, ...rows].join('\r\n');
+}
+
+function teamExportFilename(extension: 'json' | 'csv'): string {
+  const date = new Date().toISOString().slice(0, 10);
+  return `team-export-${date}.${extension}`;
+}
+
+export function downloadTeamExportJson(
+  entries: TimeEntry[],
+  codename: string
+): void {
+  const content = buildTeamExportJson(entries, codename);
+  triggerDownload(content, teamExportFilename('json'), 'application/json');
+}
+
+export function downloadTeamExportCsv(entries: TimeEntry[]): void {
+  const content = entriesToCsv(entries);
+  triggerDownload(content, teamExportFilename('csv'), 'text/csv');
+}
