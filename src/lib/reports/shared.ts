@@ -1035,6 +1035,7 @@ export function renderFindingsBlock(
 export const REPORT_STYLES = `<style>
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:920px;margin:24px auto;padding:0 24px;color:#1c1a17;background:#fdfbf6;line-height:1.6}
 h1{font-size:26px;margin:0 0 4px;color:#6c5a2c}
+.lens-suffix{font-size:0.65em;color:#888;font-weight:400}
 h2{font-size:17px;margin:32px 0 10px;color:#6c5a2c;border-bottom:1px solid #d8cfb6;padding-bottom:6px}
 h3{font-size:13px;color:#6c5a2c;margin:8px 0 6px}
 .meta{color:#666;font-size:13px;margin-bottom:28px}
@@ -1231,11 +1232,11 @@ export function wrapAsDocument(
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <title>${esc(data.meta.title)} — ${esc(data.meta.range.label)}</title>
+  <title>${esc(lensLabel)} — ${esc(data.meta.title)} — ${esc(data.meta.range.label)}</title>
   ${REPORT_STYLES}
 </head>
 <body>
-  <h1>${esc(data.meta.title)}</h1>
+  <h1>${esc(data.meta.title)} <span class="lens-suffix">— ${esc(lensLabel)}</span></h1>
   <div class="meta">
     <b>${esc(data.meta.subjectName)}</b> · ${esc(data.meta.range.label)} · ${data.kpis.workingDays} aktive Tage · Brille: <b>${esc(lensLabel)}</b> · Erstellt ${esc(generated)}
   </div>
