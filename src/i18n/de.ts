@@ -96,6 +96,10 @@ export const de = {
     filterEmpty: 'Keine Einträge im aktiven Filter.',
     searchPlaceholder: 'Einträge durchsuchen…',
     clearSearch: 'Suche leeren',
+    resetFilters: 'Filter zurücksetzen',
+    notizFilterPlaceholder: 'Notiz enthält…',
+    dropdownAll: 'Alle',
+    dropdownClear: 'Leeren',
   },
 
   backup: {

@@ -96,6 +96,10 @@ export const fr = {
     filterEmpty: 'Aucune entrée pour ce filtre.',
     searchPlaceholder: 'Rechercher dans les entrées…',
     clearSearch: 'Effacer la recherche',
+    resetFilters: 'Réinitialiser les filtres',
+    notizFilterPlaceholder: 'La note contient…',
+    dropdownAll: 'Tous',
+    dropdownClear: 'Vider',
   },
 
   backup: {

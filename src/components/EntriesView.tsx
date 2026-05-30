@@ -3,28 +3,36 @@
  *
  * Komponenten:
  *   - ManualEntry oben (für nachträgliches Erfassen)
- *   - Filter-Chip-Strip (1 Chip pro aktiver Filter-Dimension, einzeln entfernbar)
+ *   - Globale Search-Box (Substring über alle Felder)
+ *   - Filter-Block (Welle 12.0): 4 Multi-Select-Dropdowns
+ *     (Stakeholder / Projekt / Tätigkeit / Format) + Notiz-Substring-
+ *     Input + Reset-Button. Werte aus masterStore.
+ *   - Filter-Chip-Strip (1 Chip pro aktivem Wert je Dimension)
  *   - Liste aller eigenen Einträge mit klickbaren Werten (Drill-Down)
  *   - Backup-Export-Block am Ende
  *
- * Filter-Modell (uiStore.entriesFilter): multi-dim, jede Dimension
- * unabhängig setzbar. Aktive Dimensionen werden mit AND verknüpft.
- * Klick auf einen Eintragswert (z.B. Stakeholder-Name) setzt die
- * jeweilige Dimension; Klick auf einen aktiven Chip entfernt sie.
+ * Filter-Modell (uiStore.entriesFilter): multi-dim & multi-value. Jede
+ * Dimension trägt eine Werte-Liste (OR innerhalb), Dimensionen werden
+ * mit AND verknüpft. Klick auf einen Eintragswert ersetzt die Auswahl
+ * der jeweiligen Dim auf genau diesen Wert (Drill-Down-Semantik);
+ * Multi-Select erfolgt über die Dropdowns im Filter-Block.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import {
   CheckSquare,
+  ChevronDown,
   Download,
   FileJson,
   FileSpreadsheet,
+  Filter as FilterIcon,
   Pencil,
   Search,
   Square,
   X,
 } from 'lucide-react';
 import { useEntriesStore } from '@/stores/entriesStore';
+import { useMasterStore } from '@/stores/masterStore';
 import {
   useUiStore,
   hasActiveFilter,
@@ -41,25 +49,35 @@ import BatchEditBar from './BatchEditBar';
 import type { TimeEntry } from '@/types';
 
 /**
- * Prüft ob ein Eintrag dem Multi-Dim-Filter entspricht. Logik:
- *   - Chip-Filter (stakeholder/projekt/taetigkeit/format) sind Strict-
- *     Equality, kombiniert mit AND. Stakeholder ist multi-valued: matcht
- *     wenn der Filter-Wert in der Liste auftaucht.
+ * Pure Function: Prüft ob ein Eintrag dem Multi-Dim-Filter entspricht.
+ * Logik:
+ *   - Pro Dimension: leeres / fehlendes Array = pass-through. Sonst muss
+ *     der Eintrags-Wert in der Auswahl liegen (OR innerhalb). Stakeholder
+ *     ist multi-valued am Eintrag: matcht wenn IRGENDEINER der Eintrags-
+ *     Stakeholder in der Filter-Auswahl auftaucht.
+ *   - Dimensionen werden mit AND kombiniert.
  *   - search ist case-insensitive Substring-Match über alle relevanten
  *     Felder (Datum, Zeit, alle Dimensionen, Notiz). AND mit den Chips.
+ *   - notiz ist Substring-Match nur auf das Notiz-Feld. AND mit allem.
  */
 function entryMatchesFilter(e: TimeEntry, f: EntriesFilter): boolean {
-  if (f.stakeholder) {
+  if (f.stakeholder && f.stakeholder.length > 0) {
     const list = Array.isArray(e.stakeholder)
       ? e.stakeholder
       : e.stakeholder
         ? [e.stakeholder]
         : [];
-    if (!list.includes(f.stakeholder)) return false;
+    if (!list.some((s) => f.stakeholder!.includes(s))) return false;
   }
-  if (f.projekt && (e.projekt || '') !== f.projekt) return false;
-  if (f.taetigkeit && (e.taetigkeit || '') !== f.taetigkeit) return false;
-  if (f.format && (e.format || '') !== f.format) return false;
+  if (f.projekt && f.projekt.length > 0) {
+    if (!f.projekt.includes(e.projekt || '')) return false;
+  }
+  if (f.taetigkeit && f.taetigkeit.length > 0) {
+    if (!f.taetigkeit.includes(e.taetigkeit || '')) return false;
+  }
+  if (f.format && f.format.length > 0) {
+    if (!f.format.includes(e.format || '')) return false;
+  }
 
   if (f.search) {
     const q = f.search.trim().toLowerCase();
@@ -82,6 +100,14 @@ function entryMatchesFilter(e: TimeEntry, f: EntriesFilter): boolean {
     }
   }
 
+  if (f.notiz) {
+    const q = f.notiz.trim().toLowerCase();
+    if (q) {
+      const n = (e.notiz || '').toLowerCase();
+      if (!n.includes(q)) return false;
+    }
+  }
+
   return true;
 }
 
@@ -91,9 +117,27 @@ export default function EntriesView() {
   const deleteEntry = useEntriesStore((s) => s.deleteEntry);
   const filter = useUiStore((s) => s.entriesFilter);
   const setFilterDim = useUiStore((s) => s.setEntriesFilterDim);
+  const toggleFilterValue = useUiStore((s) => s.toggleEntriesFilterValue);
   const setSearch = useUiStore((s) => s.setEntriesSearch);
+  const setNotizFilter = useUiStore((s) => s.setEntriesNotizFilter);
   const clearFilter = useUiStore((s) => s.clearEntriesFilter);
   const codename = useAuthStore((s) => s.profile?.codename) || 'export';
+
+  // Master-Daten für die Multi-Select-Dropdowns (Welle 12.0). Nur Namen,
+  // sort_order-stabil. Dedupliziert (Team-Mode liefert Mitglieder-Rows
+  // mit potenziell gleichem Namen).
+  const stakeholderNames = useMasterStore((s) =>
+    dedupSorted(s.stakeholders.map((x) => x.name))
+  );
+  const projectNames = useMasterStore((s) =>
+    dedupSorted(s.projects.map((x) => x.name))
+  );
+  const activityNames = useMasterStore((s) =>
+    dedupSorted(s.activities.map((x) => x.name))
+  );
+  const formatNames = useMasterStore((s) =>
+    dedupSorted(s.formats.map((x) => x.name))
+  );
 
   // Edit-Modal-State: ID des zu editierenden Eintrags oder null.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -153,12 +197,15 @@ export default function EntriesView() {
   const allVisibleSelected =
     filtered.length > 0 && effectiveSelected.size === filtered.length;
 
-  /** Setzt eine Dimension oder togglet sie ab, wenn schon aktiv mit
-   *  demselben Wert. Genutzt von den klickbaren Eintragswerten. */
+  /** Klick auf einen Wert in der Eintragsliste:
+   *  - Wenn die Dim aktuell genau diesen einen Wert hat: Toggle ab.
+   *  - Sonst: Dim auf genau diesen Wert setzen (Drill-Down, ersetzt
+   *    Mehrfachauswahl). Multi-Select läuft über die Dropdowns oben. */
   const onValueClick = (dim: EntriesFilterDim, value: string) => {
     if (!value || value === '—') return;
-    if (filter[dim] === value) {
-      setFilterDim(dim, null); // Zweitklick = Toggle ab
+    const cur = filter[dim];
+    if (cur && cur.length === 1 && cur[0] === value) {
+      setFilterDim(dim, null);
     } else {
       setFilterDim(dim, value);
     }
@@ -198,6 +245,105 @@ export default function EntriesView() {
         )}
       </div>
 
+      {/* Welle 12.0 — Filter-Block. Multi-Select-Dropdowns für die vier
+          Dimensionen + Notiz-Substring. Werte aus masterStore. Notiz
+          bewusst Freitext (nicht 1000+ Notiz-Werte als Dropdown). */}
+      <div
+        className="rounded-lg p-3 space-y-2"
+        style={{
+          background: 'rgba(255,255,255,0.02)',
+          border: '1px solid var(--border)',
+        }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div
+            className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <FilterIcon size={12} />
+            <span>{t('entries.filterLabel')}</span>
+          </div>
+          <button
+            type="button"
+            onClick={clearFilter}
+            disabled={!anyActive}
+            className="flex items-center gap-1 text-xs px-2 py-0.5 rounded hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ color: 'var(--text-muted)' }}
+            aria-label={t('entries.resetFilters')}
+          >
+            <X size={12} />
+            {t('entries.resetFilters')}
+          </button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <MultiSelectDropdown
+            label={t('entry.stakeholder')}
+            options={stakeholderNames}
+            selected={filter.stakeholder ?? []}
+            onToggle={(v) => toggleFilterValue('stakeholder', v)}
+            onClear={() => setFilterDim('stakeholder', null)}
+            t={t}
+          />
+          <MultiSelectDropdown
+            label={t('entry.projekt')}
+            options={projectNames}
+            selected={filter.projekt ?? []}
+            onToggle={(v) => toggleFilterValue('projekt', v)}
+            onClear={() => setFilterDim('projekt', null)}
+            t={t}
+          />
+          <MultiSelectDropdown
+            label={t('entry.taetigkeit')}
+            options={activityNames}
+            selected={filter.taetigkeit ?? []}
+            onToggle={(v) => toggleFilterValue('taetigkeit', v)}
+            onClear={() => setFilterDim('taetigkeit', null)}
+            t={t}
+          />
+          <MultiSelectDropdown
+            label={t('entry.format')}
+            options={formatNames}
+            selected={filter.format ?? []}
+            onToggle={(v) => toggleFilterValue('format', v)}
+            onClear={() => setFilterDim('format', null)}
+            t={t}
+          />
+        </div>
+        <div
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded"
+          style={{
+            background: '#25221e',
+            border: '1px solid var(--border)',
+          }}
+        >
+          <span
+            className="text-[10px] uppercase tracking-widest"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {t('entry.notiz')}
+          </span>
+          <input
+            type="text"
+            value={filter.notiz || ''}
+            onChange={(e) => setNotizFilter(e.target.value)}
+            placeholder={t('entries.notizFilterPlaceholder')}
+            className="flex-1 bg-transparent border-none outline-none text-xs"
+            style={{ color: '#f5f1e8', minWidth: 0 }}
+          />
+          {filter.notiz && (
+            <button
+              type="button"
+              onClick={() => setNotizFilter('')}
+              className="p-0.5 hover:opacity-70"
+              style={{ color: 'var(--text-muted)' }}
+              aria-label={t('entries.clearSearch')}
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {chipsActive && (
         <div
           className="flex items-center justify-between gap-2 px-3 py-2 rounded flex-wrap"
@@ -213,28 +359,28 @@ export default function EntriesView() {
             >
               {t('entries.filterLabel')}
             </span>
-            <FilterChip
+            <DimChips
               dim="stakeholder"
-              value={filter.stakeholder}
-              onRemove={() => setFilterDim('stakeholder', null)}
+              values={filter.stakeholder}
+              onRemove={(v) => toggleFilterValue('stakeholder', v)}
               t={t}
             />
-            <FilterChip
+            <DimChips
               dim="projekt"
-              value={filter.projekt}
-              onRemove={() => setFilterDim('projekt', null)}
+              values={filter.projekt}
+              onRemove={(v) => toggleFilterValue('projekt', v)}
               t={t}
             />
-            <FilterChip
+            <DimChips
               dim="taetigkeit"
-              value={filter.taetigkeit}
-              onRemove={() => setFilterDim('taetigkeit', null)}
+              values={filter.taetigkeit}
+              onRemove={(v) => toggleFilterValue('taetigkeit', v)}
               t={t}
             />
-            <FilterChip
+            <DimChips
               dim="format"
-              value={filter.format}
-              onRemove={() => setFilterDim('format', null)}
+              values={filter.format}
+              onRemove={(v) => toggleFilterValue('format', v)}
               t={t}
             />
             <span
@@ -399,43 +545,208 @@ export default function EntriesView() {
    Sub-Komponenten
    ───────────────────────────────────────────────────────────────────── */
 
-function FilterChip({
+/** Hilfsfunktion — dedupliziert und sortiert Namens-Listen. Team-Mode
+ *  liefert pro Mitglied eine Master-Row mit potenziell identischem Namen;
+ *  für die Filter-Dropdowns wollen wir jeden Namen nur einmal sehen. */
+function dedupSorted(names: string[]): string[] {
+  return Array.from(new Set(names.filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b)
+  );
+}
+
+/** Rendert pro aktivem Wert in einer Dim einen einzeln entfernbaren Chip. */
+function DimChips({
   dim,
-  value,
+  values,
   onRemove,
   t,
 }: {
   dim: EntriesFilterDim;
-  value: string | undefined;
-  onRemove: () => void;
+  values: string[] | undefined;
+  onRemove: (value: string) => void;
   t: (k: string) => string;
 }) {
-  if (!value) return null;
+  if (!values || values.length === 0) return null;
   return (
-    <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs"
-      style={{
-        background: 'rgba(201,169,98,0.18)',
-        border: '1px solid rgba(201,169,98,0.40)',
-      }}
-    >
-      <span
-        className="text-[10px] uppercase tracking-widest"
-        style={{ color: 'var(--text-muted)' }}
-      >
-        {t(`entry.${dim}`)}:
-      </span>
-      <span style={{ color: '#C9A962', fontWeight: 500 }}>{value}</span>
+    <>
+      {values.map((v) => (
+        <span
+          key={`${dim}:${v}`}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs"
+          style={{
+            background: 'rgba(201,169,98,0.18)',
+            border: '1px solid rgba(201,169,98,0.40)',
+          }}
+        >
+          <span
+            className="text-[10px] uppercase tracking-widest"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {t(`entry.${dim}`)}:
+          </span>
+          <span style={{ color: '#C9A962', fontWeight: 500 }}>{v}</span>
+          <button
+            type="button"
+            onClick={() => onRemove(v)}
+            className="hover:opacity-70"
+            style={{ color: 'var(--text-muted)' }}
+            aria-label={t('entries.removeFilter')}
+          >
+            <X size={10} />
+          </button>
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Custom Multi-Select-Dropdown mit Checkbox-Liste. Bewusst KEIN
+ * react-select / kein externer Picker — wir bleiben bei den App-eigenen
+ * Patterns (vgl. Picker.tsx) und vermeiden eine weitere Lib.
+ *
+ * - Button zeigt Label + Selected-Count (oder Listing wenn 1-2 Werte).
+ * - Klick öffnet ein absolut positioniertes Panel mit allen Optionen.
+ * - Pro Option Checkbox: Klick togglet via onToggle.
+ * - "Leeren"-Button im Panel-Footer löscht die ganze Dim.
+ * - Outside-Click schließt das Panel.
+ */
+function MultiSelectDropdown({
+  label,
+  options,
+  selected,
+  onToggle,
+  onClear,
+  t,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  onClear: () => void;
+  t: (k: string) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (ev: MouseEvent) => {
+      if (!ref.current) return;
+      if (!ref.current.contains(ev.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  const count = selected.length;
+  const summary =
+    count === 0
+      ? t('entries.dropdownAll')
+      : count <= 2
+        ? selected.join(', ')
+        : `${count} ${t('picker.selected')}`;
+
+  return (
+    <div className="relative" ref={ref}>
       <button
         type="button"
-        onClick={onRemove}
-        className="hover:opacity-70"
-        style={{ color: 'var(--text-muted)' }}
-        aria-label={t('entries.removeFilter')}
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded text-xs"
+        style={{
+          background: '#25221e',
+          border: '1px solid var(--border)',
+          color: count > 0 ? '#C9A962' : 'var(--text)',
+          minWidth: 0,
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
       >
-        <X size={10} />
+        <span
+          className="text-[10px] uppercase tracking-widest flex-shrink-0"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          {label}
+        </span>
+        <span className="flex-1 text-left truncate" style={{ minWidth: 0 }}>
+          {summary}
+        </span>
+        <ChevronDown
+          size={12}
+          style={{ color: 'var(--text-muted)', flexShrink: 0 }}
+        />
       </button>
-    </span>
+      {open && (
+        <div
+          className="absolute z-30 left-0 right-0 mt-1 rounded shadow-lg"
+          style={{
+            background: '#1f1c19',
+            border: '1px solid var(--border)',
+            maxHeight: 260,
+            overflowY: 'auto',
+          }}
+          role="listbox"
+        >
+          {options.length === 0 ? (
+            <div
+              className="px-3 py-2 text-xs italic"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              {t('picker.noMatch')}
+            </div>
+          ) : (
+            <ul className="py-1">
+              {options.map((opt) => {
+                const isSel = selected.includes(opt);
+                return (
+                  <li key={opt}>
+                    <button
+                      type="button"
+                      onClick={() => onToggle(opt)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-neutral-800 text-left"
+                      style={{ color: isSel ? '#C9A962' : 'var(--text)' }}
+                      role="option"
+                      aria-selected={isSel}
+                    >
+                      {isSel ? (
+                        <CheckSquare
+                          size={12}
+                          style={{ color: '#C9A962', flexShrink: 0 }}
+                        />
+                      ) : (
+                        <Square
+                          size={12}
+                          style={{
+                            color: 'var(--text-muted)',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <span className="truncate">{opt}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {count > 0 && (
+            <div
+              className="px-2 py-1 border-t"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              <button
+                type="button"
+                onClick={onClear}
+                className="text-[10px] uppercase tracking-widest px-1 py-0.5 hover:opacity-80"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {t('entries.dropdownClear')}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -505,7 +816,7 @@ function EntryRow({
               <ClickableValue
                 dim="stakeholder"
                 value={s}
-                active={filter.stakeholder === s}
+                active={!!filter.stakeholder?.includes(s)}
                 onClick={onValueClick}
               />
               {i < stakeholders.length - 1 && (
@@ -521,7 +832,7 @@ function EntryRow({
           <ClickableValue
             dim="projekt"
             value={entry.projekt}
-            active={filter.projekt === entry.projekt}
+            active={!!filter.projekt?.includes(entry.projekt)}
             onClick={onValueClick}
           />
         ) : (
@@ -532,7 +843,7 @@ function EntryRow({
           <ClickableValue
             dim="taetigkeit"
             value={entry.taetigkeit}
-            active={filter.taetigkeit === entry.taetigkeit}
+            active={!!filter.taetigkeit?.includes(entry.taetigkeit)}
             onClick={onValueClick}
           />
         )}{' '}
@@ -542,7 +853,7 @@ function EntryRow({
             <ClickableValue
               dim="format"
               value={entry.format}
-              active={filter.format === entry.format}
+              active={!!filter.format?.includes(entry.format)}
               onClick={onValueClick}
             />
           </>

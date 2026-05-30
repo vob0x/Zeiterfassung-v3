@@ -18,8 +18,12 @@ export type TabId = 'timer' | 'dashboard' | 'entries' | 'team' | 'manage';
 /**
  * Drill-Down-Filter für den Einträge-Tab. Multi-Dim: jede Dimension
  * kann unabhängig gesetzt werden, aktive Filter werden mit AND
- * verknüpft. Wird sowohl vom Dashboard (BreakdownList-Klick) als auch
- * direkt im Einträge-Tab (Click-to-Filter auf Eintragswerte) gesetzt.
+ * verknüpft. Innerhalb einer Dimension werden mehrere Werte mit OR
+ * verknüpft (Multi-Select-Semantik, Welle 12.0).
+ *
+ * Wird sowohl vom Dashboard (BreakdownList-Klick) als auch direkt im
+ * Einträge-Tab (Click-to-Filter auf Eintragswerte, Multi-Select-
+ * Dropdowns) gesetzt.
  *
  * Bewusst nicht persistiert — ein Reload zeigt wieder die volle Liste.
  */
@@ -30,22 +34,42 @@ export type EntriesFilterDim =
   | 'format';
 
 export interface EntriesFilter {
-  stakeholder?: string;
-  projekt?: string;
-  taetigkeit?: string;
-  format?: string;
+  /**
+   * Jede Dimension ist eine Liste ausgewählter Werte (Multi-Select).
+   * Leer / undefined = keine Einschränkung. Mehrere Werte: OR. Über
+   * Dimensionen: AND. Migration Welle 12.0: vorher single string.
+   */
+  stakeholder?: string[];
+  projekt?: string[];
+  taetigkeit?: string[];
+  format?: string[];
   /** Free-Text-Suche, case-insensitive Substring über alle Felder. */
   search?: string;
+  /** Notiz-spezifischer Substring-Filter (Welle 12.0). */
+  notiz?: string;
 }
 
-/** True wenn mindestens eine Dimension gesetzt ist (Chips, ohne search). */
+function dimActive(v: string[] | undefined): boolean {
+  return !!(v && v.length > 0);
+}
+
+/** True wenn mindestens eine Dimension gesetzt ist (Chips, ohne search/notiz). */
 export function hasActiveFilter(f: EntriesFilter): boolean {
-  return !!(f.stakeholder || f.projekt || f.taetigkeit || f.format);
+  return (
+    dimActive(f.stakeholder) ||
+    dimActive(f.projekt) ||
+    dimActive(f.taetigkeit) ||
+    dimActive(f.format)
+  );
 }
 
-/** True wenn IRGENDETWAS aktiv ist — Chip oder Search. */
+/** True wenn IRGENDETWAS aktiv ist — Chip, Search oder Notiz. */
 export function hasAnyFilter(f: EntriesFilter): boolean {
-  return hasActiveFilter(f) || !!(f.search && f.search.trim());
+  return (
+    hasActiveFilter(f) ||
+    !!(f.search && f.search.trim()) ||
+    !!(f.notiz && f.notiz.trim())
+  );
 }
 
 /**
@@ -84,18 +108,34 @@ interface UiState {
   setPeriodOffset: (offset: number) => void;
   setCustomRange: (from: string, to: string) => void;
 
-  /** Einträge-Tab Drill-Down-Filter (multi-dim). */
+  /** Einträge-Tab Drill-Down-Filter (multi-dim, multi-value). */
   entriesFilter: EntriesFilter;
   /**
-   * Eine einzelne Dimension setzen (oder mit `null` clearen). Kombiniert
-   * mit anderen aktiven Dimensionen via AND.
+   * Eine einzelne Dimension auf genau diesen Wert SETZEN (ersetzt
+   * bisherige Auswahl in dieser Dim). Mit `null` clearen die ganze Dim.
+   * Wird vom Drill-Down und vom Chip-Klick (Toggle-ab) verwendet.
    */
   setEntriesFilterDim: (dim: EntriesFilterDim, value: string | null) => void;
+  /**
+   * Einen Wert innerhalb einer Dimension togglen (für Multi-Select-
+   * Checkboxen). Andere Werte derselben Dim bleiben unangetastet.
+   */
+  toggleEntriesFilterValue: (dim: EntriesFilterDim, value: string) => void;
+  /**
+   * Komplette Werteliste einer Dimension setzen. Leeres Array =
+   * Dimension löschen. Praktisch für native `<select multiple>` mit
+   * direktem Mapping selectedOptions → string[].
+   */
+  setEntriesFilterValues: (dim: EntriesFilterDim, values: string[]) => void;
   /** Free-Text-Such-String (leer/null = aus). Kombiniert AND mit Chips. */
   setEntriesSearch: (value: string) => void;
+  /** Notiz-Substring-Filter setzen (Welle 12.0). Leer = aus. */
+  setEntriesNotizFilter: (value: string) => void;
   /**
    * Filter (eine Dimension) setzen UND in den Einträge-Tab springen.
    * Andere aktive Dimensionen bleiben unverändert — Drill-Down kombiniert.
+   * Setzt die Dimension auf genau diesen einen Wert (ersetzt bisherige
+   * Mehrfachauswahl in dieser Dim).
    */
   drillDownToEntries: (dim: EntriesFilterDim, value: string) => void;
   clearEntriesFilter: () => void;
@@ -251,8 +291,30 @@ export const useUiStore = create<UiState>((set, get) => {
       if (value === null || value === '') {
         delete next[dim];
       } else {
-        next[dim] = value;
+        next[dim] = [value];
       }
+      set({ entriesFilter: next });
+    },
+    toggleEntriesFilterValue: (dim, value) => {
+      if (!value) return;
+      const cur = get().entriesFilter;
+      const next: EntriesFilter = { ...cur };
+      const list = cur[dim] ?? [];
+      if (list.includes(value)) {
+        const rest = list.filter((v) => v !== value);
+        if (rest.length === 0) delete next[dim];
+        else next[dim] = rest;
+      } else {
+        next[dim] = [...list, value];
+      }
+      set({ entriesFilter: next });
+    },
+    setEntriesFilterValues: (dim, values) => {
+      const cur = get().entriesFilter;
+      const next: EntriesFilter = { ...cur };
+      const cleaned = values.filter((v) => !!v);
+      if (cleaned.length === 0) delete next[dim];
+      else next[dim] = cleaned;
       set({ entriesFilter: next });
     },
     setEntriesSearch: (value) => {
@@ -262,11 +324,18 @@ export const useUiStore = create<UiState>((set, get) => {
       else next.search = value;
       set({ entriesFilter: next });
     },
+    setEntriesNotizFilter: (value) => {
+      const cur = get().entriesFilter;
+      const next: EntriesFilter = { ...cur };
+      if (!value || !value.trim()) delete next.notiz;
+      else next.notiz = value;
+      set({ entriesFilter: next });
+    },
     drillDownToEntries: (dim, value) => {
       saveActiveTab('entries');
       const cur = get().entriesFilter;
       set({
-        entriesFilter: { ...cur, [dim]: value },
+        entriesFilter: { ...cur, [dim]: [value] },
         activeTab: 'entries',
       });
     },
